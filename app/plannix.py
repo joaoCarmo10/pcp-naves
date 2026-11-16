@@ -2,7 +2,7 @@
 e da planilha de programação gerada pelo PCP."""
 import io
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 from sqlalchemy import select
@@ -47,6 +47,21 @@ def ler_exportacao(conteudo: bytes) -> pd.DataFrame:
     return df
 
 
+BAHIA = timezone(timedelta(hours=-3))
+
+
+def data_da_baixa(agora: datetime | None = None) -> date:
+    """Lista 'a realizar' exportada de manhã (antes das 12h) reflete o que foi feito até o dia anterior:
+    a peça que saiu da lista recebe o último dia de produção (domingo não conta)."""
+    agora = agora or datetime.now(BAHIA)
+    d = agora.date()
+    if agora.hour < 12:
+        d -= timedelta(days=1)
+        if d.weekday() == 6:
+            d -= timedelta(days=1)
+    return d
+
+
 def _obra(db: Session, nome_plannix: str) -> Obra:
     sigla = nome_plannix.strip().split("-")[0].strip()[:10]
     obra = db.scalar(select(Obra).where(Obra.sigla == sigla))
@@ -65,6 +80,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
     tem_data = df["Data Fabricação"].map(_data).notna().any() if "Data Fabricação" in df.columns else False
     tipo = "completa" if tem_data else "a_realizar"
     hoje = date.today()
+    baixa = data_da_baixa()
     obras_no_arquivo: dict[int, Obra] = {}
     codigos = set()
     novas = atualizadas = 0
@@ -102,7 +118,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
             for p in db.scalars(select(Peca).where(Peca.obra_id == obra.id, Peca.fabricada.is_(False))):
                 if p.codigo not in codigos:
                     p.fabricada, p.origem_fabricacao = True, "saiu_lista"
-                    p.data_baixa = hoje
+                    p.data_baixa = baixa
                     p.atualizada_em = datetime.now()
                     saiu_lista += 1
     imp = Importacao(arquivo=arquivo, tipo=tipo, resumo=dict(
