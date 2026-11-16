@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Entrar | PCP Naves</title>
+<link rel="stylesheet" href="/static/app.css"></head>
+<body>
+<form class="login" method="post" action="/login">
+  <h1>PCP Naves</h1>
+  {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+  <label for="senha">Senha de acesso<input id="senha" type="password" name="senha" autofocus required></label>
+  <p><button type="submit" style="width:100%">Entrar</button></p>
+</form>
+</body>
+</html>

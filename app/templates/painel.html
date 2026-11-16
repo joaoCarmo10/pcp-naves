@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block titulo %}Avanço das obras | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Avanço físico das obras</h1>
+<p class="sub">Peças fabricadas segundo o Plannix. A barra mostra fabricado (verde), programado (azul) e sem programação (vermelho). Volume do Plannix; quando a exportação não traz, estimado por seção x comprimento.</p>
+{% if not linhas %}
+<div class="vazio">Nenhuma obra ainda. Comece em <a href="/importar">Importar dados</a> com a exportação do Plannix.</div>
+{% else %}
+<div class="cartoes">
+{% for l in linhas %}{% set r = l.r %}
+  <a class="cartao" href="/obras/{{ l.obra.id }}" style="color:inherit;text-decoration:none">
+    <h3>{{ l.obra.nome }}{% if l.obra.prioridade %} <span class="meta">· prioridade {{ l.obra.prioridade }}</span>{% endif %}</h3>
+    <div class="barra" title="Fabricado {{ r.pct|pct }}">
+      <i style="width:{{ 100*r.fabricadas/r.pecas }}%;background:var(--fab)"></i>
+      <i style="width:{{ 100*r.programadas/r.pecas }}%;background:var(--prog)"></i>
+      <i style="width:{{ 100*r.falta/r.pecas }}%;background:var(--falta)"></i>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b>{{ r.pct|pct }}</b><span>peças fabricadas</span></div>
+      <div class="kpi"><b>{{ r.pct_vol|pct }}</b><span>do volume</span></div>
+      <div class="kpi"><b>{{ r.fabricadas }}/{{ r.pecas }}</b><span>peças</span></div>
+    </div>
+    <span class="meta">{{ l.obra.sigla }} · {{ l.plantas }} planta{{ 's' if l.plantas != 1 }} cadastrada{{ 's' if l.plantas != 1 }}</span>
+  </a>
+{% endfor %}
+</div>
+{% endif %}
+{% if ocultas %}<p class="sub" style="margin-top:18px">Obras ocultas: {% for o in ocultas %}<a href="/obras/{{ o.id }}">{{ o.nome }}</a>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% endblock %}

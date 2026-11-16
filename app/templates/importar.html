@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block titulo %}Importar dados | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Importar dados</h1>
+<p class="sub">Exportação do Plannix (.xls, completa ou lista "a realizar") ou planilha de programação do PCP (.xlsx).</p>
+{% if msg %}<div class="aviso ok">{{ msg }}</div>{% endif %}
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+<form class="linha" method="post" enctype="multipart/form-data">
+  <label for="arquivo">Arquivo<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv" required></label>
+  <button type="submit">Importar</button>
+</form>
+<h2>Como cada arquivo é lido</h2>
+<table class="t" style="max-width:980px">
+  <tr><th>Arquivo</th><th>O que o sistema faz</th></tr>
+  <tr><td>Exportação completa do Plannix</td><td>Cadastra as peças e grava a data de fabricação de cada uma.</td></tr>
+  <tr><td>Lista "a realizar" do Plannix</td><td>Atualiza as peças pendentes. Peça da mesma obra que saiu da lista passa a contar como fabricada.</td></tr>
+  <tr><td>Programação do PCP (.xlsx, abas N1 + N3 e N2)</td><td>Marca as peças programadas e a data prevista. Substitui a programação anterior.</td></tr>
+</table>
+<h2>Últimas importações</h2>
+{% if imps %}
+<table class="t" style="max-width:980px">
+  <tr><th>Data</th><th>Arquivo</th><th>Tipo</th><th>Resumo</th></tr>
+  {% for i in imps %}
+  <tr><td>{{ i.criada_em.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ i.arquivo }}</td>
+      <td>{{ {'completa':'Completa','a_realizar':'A realizar','programacao':'Programação'}[i.tipo] }}</td>
+      <td>{{ i.resumo.linhas }} linhas{% if i.resumo.obras %} · {{ i.resumo.obras|join(', ') }}{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<div class="vazio">Nenhuma importação ainda.</div>{% endif %}
+{% endblock %}

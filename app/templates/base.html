@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}PCP Naves{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topo">
+  <span class="marca">PCP NAVES</span>
+  <nav>
+    <a href="/" class="{{ 'ativo' if request.url.path == '/' }}">Avanço das obras</a>
+    <a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}">Importar dados</a>
+  </nav>
+  <span class="base">Base Plannix: {{ base }}</span>
+  <a href="/sair" style="color:#c4d0e3;font-size:12px">Sair</a>
+</header>
+<main>{% block corpo %}{% endblock %}</main>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block titulo %}{{ o.nome }} · {{ p.titulo }} | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin-bottom:4px"><a href="/">Avanço das obras</a> › <a href="/obras/{{ o.id }}">{{ o.nome }}</a> ›</p>
+<div style="display:flex;align-items:end;gap:16px;flex-wrap:wrap;margin-bottom:10px">
+  <div style="flex:1"><h1>{{ p.titulo }}</h1>
+    <div class="legenda">{% for k, lab in LEGENDA %}<span><i class="chip" style="background:{{ CORES[k] }}"></i>{{ lab }}</span>{% endfor %}</div></div>
+  <div class="kpis">
+    <div class="kpi"><b>{{ r.pct|pct }}</b><span>peças ({{ r.fabricadas }}/{{ r.pecas }})</span></div>
+    <div class="kpi"><b>{{ r.pct_vol|pct }}</b><span>volume</span></div>
+    <div class="kpi"><b>{{ r.programadas }}</b><span>programadas</span></div>
+  </div>
+  <a class="botao" href="/plantas/{{ p.id }}/a2.pdf" target="_blank">Gerar PDF A2</a>
+</div>
+<div class="planta-layout">
+  <div class="visor" id="visor">
+    <div class="ctrl"><button type="button" data-z="1.25" aria-label="Aproximar">+</button><button type="button" data-z="0.8" aria-label="Afastar">−</button><button type="button" id="ajustar">Ajustar</button></div>
+    <div class="palco" id="palco" style="width:{{ w }}px;height:{{ h }}px">
+      <img src="/plantas/{{ p.id }}/imagem" width="{{ w }}" height="{{ h }}" alt="Planta {{ p.titulo }}">
+      <svg viewBox="0 0 {{ w }} {{ h }}" width="{{ w }}" height="{{ h }}">
+        {% for m in marcas %}<rect data-p="{{ m.p }}" x="{{ m.x }}" y="{{ m.y }}" width="{{ m.w }}" height="{{ m.h }}" fill="{{ CORES[m.s] }}" stroke="{{ CORES[m.s] }}"><title>{{ m.p }}</title></rect>{% endfor %}
+      </svg>
+    </div>
+  </div>
+  <div class="lado">
+    <div class="linha" style="display:flex;gap:8px">
+      <input type="search" id="busca" placeholder="Buscar peça" aria-label="Buscar peça" style="flex:1">
+      <select id="filtro" aria-label="Filtrar por status"><option value="">Todos os status</option>{% for k, lab in LEGENDA %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select>
+    </div>
+    <div class="rolagem">
+      <table class="t" id="tabela">
+        <thead><tr><th>Peça</th><th>Produto</th><th class="n">Qtd</th><th class="n">Fab.</th><th class="n">Prog.</th><th class="n">Falta</th><th>Datas prog.</th></tr></thead>
+        <tbody>
+        {% for s in linhas %}
+          <tr data-p="{{ s.peca }}" data-s="{{ s.status }}"><td><i class="chip" style="background:{{ CORES[s.status] }}"></i>{{ s.peca }}</td><td>{{ s.produto }}</td>
+            <td class="n">{{ s.total }}</td><td class="n">{{ s.fabricadas or '-' }}</td><td class="n">{{ s.programadas or '-' }}</td><td class="n">{{ s.falta or '-' }}</td>
+            <td>{% for d in s.datas[:3] %}{{ d|dm }}{{ ', ' if not loop.last }}{% endfor %}{{ '…' if s.datas|length > 3 }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const visor=document.getElementById('visor'), palco=document.getElementById('palco');
+  const W={{ w }}, H={{ h }};
+  let z=1, x=0, y=0;
+  function aplicar(){palco.style.transform=`translate(${x}px,${y}px) scale(${z})`;}
+  function ajustar(){const r=visor.getBoundingClientRect(); z=Math.min(r.width/W,r.height/H); x=(r.width-W*z)/2; y=(r.height-H*z)/2; aplicar();}
+  function zoomEm(f,cx,cy){const nz=Math.min(4,Math.max(0.1,z*f)); x=cx-(cx-x)*nz/z; y=cy-(cy-y)*nz/z; z=nz; aplicar();}
+  visor.addEventListener('wheel',e=>{e.preventDefault(); const r=visor.getBoundingClientRect(); zoomEm(e.deltaY<0?1.15:0.87,e.clientX-r.left,e.clientY-r.top);},{passive:false});
+  let arr=null;
+  palco.addEventListener('pointerdown',e=>{if(e.target.tagName==='rect')return; arr={sx:e.clientX-x,sy:e.clientY-y}; palco.classList.add('arrastando'); palco.setPointerCapture(e.pointerId);});
+  palco.addEventListener('pointermove',e=>{if(!arr)return; x=e.clientX-arr.sx; y=e.clientY-arr.sy; aplicar();});
+  palco.addEventListener('pointerup',()=>{arr=null; palco.classList.remove('arrastando');});
+  document.querySelectorAll('.ctrl [data-z]').forEach(b=>b.onclick=()=>{const r=visor.getBoundingClientRect(); zoomEm(+b.dataset.z,r.width/2,r.height/2);});
+  document.getElementById('ajustar').onclick=ajustar;
+  window.addEventListener('resize',ajustar); ajustar();
+  const linhas=[...document.querySelectorAll('#tabela tbody tr')], rects=[...palco.querySelectorAll('rect')];
+  function destacar(p){rects.forEach(r=>r.classList.toggle('dest',r.dataset.p===p)); linhas.forEach(l=>l.classList.toggle('sel',l.dataset.p===p));}
+  linhas.forEach(l=>{l.addEventListener('mouseenter',()=>destacar(l.dataset.p)); l.addEventListener('click',()=>{
+    destacar(l.dataset.p); const r=rects.find(r=>r.dataset.p===l.dataset.p); if(!r)return;
+    const b=visor.getBoundingClientRect(); z=Math.max(z,0.6); x=b.width/2-(+r.getAttribute('x'))*z; y=b.height/2-(+r.getAttribute('y'))*z; aplicar();});});
+  rects.forEach(r=>r.addEventListener('click',()=>{destacar(r.dataset.p); const l=linhas.find(l=>l.dataset.p===r.dataset.p); if(l)l.scrollIntoView({block:'center'});}));
+  const busca=document.getElementById('busca'), filtro=document.getElementById('filtro');
+  function filtrar(){const q=busca.value.trim().toUpperCase(), s=filtro.value;
+    linhas.forEach(l=>l.hidden=!((!q||l.dataset.p.toUpperCase().includes(q))&&(!s||l.dataset.s===s)));
+    rects.forEach(r=>r.style.display=(!s||linhas.find(l=>l.dataset.p===r.dataset.p)?.dataset.s===s)&&(!q||r.dataset.p.toUpperCase().includes(q))?'':'none');}
+  busca.oninput=filtrar; filtro.onchange=filtrar;
+})();
+</script>
+{% endblock %}

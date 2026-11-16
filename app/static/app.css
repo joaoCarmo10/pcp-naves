@@ -1,0 +1,62 @@
+:root{--azul:#1f3864;--azul2:#2f5597;--fundo:#f4f6f8;--linha:#d9dee5;--texto:#1d232b;--suave:#5f6b7a;--branco:#fff;
+  --fab:#4caf50;--parc:#ffbf00;--prog:#4582d9;--falta:#e53935}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:"Segoe UI",Calibri,Roboto,Arial,sans-serif;font-size:14px;color:var(--texto);background:var(--fundo)}
+a{color:var(--azul2);text-decoration:none}a:hover{text-decoration:underline}
+header.topo{background:var(--azul);color:#fff;display:flex;align-items:center;gap:24px;padding:0 20px;height:52px}
+header.topo .marca{font-weight:700;letter-spacing:.04em}
+header.topo nav{display:flex;gap:4px;flex:1}
+header.topo nav a{color:#dbe4f3;padding:8px 12px;border-radius:6px}
+header.topo nav a:hover,header.topo nav a.ativo{background:rgba(255,255,255,.12);color:#fff;text-decoration:none}
+header.topo .base{font-size:12px;color:#c4d0e3}
+main{padding:20px;max-width:1500px;margin:0 auto}
+h1{font-size:22px;margin:0 0 4px;color:var(--azul)}
+h2{font-size:16px;margin:24px 0 10px;color:var(--azul)}
+.sub{color:var(--suave);margin:0 0 18px}
+.cartoes{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.cartao{background:var(--branco);border:1px solid var(--linha);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.cartao h3{margin:0;font-size:16px}
+.cartao .meta{font-size:12px;color:var(--suave)}
+.barra{height:8px;background:#e7ebf0;border-radius:4px;overflow:hidden;display:flex}
+.barra i{display:block;height:100%}
+.kpis{display:flex;gap:18px;flex-wrap:wrap}
+.kpi b{display:block;font-size:22px;color:var(--azul);font-variant-numeric:tabular-nums}
+.kpi span{font-size:12px;color:var(--suave)}
+table.t{width:100%;border-collapse:collapse;background:var(--branco);font-variant-numeric:tabular-nums}
+table.t th{background:var(--azul);color:#fff;font-weight:600;font-size:12px;text-align:left;padding:7px 8px;position:sticky;top:0;z-index:1}
+table.t td{border-bottom:1px solid var(--linha);padding:5px 8px;font-size:13px}
+#tabela td:first-child{white-space:nowrap}
+table.t td.n,table.t th.n{text-align:right}
+table.t tr:hover td{background:#eef3fb}
+table.t tr.sel td{background:#fff3c4}
+.chip{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.legenda{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--suave)}
+form.linha{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--suave)}
+input[type=text],input[type=password],input[type=number],input[type=search],select{font:inherit;padding:7px 9px;border:1px solid var(--linha);border-radius:6px;background:#fff;color:var(--texto)}
+button,.botao{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--azul2);background:var(--azul2);color:#fff;cursor:pointer;display:inline-block}
+button.sec,.botao.sec{background:#fff;color:var(--azul2)}
+button.perigo{background:#fff;color:#b3261e;border-color:#e3a6a2}
+button:hover,.botao:hover{filter:brightness(1.08);text-decoration:none}
+.aviso{padding:10px 14px;border-radius:6px;margin-bottom:14px}
+.aviso.ok{background:#e6f4ea;border:1px solid #b7dfc3}
+.aviso.erro{background:#fdecea;border:1px solid #f3b8b3}
+.vazio{padding:28px;text-align:center;color:var(--suave);background:#fff;border:1px dashed var(--linha);border-radius:8px}
+/* visualizador de planta */
+.planta-layout{display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:14px;height:calc(100vh - 150px)}
+.visor{position:relative;background:#fff;border:1px solid var(--linha);border-radius:8px;overflow:hidden}
+.visor .palco{position:absolute;transform-origin:0 0;cursor:grab}
+.visor .palco.arrastando{cursor:grabbing}
+.visor img{display:block;user-select:none;-webkit-user-drag:none}
+.visor svg{position:absolute;inset:0}
+.visor svg rect{fill-opacity:.38;stroke-width:3;cursor:pointer}
+.visor svg rect.dest{fill-opacity:.8;stroke:#111;stroke-width:6}
+.visor .ctrl{position:absolute;right:10px;top:10px;display:flex;gap:4px;z-index:2}
+.visor .ctrl button{padding:4px 10px;background:#fff;color:var(--azul);border-color:var(--linha)}
+.lado{display:flex;flex-direction:column;gap:10px;min-height:0}
+.lado .rolagem{overflow:auto;border:1px solid var(--linha);border-radius:8px;flex:1}
+@media (max-width:1000px){.planta-layout{grid-template-columns:1fr;height:auto}.visor{height:70vh}.lado .rolagem{max-height:60vh}}
+.login{max-width:340px;margin:12vh auto;background:#fff;border:1px solid var(--linha);border-radius:10px;padding:26px}
+.login h1{margin-bottom:16px}
+:focus-visible{outline:2px solid var(--azul2);outline-offset:2px}

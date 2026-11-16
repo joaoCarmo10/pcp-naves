@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block titulo %}{{ o.nome }} | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin-bottom:4px"><a href="/">Avanço das obras</a> ›</p>
+<h1>{{ o.nome }}</h1>
+<p class="sub">{{ o.nome_plannix }}</p>
+<div class="kpis" style="margin-bottom:8px">
+  <div class="kpi"><b>{{ r.pct|pct }}</b><span>peças fabricadas ({{ r.fabricadas }} de {{ r.pecas }})</span></div>
+  <div class="kpi"><b>{{ r.pct_vol|pct }}</b><span>do volume ({{ r.volume_fab|num }} de {{ r.volume|num }} m³)</span></div>
+  <div class="kpi"><b>{{ r.programadas }}</b><span>programadas</span></div>
+  <div class="kpi"><b>{{ r.falta }}</b><span>sem programação</span></div>
+</div>
+
+<h2>Plantas</h2>
+{% if plantas %}
+<table class="t" style="max-width:980px">
+  <tr><th>Planta</th><th class="n">Peças</th><th class="n">Fabricadas</th><th class="n">% peças</th><th class="n">% volume</th><th></th></tr>
+  {% for x in plantas %}
+  <tr><td><a href="/plantas/{{ x.p.id }}">{{ x.p.titulo }}</a></td><td class="n">{{ x.r.pecas }}</td><td class="n">{{ x.r.fabricadas }}</td>
+      <td class="n">{{ x.r.pct|pct }}</td><td class="n">{{ x.r.pct_vol|pct }}</td>
+      <td style="white-space:nowrap"><a class="botao sec" href="/plantas/{{ x.p.id }}/a2.pdf" target="_blank">PDF A2</a>
+        <form method="post" action="/plantas/{{ x.p.id }}/excluir" style="display:inline" onsubmit="return confirm('Excluir esta planta?')"><button class="perigo">Excluir</button></form></td></tr>
+  {% endfor %}
+</table>
+{% else %}<div class="vazio" style="max-width:980px">Nenhuma planta cadastrada. Envie o PDF da planta de montagem abaixo.</div>{% endif %}
+
+<form class="linha" method="post" action="/obras/{{ o.id }}/plantas" enctype="multipart/form-data" style="margin-top:12px">
+  <label for="titulo">Nome da planta<input id="titulo" type="text" name="titulo" placeholder="Ex.: Pavimento 02" required></label>
+  <label for="arq">PDF do projeto<input id="arq" type="file" name="arquivo" accept=".pdf" required></label>
+  <button type="submit">Enviar planta</button>
+</form>
+
+<h2>Avanço por produto</h2>
+<table class="t" style="max-width:980px">
+  <tr><th>Produto</th><th class="n">Peças</th><th class="n">Fabricadas</th><th class="n">Programadas</th><th class="n">% peças</th><th class="n">Volume (m³)</th><th class="n">% volume</th></tr>
+  {% for p in prod %}
+  <tr><td>{{ p.produto }}</td><td class="n">{{ p.total }}</td><td class="n">{{ p.fab }}</td><td class="n">{{ p.prog }}</td><td class="n">{{ p.pct|pct }}</td>
+      <td class="n">{{ p.vol|num }}</td><td class="n">{{ (p.volf/p.vol if p.vol else 0)|pct }}</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Dados da obra</h2>
+<form class="linha" method="post" action="/obras/{{ o.id }}">
+  <label for="nome">Nome curto<input id="nome" type="text" name="nome" value="{{ o.nome }}" required></label>
+  <label for="prio">Prioridade<input id="prio" type="number" name="prioridade" min="1" max="99" value="{{ o.prioridade or '' }}" style="width:110px"></label>
+  <label style="flex-direction:row;align-items:center;gap:6px;color:var(--texto)"><input type="checkbox" name="ativa" value="1" {{ 'checked' if o.ativa }}> Mostrar no painel</label>
+  <button class="sec" type="submit">Salvar</button>
+</form>
+{% endblock %}
