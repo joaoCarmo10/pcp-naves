@@ -123,7 +123,7 @@ class Linha:
 
 
 def classificar(item: ItemProg, peca: Peca | None, ap: Apontamento | None, hoje: date, obra_acompanhada: bool = True) -> tuple[str, date | None]:
-    """Prioridade: data do Plannix > saiu da lista a realizar > apontamento do PCP > pendente.
+    """Registro de produção = data de fabricação (concretagem) do Plannix. Sem ela: apontamento do PCP > data a confirmar > pendente.
     Código que não existe na base, de obra acompanhada, já tinha saído da lista a realizar: conta como feito, data a confirmar."""
     if peca is None and item.codigo:
         if ap and ap.realizado in ("S", "N"):
@@ -132,9 +132,8 @@ def classificar(item: ItemProg, peca: Peca | None, ap: Apontamento | None, hoje:
     if peca and peca.fabricada and peca.data_fabricacao:
         return ("NO PRAZO" if peca.data_fabricacao <= item.data else "COM ATRASO"), peca.data_fabricacao
     if peca and peca.fabricada:
+        # saiu da lista 'a realizar' sem data de concretagem no Plannix: feita, mas o prazo só se mede com a data
         if ap and ap.realizado == "S":
-            return "NO PRAZO", None
-        if peca.data_baixa and peca.data_baixa <= item.data:
             return "NO PRAZO", None
         return "DATA A CONFIRMAR", None
     if ap and ap.realizado == "S":

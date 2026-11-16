@@ -22,7 +22,7 @@
   <div class="kpi"><b>{{ tot['NÃO REALIZADA'] }}</b><span>não realizadas</span></div>
   <div class="kpi"><b>{{ tot.ppc|pct if tot.ppc is not none else '-' }}</b><span>PPC do dia</span></div>
 </div>
-<p class="sub">Marque S quando a peça for concretada e N quando não sair, com a causa. O Plannix prevalece quando tiver a data de fabricação.</p>
+<p class="sub">Marque S quando a peça for concretada e N quando não sair, com a causa. A data de concretagem do Plannix é o registro oficial e prevalece sobre o apontamento.</p>
 {% for nave, formas in grupos|dictsort %}
 <div class="grupo-nave">{{ {'N1':'NAVE 1','N2':'NAVE 2','N3':'NAVE 3'}.get(nave, 'SEM NAVE') }}</div>
 <div class="rolagem-x"><table class="t">
