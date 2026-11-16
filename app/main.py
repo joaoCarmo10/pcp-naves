@@ -1,7 +1,10 @@
 import hmac
+import io
 import os
+import re
 import secrets
 import unicodedata
+import zipfile
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -98,6 +101,13 @@ def importar_form(request: Request, db: Session = Depends(get_db)):
 async def importar(arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
     conteudo = await arquivo.read()
     nome = arquivo.filename or "arquivo"
+    if nome.lower().endswith(".zip"):
+        try:
+            msg = importar_pacote(db, conteudo)
+        except (ValueError, zipfile.BadZipFile) as e:
+            db.rollback()
+            return RedirectResponse(f"/importar?erro={quote(str(e))}", status_code=303)
+        return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
     (DATA_DIR / "importacoes" / f"{date.today():%Y%m%d}_{secrets.token_hex(3)}_{Path(nome).name}").write_bytes(conteudo)
     try:
         if nome.lower().endswith(".xlsx"):
@@ -112,6 +122,63 @@ async def importar(arquivo: UploadFile = File(...), db: Session = Depends(get_db
         db.rollback()
         return RedirectResponse(f"/importar?erro={quote(str(e))}", status_code=303)
     return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
+
+
+def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
+    rel = f"plantas/{o.sigla}_{secrets.token_hex(4)}.pdf"
+    destino = DATA_DIR / rel
+    destino.write_bytes(dados)
+    try:
+        e = plantas.extrair(destino)
+    except Exception:
+        destino.unlink(missing_ok=True)
+        raise ValueError(f"Não consegui ler o PDF '{titulo}'. Confira se é o PDF vetorial do projeto (não escaneado).")
+    ordem = (db.scalar(select(func.max(Planta.ordem)).where(Planta.obra_id == o.id)) or 0) + 1
+    p = Planta(obra_id=o.id, titulo=titulo.strip()[:120], ordem=ordem, arquivo=rel, largura=e["largura"], altura=e["altura"],
+               rotacao=e["rotacao"], marcas=e["marcas"])
+    db.add(p)
+    db.commit()
+    return p
+
+
+def importar_pacote(db: Session, conteudo: bytes) -> str:
+    """Pacote .zip: plannix/*.xls (completas primeiro, depois a realizar), programacao/*.xlsx (em ordem de nome)
+    e plantas/<sigla da obra>/<título>.pdf. Planta com o mesmo título na obra é substituída."""
+    z = zipfile.ZipFile(io.BytesIO(conteudo))
+    nomes = sorted(n for n in z.namelist() if not n.endswith("/") and "__MACOSX" not in n)
+    xls = [n for n in nomes if n.lower().endswith((".xls", ".txt", ".csv"))]
+    progs = [n for n in nomes if n.lower().endswith(".xlsx")]
+    pdfs = [n for n in nomes if n.lower().endswith(".pdf")]
+    if not (xls or progs or pdfs):
+        raise ValueError("O pacote não tem arquivos .xls, .xlsx ou .pdf.")
+    completas, listas = [], []
+    for n in xls:
+        df = plannix.ler_exportacao(z.read(n))
+        tem_data = "Data Fabricação" in df.columns and df["Data Fabricação"].map(plannix._data).notna().any()
+        (completas if tem_data else listas).append(n)
+    feitos = []
+    for n in completas + listas:
+        plannix.importar_exportacao(db, z.read(n), Path(n).name)
+        feitos.append(Path(n).name)
+    for n in progs:
+        pg.importar_programacao(db, z.read(n), Path(n).name)
+        feitos.append(Path(n).name)
+    np_ = 0
+    for n in pdfs:
+        partes = Path(n).parts
+        sigla = partes[-2] if len(partes) >= 2 else ""
+        o = db.scalar(select(Obra).where(Obra.sigla == sigla))
+        if not o:
+            raise ValueError(f"Planta '{n}': a pasta deve ter a sigla da obra no Plannix (ex.: plantas/8246/...). Obra '{sigla}' não encontrada.")
+        titulo = re.sub(r"^\d+\s*[-_.]\s*", "", Path(n).stem)
+        for velha in [p for p in o.plantas if p.titulo == titulo]:
+            (DATA_DIR / velha.arquivo).unlink(missing_ok=True)
+            (DATA_DIR / "cache" / f"planta_{velha.id}.png").unlink(missing_ok=True)
+            db.delete(velha)
+        db.commit()
+        _salvar_planta(db, o, titulo, z.read(n))
+        np_ += 1
+    return f"Pacote importado: {len(completas)} exportações completas, {len(listas)} listas a realizar, {len(progs)} programações e {np_} plantas."
 
 
 @app.get("/obras/{obra_id}", response_class=HTMLResponse)
@@ -140,18 +207,10 @@ async def planta_upload(obra_id: int, titulo: str = Form(...), arquivo: UploadFi
     o = db.get(Obra, obra_id) or _404()
     if not (arquivo.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Envie a planta em PDF.")
-    rel = f"plantas/{o.sigla}_{secrets.token_hex(4)}.pdf"
-    destino = DATA_DIR / rel
-    destino.write_bytes(await arquivo.read())
     try:
-        e = plantas.extrair(destino)
-    except Exception:
-        destino.unlink(missing_ok=True)
-        raise HTTPException(400, "Não consegui ler o PDF. Confira se é o PDF vetorial do projeto (não escaneado).")
-    ordem = (db.scalar(select(func.max(Planta.ordem)).where(Planta.obra_id == o.id)) or 0) + 1
-    db.add(Planta(obra_id=o.id, titulo=titulo.strip()[:120], ordem=ordem, arquivo=rel, largura=e["largura"], altura=e["altura"],
-                  rotacao=e["rotacao"], marcas=e["marcas"]))
-    db.commit()
+        _salvar_planta(db, o, titulo, await arquivo.read())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return RedirectResponse(f"/obras/{obra_id}", status_code=303)
 
 
@@ -260,6 +319,10 @@ def programacao_quadro(request: Request, rev: int | None = None, db: Session = D
 
 @app.get("/pxr", response_class=HTMLResponse)
 def pxr(request: Request, rev: int | None = None, de: str | None = None, ate: str | None = None, db: Session = Depends(get_db)):
+    if rev is None:
+        # abre na revisão mais recente que já tem dia passado para medir
+        rev = db.scalar(select(RevisaoProg.id).where(RevisaoProg.inicio < date.today())
+                        .order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
     r = _rev(db, rev)
     if not r:
         return tpl.TemplateResponse(request, "pxr.html", {"r": None, "revs": [], "base": ultima_base(db)})

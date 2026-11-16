@@ -6,7 +6,7 @@
 {% if msg %}<div class="aviso ok">{{ msg }}</div>{% endif %}
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
 <form class="linha" method="post" enctype="multipart/form-data">
-  <label for="arquivo">Arquivo<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv" required></label>
+  <label for="arquivo">Arquivo<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv,.zip" required></label>
   <button type="submit">Importar</button>
 </form>
 <h2>Como cada arquivo é lido</h2>
@@ -14,7 +14,8 @@
   <tr><th>Arquivo</th><th>O que o sistema faz</th></tr>
   <tr><td>Exportação completa do Plannix</td><td>Cadastra as peças e grava a data de fabricação de cada uma.</td></tr>
   <tr><td>Lista "a realizar" do Plannix</td><td>Atualiza as peças pendentes. Peça da mesma obra que saiu da lista passa a contar como fabricada.</td></tr>
-  <tr><td>Programação do PCP (.xlsx, abas N1 + N3 e N2)</td><td>Marca as peças programadas e a data prevista. Substitui a programação anterior.</td></tr>
+  <tr><td>Programação (.xlsx, abas N1 + N3 e N2)</td><td>Vira uma nova revisão da programação. Aceita a planilha do PCP e a do engenheiro anterior.</td></tr>
+  <tr><td>Pacote (.zip)</td><td>Tudo de uma vez: pasta <b>plannix</b> com as exportações, pasta <b>programacao</b> com as planilhas (importadas em ordem de nome) e pasta <b>plantas/&lt;sigla da obra&gt;</b> com os PDFs. O nome do PDF vira o título da planta.</td></tr>
 </table>
 <h2>Últimas importações</h2>
 {% if imps %}
