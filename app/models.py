@@ -31,6 +31,7 @@ class Peca(Base):
     fabricada: Mapped[bool] = mapped_column(Boolean, default=False)
     data_fabricacao: Mapped[date | None] = mapped_column(Date, nullable=True)
     origem_fabricacao: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'plannix' (com data) ou 'saiu_lista'
+    data_baixa: Mapped[date | None] = mapped_column(Date, nullable=True)                # dia em que saiu da lista "a realizar"
     hora_armacao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     atualizada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="pecas")
@@ -45,7 +46,52 @@ class Importacao(Base):
     resumo: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
-class Programacao(Base):
+class RevisaoProg(Base):
+    """Uma versão da programação (planilha importada). Os itens ficam congelados para o programado x realizado."""
+    __tablename__ = "revisoes_prog"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(200))
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
+    fim: Mapped[date | None] = mapped_column(Date, nullable=True)
+    itens: Mapped[list["ItemProg"]] = relationship(back_populates="revisao", cascade="all, delete-orphan")
+
+
+class ItemProg(Base):
+    __tablename__ = "itens_prog"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    revisao_id: Mapped[int] = mapped_column(ForeignKey("revisoes_prog.id", ondelete="CASCADE"), index=True)
+    data: Mapped[date] = mapped_column(Date, index=True)
+    nave: Mapped[str] = mapped_column(String(4), default="")
+    forma: Mapped[str] = mapped_column(String(80), default="")
+    obra: Mapped[str] = mapped_column(String(80), default="")
+    peca: Mapped[str] = mapped_column(String(60), default="")
+    codigo: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    produto: Mapped[str] = mapped_column(String(40), default="")
+    secao: Mapped[str] = mapped_column(String(40), default="")
+    comprimento: Mapped[float | None] = mapped_column(Float, nullable=True)
+    qtd: Mapped[int] = mapped_column(Integer, default=1)
+    volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tipo: Mapped[str] = mapped_column(String(30), default="")
+    obs: Mapped[str] = mapped_column(String(300), default="")
+    revisao: Mapped[RevisaoProg] = relationship(back_populates="itens")
+    apontamento: Mapped["Apontamento | None"] = relationship(back_populates="item", uselist=False, cascade="all, delete-orphan")
+
+
+class Apontamento(Base):
+    """Apontamento do PCP sobre um item programado: realizado (S/N) e, quando não cumprido, causa e ação."""
+    __tablename__ = "apontamentos"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("itens_prog.id", ondelete="CASCADE"), unique=True)
+    realizado: Mapped[str | None] = mapped_column(String(1), nullable=True)   # 'S', 'N' ou vazio
+    causa: Mapped[str] = mapped_column(String(60), default="")
+    acao: Mapped[str] = mapped_column(String(300), default="")
+    responsavel: Mapped[str] = mapped_column(String(80), default="")
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    item: Mapped[ItemProg] = relationship(back_populates="apontamento")
+
+
+class Programacao(Base):  # legado (versão 1); substituída por RevisaoProg/ItemProg
     __tablename__ = "programacao"
     __table_args__ = (UniqueConstraint("codigo", name="uq_prog_codigo"),)
     id: Mapped[int] = mapped_column(primary_key=True)

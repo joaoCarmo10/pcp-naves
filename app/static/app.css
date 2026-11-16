@@ -60,3 +60,26 @@ button:hover,.botao:hover{filter:brightness(1.08);text-decoration:none}
 .login{max-width:340px;margin:12vh auto;background:#fff;border:1px solid var(--linha);border-radius:10px;padding:26px}
 .login h1{margin-bottom:16px}
 :focus-visible{outline:2px solid var(--azul2);outline-offset:2px}
+/* programação e PxR */
+.st{display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;color:#1d232b;white-space:nowrap}
+.meta{font-size:11px;color:var(--suave)}
+button.sn{padding:2px 9px;margin-right:3px;background:#fff;color:var(--suave);border-color:var(--linha);font-weight:600}
+button.sn.on{background:var(--fab);border-color:var(--fab);color:#fff}
+button.sn.on.n{background:var(--falta);border-color:var(--falta)}
+table.t td select,table.t td input[type=text]{padding:3px 5px;font-size:12px;width:100%;min-width:90px}
+tr.salvo td{background:#e6f4ea!important;transition:background .3s}
+.grupo-nave{margin:18px 0 6px;font-size:13px;font-weight:700;color:var(--azul);letter-spacing:.04em}
+.grupo-forma td{background:#e9eef6!important;font-weight:600;color:var(--azul)}
+.navdias{display:flex;gap:4px;flex-wrap:wrap;margin:10px 0 14px}
+.navdias a{padding:5px 9px;border:1px solid var(--linha);border-radius:6px;background:#fff;font-size:12px;color:var(--texto)}
+.navdias a.ativo{background:var(--azul);color:#fff;border-color:var(--azul)}
+.navdias a.passado{color:var(--suave)}
+.filtros{display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:14px}
+.quadro td.c{text-align:center;min-width:44px;font-weight:600}
+.dois{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:1100px){.dois{grid-template-columns:1fr}}
+.barras{display:flex;align-items:end;gap:6px;height:150px;padding:8px 4px 0;background:#fff;border:1px solid var(--linha);border-radius:8px}
+.barras .b{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:end;height:100%;font-size:10px;color:var(--suave)}
+.barras .b .col{width:70%;display:flex;flex-direction:column-reverse;border-radius:3px 3px 0 0;overflow:hidden}
+.barras .b span{margin-top:3px;white-space:nowrap}
+.rolagem-x{overflow:auto}

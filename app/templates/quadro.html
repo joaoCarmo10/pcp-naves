@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}Quinzena por fôrma | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin-bottom:4px"><a href="/programacao?rev={{ r.id }}">Programação</a> ›</p>
+<div class="filtros">
+  <div style="flex:1"><h1>Quinzena por fôrma</h1>
+    <p class="sub" style="margin:0">Peças programadas por fôrma e dia. Cor dos dias já passados: verde = tudo feito, amarelo = parte, vermelho = nada.</p></div>
+  <form method="get"><label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
+    {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }}</option>{% endfor %}</select></label></form>
+</div>
+<div class="rolagem-x" style="max-height:calc(100vh - 210px)">
+<table class="t quadro">
+  <thead><tr><th>Fôrma</th>{% for d in dias %}<th class="n"><a href="/programacao?rev={{ r.id }}&dia={{ d }}" style="color:#fff">{{ DIAS[d.weekday()] }}<br>{{ d|dm }}</a></th>{% endfor %}<th class="n">Total</th></tr></thead>
+  <tbody>
+  {% set ns = namespace(nave='') %}
+  {% for nave, f in formas %}
+    {% if nave != ns.nave %}{% set ns.nave = nave %}<tr class="grupo-forma"><td colspan="{{ dias|length + 2 }}">{{ {'N1':'NAVE 1','N2':'NAVE 2','N3':'NAVE 3'}.get(nave, 'SEM NAVE') }}</td></tr>{% endif %}
+    {% set tot = namespace(n=0) %}
+    <tr><td style="white-space:nowrap">{{ f }}</td>
+    {% for d in dias %}{% set c = cel.get((f, d)) %}
+      {% if c %}{% set tot.n = tot.n + c.n %}
+        {% set feito = c.ok / (c.n - c.pend) if c.n > c.pend else none %}
+        <td class="c" style="background:{{ '#ffffff' if feito is none else ('#c6efce' if feito >= 1 else ('#ffe699' if feito > 0 else '#f8cbad')) }}">{{ c.n }}</td>
+      {% else %}<td class="c"></td>{% endif %}
+    {% endfor %}
+    <td class="n"><b>{{ tot.n }}</b></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

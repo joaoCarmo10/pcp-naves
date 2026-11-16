@@ -78,3 +78,48 @@ def test_importacao_status_planta(cliente, tmp_path):
     d = pymupdf.open(stream=a2.content, filetype="pdf")
     assert round(d[0].rect.width) == 1684 and round(d[0].rect.height) == 1191   # A2 paisagem
     assert cliente.get("/").status_code == 200 and cliente.get(f"/obras/{obra.id}").status_code == 200
+
+
+def prog_xlsx():
+    from datetime import date
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "N1 + N3"
+    ws.append(["PROGRAMAÇÃO"])
+    ws.append([])
+    ws.append([])
+    ws.append([])
+    ws.append(["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (m)", "QTD", "VOL. (m³)", "PAVIMENTO", "ARMAÇÃO", "TIPO", "ADAPTAÇÃO", "OBSERVAÇÃO", "REALIZADO"])
+    ws.append([date(2026, 11, 9), "SEG", "N1 - F1 30x80 (30m)", "9999-OBRA-TESTE", "VR1", "1001", "VIGA", "20x60", 5, 1, None, None, None, "PCP", None, None, None])   # fab 10/11: atraso
+    ws.append([date(2026, 11, 10), "TER", "N1 - F1 30x80 (30m)", "9999-OBRA-TESTE", "VR1", "1002", "VIGA", "20x60", 5, 1, None, None, None, "PCP", None, None, None])  # saiu da lista
+    ws.append([date(2026, 11, 10), "TER", "N3 - F4 60x60 (18m)", "9999-OBRA-TESTE", "P1", "1003", "PILAR", "40x40", 8, 1, None, None, None, "PCP", None, None, "N"])
+    ws.append([date(2099, 1, 5), "SEG", "N3 - NEW JERSEY", "New Jersey", "NJ-180 (13 un.)", None, "NEW JERSEY", "38x80x180", 1.8, 13, None, None, None, "FIXA", None, None, None])
+    wb.create_sheet("N2")
+    b = BytesIO()
+    wb.save(b)
+    return b.getvalue()
+
+
+def test_programacao_pxr(cliente):
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/importar", files={"arquivo": ("a_realizar.xls", A_REALIZAR)})
+    r = cliente.post("/importar", files={"arquivo": ("Rev01.xlsx", prog_xlsx())}, follow_redirects=False)
+    assert "erro" not in r.headers["location"]
+    from datetime import date
+    from app import programacao as pg
+    from app.db import SessionLocal
+    db = SessionLocal()
+    rev = pg.revisao_atual(db)
+    st = {l.item.codigo or l.item.peca: l.status for l in pg.linhas(db, rev, hoje=date(2026, 11, 16))}
+    assert st["1001"] == "COM ATRASO" and st["1002"] == "DATA A CONFIRMAR" and st["1003"] == "NÃO REALIZADA"
+    assert st["NJ-180 (13 un.)"] == "PENDENTE"
+    it = next(l.item for l in pg.linhas(db, rev) if l.item.codigo == "1003")
+    j = cliente.post(f"/apontamentos/{it.id}", json={"realizado": "S"}).json()
+    assert j["status"] == "NO PRAZO"
+    cliente.post(f"/apontamentos/{it.id}", json={"realizado": "N", "causa": "Armação", "acao": "Antecipar armação", "responsavel": "Encarregado N3"})
+    html = cliente.get(f"/pxr?rev={rev.id}&de=2026-11-09&ate=2026-11-10").text
+    assert "Armação" in html and "Antecipar armação" in html
+    for u in ["/programacao", f"/programacao?rev={rev.id}&dia=2026-11-10", f"/programacao/quadro?rev={rev.id}"]:
+        assert cliente.get(u).status_code == 200

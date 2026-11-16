@@ -38,3 +38,12 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def migrar():
+    """Ajustes de esquema que o create_all não faz (colunas novas em tabelas existentes)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "pecas" in insp.get_table_names() and "data_baixa" not in {c["name"] for c in insp.get_columns("pecas")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE pecas ADD COLUMN data_baixa DATE"))

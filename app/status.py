@@ -7,7 +7,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Peca, Programacao
+from .models import Peca
 
 CORES = {  # RGB 0-1 para o PDF e hex para a tela
     "FAB": ((0.30, 0.69, 0.31), "#4caf50"),
@@ -63,7 +63,8 @@ def volume_estimado(p: Peca, vol_nome: dict[str, float]) -> float:
 
 
 def status_da_obra(db: Session, obra_id: int) -> dict[str, StatusPeca]:
-    prog = {p.codigo: p.data for p in db.scalars(select(Programacao))}
+    from .programacao import codigos_programados
+    prog = codigos_programados(db)
     pecas = list(db.scalars(select(Peca).where(Peca.obra_id == obra_id)))
     vol_nome = {p.peca: p.volume for p in pecas if p.volume}
     out: dict[str, StatusPeca] = {}

@@ -11,11 +11,14 @@
   <span class="marca">PCP NAVES</span>
   <nav>
     <a href="/" class="{{ 'ativo' if request.url.path == '/' }}">Avanço das obras</a>
+    <a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}">Programação</a>
+    <a href="/pxr" class="{{ 'ativo' if request.url.path.startswith('/pxr') }}">Programado x realizado</a>
     <a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}">Importar dados</a>
   </nav>
   <span class="base">Base Plannix: {{ base }}</span>
   <a href="/sair" style="color:#c4d0e3;font-size:12px">Sair</a>
 </header>
 <main>{% block corpo %}{% endblock %}</main>
+{% block scripts %}{% endblock %}
 </body>
 </html>

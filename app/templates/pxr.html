@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% import "_apont.html" as ap %}
+{% block titulo %}Programado x realizado | PCP Naves{% endblock %}
+{% macro tabela(titulo, linhas, rotulo, fmt=None) %}
+<h2>{{ titulo }}</h2>
+<div class="rolagem-x"><table class="t">
+  <tr><th>{{ rotulo }}</th><th class="n">Programadas</th><th class="n">No prazo</th><th class="n">Com atraso</th><th class="n">Data a confirmar</th><th class="n">Não realizadas</th><th class="n">PPC</th><th class="n">Realizado</th></tr>
+  {% for a in linhas %}
+  <tr><td style="white-space:nowrap">{% if fmt == 'dia' %}{{ DIAS[a.chave.weekday()] }} {{ a.chave|dm }}{% elif fmt == 'semana' %}Semana de {{ a.chave|dm }}{% elif fmt == 'nave' %}{{ {'N1':'Nave 1','N2':'Nave 2','N3':'Nave 3'}.get(a.chave, a.chave) }}{% else %}{{ a.chave }}{% endif %}</td>
+    <td class="n">{{ a.prog }}</td><td class="n">{{ a['NO PRAZO'] or '-' }}</td><td class="n">{{ a['COM ATRASO'] or '-' }}</td><td class="n">{{ a['DATA A CONFIRMAR'] or '-' }}</td>
+    <td class="n">{{ a['NÃO REALIZADA'] or '-' }}</td><td class="n"><b>{{ a.ppc|pct if a.ppc is not none else '-' }}</b></td><td class="n">{{ a.feito|pct if a.feito is not none else '-' }}</td></tr>
+  {% endfor %}
+</table></div>
+{% endmacro %}
+{% block corpo %}
+{% if not r %}
+<h1>Programado x realizado</h1>
+<div class="vazio">Nenhuma programação importada. Envie a planilha de programação (.xlsx) em <a href="/importar">Importar dados</a>.</div>
+{% else %}
+<form class="filtros" method="get">
+  <div style="flex:1"><h1>Programado x realizado</h1><p class="sub" style="margin:0">No prazo: fabricada até a data programada. PPC = no prazo ÷ programadas.</p></div>
+  <label for="rev">Revisão<select id="rev" name="rev">{% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }}</option>{% endfor %}</select></label>
+  <label for="de">De<input id="de" type="date" name="de" value="{{ ini }}"></label>
+  <label for="ate">Até<input id="ate" type="date" name="ate" value="{{ fim }}"></label>
+  <button type="submit">Atualizar</button>
+</form>
+<div class="kpis" style="margin-bottom:10px">
+  <div class="kpi"><b>{{ tot.prog }}</b><span>programadas</span></div>
+  <div class="kpi"><b>{{ tot['NO PRAZO'] }}</b><span>no prazo</span></div>
+  <div class="kpi"><b>{{ tot['COM ATRASO'] }}</b><span>com atraso</span></div>
+  <div class="kpi"><b>{{ tot['DATA A CONFIRMAR'] }}</b><span>data a confirmar</span></div>
+  <div class="kpi"><b>{{ tot['NÃO REALIZADA'] }}</b><span>não realizadas</span></div>
+  <div class="kpi"><b>{{ tot.ppc|pct if tot.ppc is not none else '-' }}</b><span>PPC do período</span></div>
+  <div class="kpi"><b>{{ tot.feito|pct if tot.feito is not none else '-' }}</b><span>realizado</span></div>
+</div>
+<div class="legenda" style="margin-bottom:8px">{% for s in STATUS if s != 'PENDENTE' %}<span><i class="chip" style="background:{{ COR_STATUS[s] }}"></i>{{ s|capitalize }}</span>{% endfor %}</div>
+{% set mx = (por_dia|map(attribute='prog')|max) if por_dia else 1 %}
+<div class="barras" aria-label="Peças por dia">
+  {% for a in por_dia %}
+  <div class="b" title="{{ a.chave|dm }}: {{ a.prog }} programadas, PPC {{ a.ppc|pct if a.ppc is not none else '-' }}">
+    <div class="col" style="height:{{ 100 * a.prog / (mx or 1) }}%">
+      {% for s in ['NO PRAZO','COM ATRASO','DATA A CONFIRMAR','NÃO REALIZADA'] %}<i style="display:block;height:{{ 100 * a[s] / (a.prog or 1) }}%;background:{{ COR_STATUS[s] }}"></i>{% endfor %}
+    </div>
+    <span>{{ a.chave|dm }}</span><span><b>{{ a.ppc|pct if a.ppc is not none else '' }}</b></span>
+  </div>
+  {% endfor %}
+</div>
+<div class="dois">
+  <div>{{ tabela('Por semana', por_semana, 'Semana', 'semana') }}{{ tabela('Por nave', por_nave, 'Nave', 'nave') }}</div>
+  <div>{{ tabela('Por obra', por_obra, 'Obra') }}
+    <h2>Causas de não cumprimento</h2>
+    {% if causas %}<table class="t"><tr><th>Causa</th><th class="n">Peças</th><th class="n">%</th></tr>
+      {% set tc = causas|sum(attribute=1) %}
+      {% for c, n in causas %}<tr><td>{{ c }}</td><td class="n">{{ n }}</td><td class="n">{{ (n / tc)|pct }}</td></tr>{% endfor %}</table>
+    {% else %}<div class="vazio">Nenhuma causa registrada. Preencha na lista abaixo.</div>{% endif %}
+  </div>
+</div>
+{{ tabela('Por dia', por_dia, 'Dia', 'dia') }}
+{{ tabela('Por fôrma (pior PPC primeiro, 3 ou mais peças)', por_forma, 'Fôrma') }}
+<h2>Não realizadas e atrasadas ({{ nao|length }})</h2>
+<p class="sub">Registre a causa, a ação e o responsável durante a reunião. Salva sozinho.</p>
+<div class="rolagem-x"><table class="t">
+  <thead>{{ ap.cabecalho(com_data=True) }}</thead>
+  <tbody>{% for l in nao %}{{ ap.linha(l, com_data=True, com_forma=True) }}{% endfor %}</tbody>
+</table></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}{{ ap.script() }}{% endblock %}

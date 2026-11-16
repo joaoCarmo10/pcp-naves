@@ -2,11 +2,12 @@ import hmac
 import os
 import secrets
 import unicodedata
-from datetime import date
+from collections import Counter
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -14,9 +15,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import plannix, plantas
-from .db import DATA_DIR, Base, engine, get_db
-from .models import Importacao, Obra, Peca, Planta
+from . import plannix, plantas, programacao as pg
+from .db import DATA_DIR, Base, engine, get_db, migrar
+from .models import Apontamento, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -29,6 +30,7 @@ tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
 Base.metadata.create_all(engine)
+migrar()
 
 
 def ultima_base(db: Session) -> str:
@@ -99,8 +101,8 @@ async def importar(arquivo: UploadFile = File(...), db: Session = Depends(get_db
     (DATA_DIR / "importacoes" / f"{date.today():%Y%m%d}_{secrets.token_hex(3)}_{Path(nome).name}").write_bytes(conteudo)
     try:
         if nome.lower().endswith(".xlsx"):
-            imp = plannix.importar_programacao(db, conteudo, nome)
-            msg = f"Programação importada: {imp.resumo['linhas']} peças."
+            imp = pg.importar_programacao(db, conteudo, nome)
+            msg = f"Programação importada como nova revisão: {imp.resumo['linhas']} linhas."
         else:
             imp = plannix.importar_exportacao(db, conteudo, nome)
             r = imp.resumo
@@ -197,3 +199,115 @@ def planta_a2(pid: int, db: Session = Depends(get_db)):
 
 def _404():
     raise HTTPException(404, "Não encontrado.")
+
+
+# ======================================================== programação e programado x realizado
+tpl.env.globals.update(CAUSAS=pg.CAUSAS, COR_STATUS=pg.COR_STATUS, DIAS=pg.DIAS, STATUS=pg.STATUS)
+
+
+def _rev(db: Session, rev: int | None) -> RevisaoProg | None:
+    return db.get(RevisaoProg, rev) if rev else pg.revisao_atual(db)
+
+
+def _revisoes(db: Session):
+    return db.scalars(select(RevisaoProg).order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc())).all()
+
+
+def _data(s: str | None) -> date | None:
+    try:
+        return date.fromisoformat(s) if s else None
+    except ValueError:
+        return None
+
+
+@app.get("/programacao", response_class=HTMLResponse)
+def programacao_dia(request: Request, rev: int | None = None, dia: str | None = None, db: Session = Depends(get_db)):
+    r = _rev(db, rev)
+    if not r:
+        return tpl.TemplateResponse(request, "programacao.html", {"r": None, "revs": [], "base": ultima_base(db)})
+    dias = sorted(set(db.scalars(select(ItemProg.data).where(ItemProg.revisao_id == r.id))))
+    d = _data(dia) or date.today()
+    if d not in dias:
+        futuros = [x for x in dias if x >= d]
+        d = futuros[0] if futuros else dias[-1]
+    ls = pg.linhas(db, r, d, d)
+    grupos = {}
+    for l in ls:
+        grupos.setdefault(l.item.nave or "-", {}).setdefault(l.item.forma or "-", []).append(l)
+    i = dias.index(d)
+    return tpl.TemplateResponse(request, "programacao.html", {
+        "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
+        "grupos": grupos, "tot": pg.totais(ls), "hoje": date.today(), "base": ultima_base(db)})
+
+
+@app.get("/programacao/quadro", response_class=HTMLResponse)
+def programacao_quadro(request: Request, rev: int | None = None, db: Session = Depends(get_db)):
+    r = _rev(db, rev)
+    if not r:
+        return RedirectResponse("/programacao", status_code=303)
+    ls = pg.linhas(db, r)
+    dias = sorted({l.item.data for l in ls})
+    formas = sorted({(l.item.nave or "-", l.item.forma or "-") for l in ls})
+    cel = {}
+    for l in ls:
+        c = cel.setdefault((l.item.forma or "-", l.item.data), {"n": 0, "ok": 0, "pend": 0})
+        c["n"] += l.item.qtd
+        c["ok"] += l.item.qtd if l.status in ("NO PRAZO", "COM ATRASO", "DATA A CONFIRMAR") else 0
+        c["pend"] += l.item.qtd if l.status == "PENDENTE" else 0
+    return tpl.TemplateResponse(request, "quadro.html", {"r": r, "revs": _revisoes(db), "dias": dias, "formas": formas, "cel": cel,
+                                                         "hoje": date.today(), "base": ultima_base(db)})
+
+
+@app.get("/pxr", response_class=HTMLResponse)
+def pxr(request: Request, rev: int | None = None, de: str | None = None, ate: str | None = None, db: Session = Depends(get_db)):
+    r = _rev(db, rev)
+    if not r:
+        return tpl.TemplateResponse(request, "pxr.html", {"r": None, "revs": [], "base": ultima_base(db)})
+    hoje = date.today()
+    ini = _data(de) or r.inicio
+    fim = _data(ate) or min(r.fim, hoje - timedelta(days=1))
+    if fim < ini:
+        fim = r.fim
+    ls = pg.linhas(db, r, ini, fim)
+    causas = Counter()
+    for l in ls:
+        if l.ap and l.ap.causa and l.status in ("NÃO REALIZADA", "COM ATRASO"):
+            causas[l.ap.causa] += l.item.qtd
+    nao = [l for l in ls if l.status in ("NÃO REALIZADA", "COM ATRASO")]
+    nao.sort(key=lambda l: (l.status != "NÃO REALIZADA", l.item.obra, l.item.forma, l.item.data))
+    return tpl.TemplateResponse(request, "pxr.html", {
+        "r": r, "revs": _revisoes(db), "ini": ini, "fim": fim, "tot": pg.totais(ls),
+        "por_dia": sorted(pg.agrega(ls, lambda l: l.item.data), key=lambda x: x["chave"]),
+        "por_semana": sorted(pg.agrega(ls, lambda l: l.item.data - timedelta(days=l.item.data.weekday())), key=lambda x: x["chave"]),
+        "por_nave": sorted(pg.agrega(ls, lambda l: l.item.nave or "-"), key=lambda x: x["chave"]),
+        "por_obra": sorted(pg.agrega(ls, lambda l: l.item.obra or "-"), key=lambda x: -x["prog"]),
+        "por_forma": sorted([a for a in pg.agrega(ls, lambda l: l.item.forma or "-") if a["prog"] >= 3], key=lambda x: (x["ppc"] or 0, -x["prog"])),
+        "causas": causas.most_common(), "nao": nao, "base": ultima_base(db)})
+
+
+@app.post("/apontamentos/{item_id}")
+def apontar(item_id: int, dados: dict = Body(...), db: Session = Depends(get_db)):
+    it = db.get(ItemProg, item_id) or _404()
+    ap = it.apontamento or Apontamento(item_id=it.id)
+    if "realizado" in dados:
+        v = (dados["realizado"] or "").upper()
+        ap.realizado = v if v in ("S", "N") else None
+    for k, lim in (("causa", 60), ("acao", 300), ("responsavel", 80)):
+        if k in dados:
+            setattr(ap, k, str(dados[k] or "")[:lim])
+    ap.atualizado_em = datetime.now()
+    db.add(ap)
+    db.commit()
+    db.refresh(it)
+    peca = db.scalar(select(Peca).where(Peca.codigo == it.codigo)) if it.codigo else None
+    acomp = bool(db.scalar(select(Peca.id).join(Obra).where(Obra.nome == it.obra).limit(1)))
+    st, _ = pg.classificar(it, peca, ap, date.today(), acomp)
+    return {"ok": True, "status": st, "cor": pg.COR_STATUS[st]}
+
+
+@app.post("/programacao/revisoes/{rid}/excluir")
+def revisao_excluir(rid: int, db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, rid) or _404()
+    db.delete(r)
+    db.commit()
+    return RedirectResponse("/programacao", status_code=303)

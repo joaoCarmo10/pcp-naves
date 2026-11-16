@@ -5,11 +5,10 @@ import re
 from datetime import date, datetime
 
 import pandas as pd
-from openpyxl import load_workbook
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import Importacao, Obra, Peca, Programacao
+from .models import Importacao, Obra, Peca
 
 NOMES_CURTOS = {
     "8243": "Farol (Hot Park)", "8246": "Elite", "8249": "Bay", "8206": "Cau Biglia", "8239": "Gandú (CBS)",
@@ -95,7 +94,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         if df_:
             p.fabricada, p.data_fabricacao, p.origem_fabricacao = True, df_, "plannix"
         elif tipo == "a_realizar":
-            p.fabricada, p.data_fabricacao, p.origem_fabricacao = False, None, None
+            p.fabricada, p.data_fabricacao, p.origem_fabricacao, p.data_baixa = False, None, None, None
         p.atualizada_em = datetime.now()
     saiu_lista = 0
     if tipo == "a_realizar":
@@ -103,47 +102,12 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
             for p in db.scalars(select(Peca).where(Peca.obra_id == obra.id, Peca.fabricada.is_(False))):
                 if p.codigo not in codigos:
                     p.fabricada, p.origem_fabricacao = True, "saiu_lista"
-                    p.data_fabricacao = p.data_fabricacao or None
+                    p.data_baixa = hoje
                     p.atualizada_em = datetime.now()
                     saiu_lista += 1
     imp = Importacao(arquivo=arquivo, tipo=tipo, resumo=dict(
         linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista,
         obras=sorted(o.nome for o in obras_no_arquivo.values()), data=hoje.isoformat()))
-    db.add(imp)
-    db.commit()
-    return imp
-
-
-def importar_programacao(db: Session, conteudo: bytes, arquivo: str) -> Importacao:
-    """Planilha de programação do PCP (abas 'N1 + N3' e 'N2'): DATA na coluna A, FÔRMA na C, CÓDIGO na F."""
-    wb = load_workbook(io.BytesIO(conteudo), data_only=True, read_only=True)
-    abas = [a for a in ("N1 + N3", "N2") if a in wb.sheetnames]
-    if not abas:
-        raise ValueError("Planilha sem as abas 'N1 + N3' e 'N2' da programação.")
-    linhas = []
-    for aba in abas:
-        ws = wb[aba]
-        cab = None
-        for row in ws.iter_rows(values_only=True):
-            if cab is None:
-                if row and row[0] == "DATA" and "CÓDIGO" in row:
-                    cab = {k: i for i, k in enumerate(row) if k}
-                continue
-            cod = row[cab["CÓDIGO"]]
-            if not cod:
-                continue
-            d = row[cab["DATA"]]
-            linhas.append((str(cod).strip(), d.date() if isinstance(d, datetime) else d, str(row[cab["FÔRMA"]] or "")))
-    if not linhas:
-        raise ValueError("Não encontrei linhas de programação (cabeçalho DATA ... CÓDIGO).")
-    db.query(Programacao).delete()
-    vistos = set()
-    for cod, d, f in linhas:
-        if cod in vistos:
-            continue
-        vistos.add(cod)
-        db.add(Programacao(codigo=cod, data=d, forma=f, revisao=arquivo))
-    imp = Importacao(arquivo=arquivo, tipo="programacao", resumo=dict(linhas=len(vistos), data=date.today().isoformat()))
     db.add(imp)
     db.commit()
     return imp

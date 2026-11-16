@@ -10,6 +10,8 @@ Sistema de acompanhamento da produção da fábrica de pré-fabricados. Primeiro
 - Mostra a planta com zoom e a tabela de peças ao lado (busca, filtro por status, clique na peça para localizar).
 - Gera o PDF em **A2 paisagem** para impressão, com a planta marcada e a tabela de peças.
 - Painel de avanço por obra (peças e m³) e por produto.
+- **Programação**: cada planilha importada vira uma revisão congelada. Tela do dia agrupada por nave e fôrma, com apontamento S/N, causa, ação e responsável; quadro da quinzena por fôrma.
+- **Programado x realizado**: PPC e realizado por dia, semana, nave, obra e fôrma, gráfico diário, causas de não cumprimento e lista das peças não realizadas ou atrasadas para a reunião. Aceita a planilha do PCP e a do engenheiro anterior.
 
 ## Como publicar no Railway (uma vez)
 
@@ -46,12 +48,12 @@ app/
   plannix.py   leitura das exportações do Plannix e da programação
   status.py    status e avanço por peça de projeto
   plantas.py   extração das etiquetas, imagem para a tela e PDF A2
+  programacao.py  revisões da programação, classificação programado x realizado
   templates/   telas (Jinja)
   static/      estilo
 ```
 
 ## Próximos módulos
 
-1. Programação da produção (motor de alocação por fôrma, regras e premissas).
-2. Programado x realizado com causas de não cumprimento (PPC).
-3. Pátio e expedição.
+1. Motor de programação dentro do sistema (alocação por fôrma, regras e premissas).
+2. Pátio e expedição.

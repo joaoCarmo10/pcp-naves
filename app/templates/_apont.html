@@ -1,0 +1,37 @@
+{# linha editável de apontamento: status, S/N, causa, ação, responsável #}
+{% macro cabecalho(com_data=False) %}
+<tr>{% if com_data %}<th>Data</th>{% endif %}<th>Obra</th><th>Peça</th><th>Código</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th>
+<th>Status</th><th>Realizado</th><th>Causa</th><th>Ação</th><th>Responsável</th></tr>
+{% endmacro %}
+{% macro linha(l, com_data=False, com_forma=False) %}{% set i = l.item %}{% set a = l.ap %}
+<tr data-id="{{ i.id }}">
+  {% if com_data %}<td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>{% endif %}
+  <td>{{ i.obra }}</td>
+  <td style="white-space:nowrap" title="{{ i.obs }}">{{ i.peca }}{% if com_forma %}<br><span class="meta">{{ i.forma }}</span>{% endif %}</td>
+  <td class="meta">{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
+  <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
+  <td style="white-space:nowrap"><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if l.data_fab %}<br><span class="meta">fab. {{ l.data_fab|dm }}{% if l.desvio %} ({{ '%+d'|format(l.desvio) }}d){% endif %}</span>{% endif %}</td>
+  <td style="white-space:nowrap"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button></td>
+  <td><select class="ap" data-k="causa" aria-label="Causa"><option value=""></option>{% for c in CAUSAS %}<option {{ 'selected' if a and a.causa == c }}>{{ c }}</option>{% endfor %}</select></td>
+  <td><input class="ap" data-k="acao" type="text" value="{{ a.acao if a else '' }}" aria-label="Ação"></td>
+  <td><input class="ap" data-k="responsavel" type="text" value="{{ a.responsavel if a else '' }}" aria-label="Responsável" style="width:110px"></td>
+</tr>
+{% endmacro %}
+{% macro script() %}
+<script>
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('button.sn'); if(!b) return;
+  const tr=b.closest('tr'), on=b.classList.contains('on');
+  const r=await salvar(tr,{realizado:on?'':b.dataset.v});
+  tr.querySelectorAll('button.sn').forEach(x=>x.classList.remove('on','n'));
+  if(!on){b.classList.add('on'); if(b.dataset.v==='N') b.classList.add('n');}
+});
+document.addEventListener('change',e=>{const el=e.target.closest('.ap'); if(el) salvar(el.closest('tr'),{[el.dataset.k]:el.value});});
+async function salvar(tr,dados){
+  const r=await fetch('/apontamentos/'+tr.dataset.id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(dados)});
+  if(!r.ok){alert('Não foi possível salvar. Recarregue a página e tente de novo.');return;}
+  const j=await r.json(); const st=tr.querySelector('.st'); st.textContent=j.status; st.style.background=j.cor;
+  tr.classList.add('salvo'); setTimeout(()=>tr.classList.remove('salvo'),600);
+}
+</script>
+{% endmacro %}

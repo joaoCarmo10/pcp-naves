@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "_apont.html" as ap %}
+{% block titulo %}Programação | PCP Naves{% endblock %}
+{% block corpo %}
+{% if not r %}
+<h1>Programação</h1>
+<div class="vazio">Nenhuma programação importada. Envie a planilha de programação (.xlsx) em <a href="/importar">Importar dados</a>.</div>
+{% else %}
+<div class="filtros">
+  <div style="flex:1"><h1>Programação do dia</h1>
+    <p class="sub" style="margin:0">{{ r.nome }} · {{ r.inicio|dm }} a {{ r.fim|dm }} · <a href="/programacao/quadro?rev={{ r.id }}">ver quinzena por fôrma</a></p></div>
+  <form method="get"><label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
+    {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label></form>
+</div>
+<div class="navdias">
+  {% for x in dias %}<a href="/programacao?rev={{ r.id }}&dia={{ x }}" class="{{ 'ativo' if x == d }} {{ 'passado' if x < hoje }}">{{ DIAS[x.weekday()] }} {{ x|dm }}</a>{% endfor %}
+</div>
+<div class="kpis" style="margin-bottom:6px">
+  <div class="kpi"><b>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</b><span>dia programado</span></div>
+  <div class="kpi"><b>{{ tot.prog + tot.pend }}</b><span>peças programadas</span></div>
+  <div class="kpi"><b>{{ tot['NO PRAZO'] }}</b><span>no prazo</span></div>
+  <div class="kpi"><b>{{ tot['NÃO REALIZADA'] }}</b><span>não realizadas</span></div>
+  <div class="kpi"><b>{{ tot.ppc|pct if tot.ppc is not none else '-' }}</b><span>PPC do dia</span></div>
+</div>
+<p class="sub">Marque S quando a peça for concretada e N quando não sair, com a causa. O Plannix prevalece quando tiver a data de fabricação.</p>
+{% for nave, formas in grupos|dictsort %}
+<div class="grupo-nave">{{ {'N1':'NAVE 1','N2':'NAVE 2','N3':'NAVE 3'}.get(nave, 'SEM NAVE') }}</div>
+<div class="rolagem-x"><table class="t">
+  <thead>{{ ap.cabecalho() }}</thead>
+  <tbody>
+  {% for forma, ls in formas|dictsort %}
+    <tr class="grupo-forma"><td colspan="12">{{ forma }} · {{ ls|sum(attribute='item.qtd') }} peça{{ 's' if ls|sum(attribute='item.qtd') != 1 }}</td></tr>
+    {% for l in ls %}{{ ap.linha(l) }}{% endfor %}
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endfor %}
+<form method="post" action="/programacao/revisoes/{{ r.id }}/excluir" style="margin-top:24px" onsubmit="return confirm('Excluir esta revisão e os apontamentos dela?')">
+  <button class="perigo" type="submit">Excluir esta revisão</button>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}{{ ap.script() }}{% endblock %}
