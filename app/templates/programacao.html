@@ -49,7 +49,7 @@
     <th>Data de execução</th><th>Comentário</th>
   </tr></thead>
   <tbody>
-  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set plannix = l.data_fab and not (a and a.data_execucao) %}
+  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set plannix = (l.peca and l.peca.data_fabricacao) or (l.data_fab and not (a and a.data_execucao)) %}
   <tr data-id="{{ i.id }}">
     <td class="nw">{{ i.data.strftime('%d/%m/%y') }}</td><td>{{ DIAS[i.data.weekday()] }}</td>
     <td class="nw">{{ i.forma }}</td><td class="nw">{{ i.obra }}</td><td class="nw">{{ i.peca }}</td><td class="meta">{{ i.codigo or '' }}</td>
