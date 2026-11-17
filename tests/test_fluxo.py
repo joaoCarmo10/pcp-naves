@@ -143,3 +143,35 @@ def test_programacao_pxr(cliente):
     assert "1003" in h and "1002" not in h
     h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&situacao=atraso").text
     assert "1002" in h and "1003" not in h
+
+
+def test_formas(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Forma
+    db = SessionLocal()
+    fs = list(db.scalars(select(Forma)))
+    assert len(fs) == 30
+    h = cliente.get("/formas?dia=2026-11-17").text
+    assert "Nave 1" in h and "F2 80x60" in h and "PISTA P1" in h
+    assert "ESCADA 2" not in h.split("Cadastro completo")[0]           # escada 2 só vale a partir de 18/11
+    assert "ESCADA 2" in cliente.get("/formas?dia=2026-11-18").text.split("Cadastro completo")[0]
+    f4 = next(f for f in fs if f.codigo == "N1F4")
+    assert cliente.post(f"/formas/{f4.id}/posicao", json={"x": 10.3, "y": 7.9}).json()["ok"]
+    db.expire_all()
+    assert (db.get(Forma, f4.id).x, db.get(Forma, f4.id).y) == (10.5, 8.0)
+    # ampliação a partir de 01/12: 16 m vale até 30/11, 21 m a partir de 01/12, mesmo lugar
+    campos = dict(nave="N1", nome="F4 40x40", tipo="linear", secao="40x40", secoes_aceitas="30x40", comprimento="21", capacidade="1",
+                  ritmo_dias="1", inicio="", fim="", situacao="ativa", obs="ampliada", dia="2026-11-17", versao_em="2026-12-01")
+    r = cliente.post(f"/formas/{f4.id}", data=campos, follow_redirects=False)
+    assert r.status_code == 303
+    db.expire_all()
+    vs = sorted(db.scalars(select(Forma).where(Forma.codigo == "N1F4")), key=lambda f: f.id)
+    assert len(vs) == 2 and vs[0].fim == date(2026, 11, 30) and vs[1].inicio == date(2026, 12, 1) and vs[1].comprimento == 21
+    assert vs[1].x == 10.5
+    assert "21 m" in cliente.get("/formas?dia=2026-12-02").text.split("Cadastro completo")[0]
+    # nova fôrma
+    novo = dict(campos, codigo="n3f15", nave="N3", nome="F15 30x60", comprimento="12", versao_em="")
+    assert cliente.post("/formas/nova", data=novo, follow_redirects=False).status_code == 303
+    assert db.scalar(select(Forma).where(Forma.codigo == "N3F15")).nave == "N3"

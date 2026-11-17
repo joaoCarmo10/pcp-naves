@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block titulo %}Fôrmas e naves | PCP Naves{% endblock %}
+{% macro campos(f) %}
+  <div class="grade-campos">
+    {% if not f %}<label>Código<input name="codigo" placeholder="ex.: N3F15" required></label>{% endif %}
+    <label>Nave<select name="nave">{% for k, n in fm.NAVES.items() %}<option value="{{ k }}" {{ 'selected' if f and f.nave == k }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Nome<input name="nome" value="{{ f.nome if f else '' }}" placeholder="ex.: F15 30x60" required></label>
+    <label>Tipo<select name="tipo">{% for k, n in fm.TIPOS.items() %}<option value="{{ k }}" {{ 'selected' if f and f.tipo == k }}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Seção<input name="secao" value="{{ f.secao if f else '' }}" placeholder="ex.: 30x60"></label>
+    <label>Seções aceitas (adaptação)<input name="secoes_aceitas" value="{{ f.secoes_aceitas if f else '' }}" placeholder="ex.: 40x60, 40x50"></label>
+    <label>Comprimento útil (m)<input name="comprimento" value="{{ '%g'|format(f.comprimento) if f and f.comprimento else '' }}" inputmode="decimal" placeholder="linear e pista"></label>
+    <label>Capacidade<input name="capacidade" value="{{ '%g'|format(f.capacidade) if f else '1' }}" inputmode="decimal" title="Linear e pista: giros por dia. Por unidade: peças por dia."></label>
+    <label>Produz a cada (dias)<input name="ritmo_dias" value="{{ f.ritmo_dias if f else 1 }}" inputmode="numeric"></label>
+    <label>Vigente de<input name="inicio" type="date" value="{{ f.inicio.isoformat() if f and f.inicio else '' }}"></label>
+    <label>até<input name="fim" type="date" value="{{ f.fim.isoformat() if f and f.fim else '' }}"></label>
+    <label>Situação<select name="situacao">{% for k, n in fm.SITUACOES.items() %}<option value="{{ k }}" {{ 'selected' if f and f.situacao == k }}>{{ n }}</option>{% endfor %}</select></label>
+    <label class="largo">Observação<input name="obs" value="{{ f.obs if f else '' }}"></label>
+  </div>
+{% endmacro %}
+{% block corpo %}
+<div class="filtros">
+  <div style="flex:1"><h1>Fôrmas e naves</h1>
+    <p class="sub" style="margin:0">Layout das fôrmas vigentes no dia. Arraste uma fôrma para mudar a posição; clique para editar.</p></div>
+  <form method="get" class="filtros" style="margin:0">
+    <label for="dia">Dia<input id="dia" name="dia" type="date" value="{{ d.isoformat() }}" onchange="this.form.submit()"></label>
+    <a class="botao-sec" href="/formas">Hoje</a>
+  </form>
+</div>
+
+{% for n in naves %}
+<section class="nave">
+  <div class="nave-cab">
+    <b>{{ n.nome }}</b>
+    <span>{{ n.formas|length }} fôrma{{ 's' if n.formas|length != 1 }} vigente{{ 's' if n.formas|length != 1 }}</span>
+    <span>Capacidade no dia: {% if n.cap.metros %}<b>{{ n.cap.metros|num(0) }} m</b> lineares{% endif %}{% if n.cap.metros and n.cap.pecas %} + {% endif %}{% if n.cap.pecas %}<b>{{ n.cap.pecas|num(0) }}</b> peças{% endif %}{% if not n.cap.metros and not n.cap.pecas %}-{% endif %}</span>
+  </div>
+  <div class="rolagem-x">
+  <svg class="layout" viewBox="0 0 {{ n.w }} {{ n.h }}" width="{{ (n.w * 15)|int }}" height="{{ (n.h * 15)|int }}" role="img" aria-label="Layout da {{ n.nome }}">
+    <rect x="0" y="0" width="{{ n.w }}" height="{{ n.h }}" class="piso"/>
+    {% for m in range(0, n.w|int, 10) %}<line x1="{{ m }}" y1="0" x2="{{ m }}" y2="{{ n.h }}" class="grade"/><text x="{{ m + 0.3 }}" y="{{ n.h - 0.4 }}" class="regua">{{ m }} m</text>{% endfor %}
+    {% for f in n.formas %}{% set t = tamanho(f) %}{% set a = altura(f) %}
+    <g class="forma {{ f.tipo }} {{ f.situacao }} {{ 'sel' if sel and sel.id == f.id }}" data-id="{{ f.id }}" transform="translate({{ f.x }},{{ f.y }})">
+      <title>{{ f.nome_completo }}{% if f.secoes_aceitas %} · aceita {{ f.secoes_aceitas }}{% endif %}{% if f.obs %} · {{ f.obs }}{% endif %}</title>
+      <rect width="{{ t }}" height="{{ a }}" rx="0.25"/>
+      {% if f.tipo == 'unidade' %}
+      <text x="0.4" y="1.1">{{ f.nome }}</text>
+      <text x="0.4" y="2.3" class="det">{{ '%g'|format(f.capacidade) }} pç/dia{% if f.ritmo_dias > 1 %} · a cada {{ f.ritmo_dias }} d{% endif %}{% if f.situacao == 'manutencao' %} · MANUT.{% endif %}</text>
+      {% else %}
+      <text x="0.4" y="{{ a * 0.7 }}">{{ f.nome }}{% if f.comprimento %} · {{ '%g'|format(f.comprimento) }} m{% endif %}{% if f.secoes_aceitas %} · aceita {{ f.secoes_aceitas }}{% endif %}{% if f.situacao == 'manutencao' %} · MANUTENÇÃO{% endif %}</text>
+      {% endif %}
+    </g>
+    {% endfor %}
+  </svg>
+  </div>
+</section>
+{% endfor %}
+
+<div class="dois" style="margin-top:18px">
+  <section class="cartao">
+    {% if sel %}
+    <h2 style="margin-top:0">{{ sel.nome_completo }} <span class="meta">({{ sel.codigo }})</span></h2>
+    <form method="post" action="/formas/{{ sel.id }}">
+      <input type="hidden" name="dia" value="{{ d.isoformat() }}">
+      {{ campos(sel) }}
+      <div class="acoes">
+        <button type="submit">Salvar alterações</button>
+        <span class="meta">ou mudança a partir de uma data (ampliação, troca de seção):</span>
+        <input type="date" name="versao_em" aria-label="Nova versão a partir de" style="width:150px">
+        <button type="submit" class="botao-sec" onclick="if(!this.form.versao_em.value){alert('Escolha a data em que a mudança começa.');return false}">Salvar como nova versão</button>
+      </div>
+      <p class="meta">"Salvar alterações" corrige a versão atual. "Nova versão" mantém a atual até a véspera e cria a nova a partir da data escolhida, no mesmo lugar do desenho.</p>
+    </form>
+    <form method="post" action="/formas/{{ sel.id }}/excluir" onsubmit="return confirm('Excluir esta versão da fôrma?')" style="margin-top:8px">
+      <input type="hidden" name="dia" value="{{ d.isoformat() }}"><button class="perigo" type="submit">Excluir esta versão</button>
+      <a class="botao-sec" href="/formas?dia={{ d.isoformat() }}">Fechar</a>
+    </form>
+    {% else %}
+    <h2 style="margin-top:0">Nova fôrma</h2>
+    <form method="post" action="/formas/nova">
+      <input type="hidden" name="dia" value="{{ d.isoformat() }}">
+      {{ campos(None) }}
+      <div class="acoes"><button type="submit">Cadastrar</button><span class="meta">Ela entra numa linha nova da nave; depois arraste para o lugar certo.</span></div>
+    </form>
+    {% endif %}
+  </section>
+  <section class="cartao">
+    <h2 style="margin-top:0">Cadastro completo</h2>
+    <p class="meta">Todas as versões, inclusive as que ainda não começaram ou já terminaram.</p>
+    <div class="rolagem" style="max-height:520px"><table class="t">
+      <thead><tr><th>Nave</th><th>Fôrma</th><th>Tipo</th><th class="n">Comp.</th><th class="n">Cap.</th><th>Vigência</th><th>Situação</th></tr></thead>
+      <tbody>
+      {% for f in todas %}{% set vig = f.vigente(d) %}
+        <tr class="{{ '' if vig else 'fora' }}">
+          <td>{{ f.nave }}</td>
+          <td><a href="/formas?dia={{ (d if vig else (f.inicio or f.fim or d)).isoformat() }}&sel={{ f.id }}">{{ f.nome }}</a>{% if f.secoes_aceitas %}<br><span class="meta">aceita {{ f.secoes_aceitas }}</span>{% endif %}</td>
+          <td>{{ fm.TIPO_CURTO.get(f.tipo, f.tipo) }}</td>
+          <td class="n">{{ '%g'|format(f.comprimento) if f.comprimento else '' }}</td>
+          <td class="n">{{ '%g'|format(f.capacidade) }}{{ ' pç' if f.tipo == 'unidade' else '' }}{% if f.ritmo_dias > 1 %}<br><span class="meta">a cada {{ f.ritmo_dias }} d</span>{% endif %}</td>
+          <td class="meta" style="white-space:nowrap">{% if not f.inicio and not f.fim %}sem data{% else %}{{ ('de ' ~ (f.inicio|dm)) if f.inicio }}{{ ' ' if f.inicio and f.fim }}{{ ('até ' ~ (f.fim|dm)) if f.fim }}{% endif %}</td>
+          <td>{{ fm.SITUACOES.get(f.situacao, f.situacao) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+// arrastar fôrmas no desenho (posição em metros, passo de 0,5 m); clique sem arrastar abre a edição
+document.querySelectorAll('svg.layout').forEach(svg => {
+  let alvo = null, ini = null, pos = null, moveu = false;
+  const pt = e => { const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY; return p.matrixTransform(svg.getScreenCTM().inverse()); };
+  svg.addEventListener('pointerdown', e => {
+    const g = e.target.closest('g.forma'); if (!g) return;
+    alvo = g; ini = pt(e); moveu = false;
+    const t = g.transform.baseVal.consolidate().matrix; pos = { x: t.e, y: t.f };
+    g.setPointerCapture(e.pointerId); g.classList.add('arrastando');
+  });
+  svg.addEventListener('pointermove', e => {
+    if (!alvo) return;
+    const p = pt(e), dx = p.x - ini.x, dy = p.y - ini.y;
+    if (Math.abs(dx) + Math.abs(dy) > 0.3) moveu = true;
+    const nx = Math.max(0, Math.round((pos.x + dx) * 2) / 2), ny = Math.max(0, Math.round((pos.y + dy) * 2) / 2);
+    alvo.setAttribute('transform', `translate(${nx},${ny})`); alvo.dataset.nx = nx; alvo.dataset.ny = ny;
+  });
+  svg.addEventListener('pointerup', async () => {
+    if (!alvo) return;
+    const g = alvo; alvo = null; g.classList.remove('arrastando');
+    if (!moveu) { location.href = `/formas?dia={{ d.isoformat() }}&sel=${g.dataset.id}`; return; }
+    const r = await fetch(`/formas/${g.dataset.id}/posicao`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x: +g.dataset.nx, y: +g.dataset.ny }) });
+    if (!r.ok) { alert('Não foi possível salvar a posição. Recarregue a página.'); return; }
+    g.classList.add('salvo'); setTimeout(() => g.classList.remove('salvo'), 600);
+  });
+});
+</script>
+{% endblock %}

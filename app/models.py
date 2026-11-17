@@ -117,3 +117,33 @@ class Planta(Base):
     marcas: Mapped[list] = mapped_column(JSON, default=list)              # [{"peca": "VR13", "r": [x0,y0,x1,y1]}, ...]
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="plantas")
+
+
+class Forma(Base):
+    """Fôrma (ou pista) de uma nave. Cada linha é uma versão com vigência: ampliar ou mudar a fôrma a partir de
+    uma data encerra a versão anterior na véspera e cria outra com o mesmo código."""
+    __tablename__ = "formas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    codigo: Mapped[str] = mapped_column(String(30), index=True)          # ex.: N1F2 (igual entre versões)
+    nave: Mapped[str] = mapped_column(String(4))                          # N1, N2, N3
+    nome: Mapped[str] = mapped_column(String(60))                         # ex.: F2 80x60
+    tipo: Mapped[str] = mapped_column(String(10), default="linear")       # linear | unidade | pista
+    secao: Mapped[str] = mapped_column(String(40), default="")            # como a fábrica chama, ex.: 80x60
+    secoes_aceitas: Mapped[str] = mapped_column(String(120), default="")  # adaptações, ex.: 40x60, 40x50
+    comprimento: Mapped[float | None] = mapped_column(Float, nullable=True)   # m úteis (linear e pista)
+    capacidade: Mapped[float] = mapped_column(Float, default=1)           # linear/pista: giros por dia; unidade: peças por dia
+    ritmo_dias: Mapped[int] = mapped_column(Integer, default=1)           # produz a cada N dias (escada 2 = 2)
+    inicio: Mapped[date | None] = mapped_column(Date, nullable=True)      # vigência
+    fim: Mapped[date | None] = mapped_column(Date, nullable=True)
+    situacao: Mapped[str] = mapped_column(String(12), default="ativa")    # ativa | manutencao | desativada
+    obs: Mapped[str] = mapped_column(String(300), default="")
+    x: Mapped[float] = mapped_column(Float, default=0)                    # posição no desenho da nave (m)
+    y: Mapped[float] = mapped_column(Float, default=0)
+
+    def vigente(self, d: date) -> bool:
+        return (self.inicio is None or self.inicio <= d) and (self.fim is None or self.fim >= d) and self.situacao != "desativada"
+
+    @property
+    def nome_completo(self) -> str:
+        extra = f" ({self.comprimento:g}m)" if self.comprimento else ""
+        return f"{self.nave} - {self.nome}{extra}"

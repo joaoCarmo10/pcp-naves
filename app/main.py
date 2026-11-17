@@ -18,9 +18,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import plannix, plantas, programacao as pg
-from .db import DADOS_EFEMEROS, DATA_DIR, Base, engine, get_db, migrar
-from .models import Apontamento, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from . import formas as fm, plannix, plantas, programacao as pg
+from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
+from .models import Apontamento, Forma, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -34,6 +34,8 @@ tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
 Base.metadata.create_all(engine)
 migrar()
+with SessionLocal() as _db:
+    fm.carga_inicial(_db)
 
 
 def ultima_base(db: Session) -> str:
@@ -399,3 +401,99 @@ def revisao_excluir(rid: int, db: Session = Depends(get_db)):
     db.delete(r)
     db.commit()
     return RedirectResponse("/programacao", status_code=303)
+
+
+# ---------------------------------------------------------------- fôrmas e layout das naves
+def _num(v: str) -> float | None:
+    v = (v or "").strip().replace(",", ".")
+    return float(v) if v else None
+
+
+@app.get("/formas", response_class=HTMLResponse)
+def formas_tela(request: Request, dia: str | None = None, sel: int | None = None, db: Session = Depends(get_db)):
+    d = _data(dia) or date.today()
+    vig = fm.vigentes(db, d)
+    naves = []
+    for n, nome in fm.NAVES.items():
+        fs = [f for f in vig if f.nave == n]
+        w, h = fm.dimensoes_nave(fs)
+        naves.append({"cod": n, "nome": nome, "formas": fs, "w": w, "h": h, "cap": fm.capacidade_dia(fs, d)})
+    todas = list(db.scalars(select(Forma).order_by(Forma.nave, Forma.codigo, Forma.inicio)))
+    return tpl.TemplateResponse(request, "formas.html", {
+        "d": d, "naves": naves, "todas": todas, "sel": db.get(Forma, sel) if sel else None, "fm": fm,
+        "tamanho": fm.tamanho, "altura": fm.altura, "base": ultima_base(db)})
+
+
+@app.post("/formas/{fid}/posicao")
+def forma_posicao(fid: int, dados: dict = Body(...), db: Session = Depends(get_db)):
+    f = db.get(Forma, fid) or _404()
+    # a posição vale para todas as versões da mesma fôrma (é o mesmo lugar no chão)
+    for v in db.scalars(select(Forma).where(Forma.codigo == f.codigo)):
+        v.x, v.y = max(0.0, round(float(dados["x"]) * 2) / 2), max(0.0, round(float(dados["y"]) * 2) / 2)
+    db.commit()
+    return {"ok": True}
+
+
+def _preencher(f: Forma, campos: dict) -> None:
+    f.nave = campos["nave"] if campos["nave"] in fm.NAVES else f.nave
+    f.nome = campos["nome"].strip()[:60] or f.nome
+    f.tipo = campos["tipo"] if campos["tipo"] in fm.TIPOS else "linear"
+    f.secao = campos["secao"].strip()[:40]
+    f.secoes_aceitas = campos["secoes_aceitas"].strip()[:120]
+    f.comprimento = _num(campos["comprimento"])
+    f.capacidade = _num(campos["capacidade"]) or 1
+    f.ritmo_dias = max(1, int(_num(campos["ritmo_dias"]) or 1))
+    f.inicio, f.fim = _data(campos["inicio"]), _data(campos["fim"])
+    f.situacao = campos["situacao"] if campos["situacao"] in fm.SITUACOES else "ativa"
+    f.obs = campos["obs"].strip()[:300]
+
+
+async def _campos(request: Request) -> dict:
+    fd = await request.form()
+    ks = ["codigo", "nave", "nome", "tipo", "secao", "secoes_aceitas", "comprimento", "capacidade", "ritmo_dias", "inicio", "fim",
+          "situacao", "obs", "dia", "versao_em"]
+    return {k: str(fd.get(k, "") or "") for k in ks}
+
+
+@app.post("/formas/nova")
+async def forma_nova(request: Request, db: Session = Depends(get_db)):
+    c = await _campos(request)
+    codigo = re.sub(r"[^A-Z0-9-]", "", (c["codigo"] or "").upper())[:30] or f"{c['nave']}X{secrets.token_hex(2).upper()}"
+    if db.scalar(select(Forma.id).where(Forma.codigo == codigo)):
+        raise HTTPException(400, f"Já existe fôrma com o código {codigo}. Use 'nova versão' para mudar uma fôrma existente.")
+    f = Forma(codigo=codigo, nave="N1", nome=codigo, x=2, y=2)
+    _preencher(f, c)
+    vizinhas = [v for v in db.scalars(select(Forma).where(Forma.nave == f.nave))]
+    f.y = max([v.y for v in vizinhas] + [-1]) + 3   # entra numa linha nova da nave; depois é só arrastar
+    db.add(f)
+    db.commit()
+    return RedirectResponse(f"/formas?dia={c['dia']}&sel={f.id}", status_code=303)
+
+
+@app.post("/formas/{fid}")
+async def forma_editar(request: Request, fid: int, db: Session = Depends(get_db)):
+    f = db.get(Forma, fid) or _404()
+    c = await _campos(request)
+    em = _data(c["versao_em"])
+    if em:
+        # nova versão a partir de uma data: a atual vale até a véspera, a nova herda posição e código
+        if f.inicio and em <= f.inicio:
+            raise HTTPException(400, "A nova versão tem que começar depois do início da versão atual.")
+        nova = Forma(codigo=f.codigo, x=f.x, y=f.y)
+        _preencher(nova, c)
+        nova.inicio, nova.fim = em, f.fim
+        f.fim = em - timedelta(days=1)
+        db.add(nova)
+        db.commit()
+        return RedirectResponse(f"/formas?dia={em}&sel={nova.id}", status_code=303)
+    _preencher(f, c)
+    db.commit()
+    return RedirectResponse(f"/formas?dia={c['dia']}&sel={f.id}", status_code=303)
+
+
+@app.post("/formas/{fid}/excluir")
+def forma_excluir(fid: int, dia: str = Form(""), db: Session = Depends(get_db)):
+    f = db.get(Forma, fid) or _404()
+    db.delete(f)
+    db.commit()
+    return RedirectResponse(f"/formas?dia={dia}", status_code=303)

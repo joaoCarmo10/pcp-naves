@@ -101,3 +101,27 @@ main:has(table.rd){max-width:none}
 table.rd td.obs{max-width:220px}
 .alerta-dados{background:#fde2e1;border:1px solid #e0a3a0;color:#7a1712;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:600}
 table.rd input.coment{width:280px}
+/* fôrmas e naves */
+.nave{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.nave-cab{display:flex;gap:18px;align-items:baseline;margin-bottom:6px;font-size:13px;color:var(--suave)}
+.nave-cab>b{font-size:15px;color:var(--azul)}
+svg.layout{display:block;touch-action:none;user-select:none}
+svg.layout .piso{fill:#f6f7f9;stroke:#9aa5b4;stroke-width:.15}
+svg.layout .grade{stroke:#e2e6ec;stroke-width:.06}
+svg.layout .regua{font-size:.75px;fill:#8a94a3}
+svg.layout g.forma{cursor:grab}
+svg.layout g.forma rect{fill:#dce6f3;stroke:#2f5d93;stroke-width:.08}
+svg.layout g.forma.pista rect{fill:#e8e1f2;stroke:#6b4c9a}
+svg.layout g.forma.unidade rect{fill:#e3f1e6;stroke:#3c7d4f}
+svg.layout g.forma.manutencao rect{fill:#f3e3c7;stroke:#a86b12;stroke-dasharray:.3 .2}
+svg.layout g.forma text{font-size:.9px;fill:#1d232b;pointer-events:none;font-weight:600}
+svg.layout g.forma.sel rect{stroke:#d1342f;stroke-width:.18}
+svg.layout g.forma.arrastando{cursor:grabbing;opacity:.8}
+svg.layout g.forma.salvo rect{fill:#c6efce}
+.grade-campos{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 12px}
+.grade-campos label{display:flex;flex-direction:column;font-size:12px;color:var(--suave);gap:3px}
+.grade-campos .largo{grid-column:1/-1}
+.acoes{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+table.t tr.fora td{color:#9aa3ae}
+.rolagem{overflow:auto}
+svg.layout g.forma text.det{font-weight:400;fill:#3c4652}
