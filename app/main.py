@@ -149,15 +149,16 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
 
 
 def _garantir_marcas(db: Session, p: Planta) -> None:
-    """Planta salva sem nenhuma etiqueta (ex.: PDF do AutoCAD com texto SHX, lido antes de o app ler os comentários):
-    tenta ler de novo uma vez."""
-    if p.marcas:
+    """Planta sem nenhuma etiqueta de peça da obra (ex.: PDF do AutoCAD com texto SHX, lido antes de o app ler os
+    comentários do PDF): lê de novo e fica com a leitura que reconhecer mais peças."""
+    nomes = {n for (n,) in db.execute(select(Peca.peca).where(Peca.obra_id == p.obra_id))}
+    if any(m["t"] in nomes for m in p.marcas or []):
         return
     try:
         e = plantas.extrair(DATA_DIR / p.arquivo)
     except Exception:
         return
-    if e["marcas"]:
+    if any(m["t"] in nomes for m in e["marcas"]):
         p.marcas = e["marcas"]
         (DATA_DIR / "cache" / f"planta_{p.id}.png").unlink(missing_ok=True)
         db.commit()
@@ -283,7 +284,6 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
 @app.get("/plantas/{pid}/imagem")
 def planta_imagem(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
-    _garantir_marcas(db, p)
     png, _ = plantas.imagem_base(DATA_DIR / p.arquivo, p.id)
     return FileResponse(png, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
 
