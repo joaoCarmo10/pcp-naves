@@ -16,6 +16,27 @@ def _norm(t: str) -> str:
     return re.sub(r"\(.*", "", t).strip().rstrip(".,;:")
 
 
+def _canon(t: str) -> str:
+    """'LA-1' e 'LA1' são a mesma peça (hífen só entre letra e número); 'VS1-1' continua 'VS1-1'."""
+    return re.sub(r"(?<=[A-Z])-(?=\d)", "", t.upper())
+
+
+def alinhar_nomes(marcas: list[dict], nomes: set[str]) -> tuple[list[dict], int]:
+    """Troca a etiqueta da planta pelo nome da peça no Plannix quando só muda a grafia (ex.: LA1 x LA-1)."""
+    mapa = {}
+    for n in nomes:
+        mapa.setdefault(_canon(n), n)
+    n_troca = 0
+    out = []
+    for m in marcas:
+        t = m["t"]
+        if t not in nomes and _canon(t) in mapa:
+            m = dict(m, t=mapa[_canon(t)])
+            n_troca += 1
+        out.append(m)
+    return out, n_troca
+
+
 def extrair(caminho: Path) -> dict:
     doc = pymupdf.open(caminho)
     pg = doc[0]
@@ -79,42 +100,59 @@ def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: s
     pg = out.new_page(width=W, height=H)
     M, PW = 24, 430
     azul = (0.12, 0.22, 0.39)
-    pg.show_pdf_page(pymupdf.Rect(M, M + 40, W - PW - 2 * M, H - M), src, 0, keep_proportion=True)
+    asp = pg0.rect.width / pg0.rect.height
+    if asp > 2.0:
+        # folha muito comprida (ex.: Bay 7560 x 2384): planta na largura toda e tabela embaixo, em várias colunas
+        ph = min((W - 2 * M) / asp, (H - 2 * M - 40) * 0.62)
+        pg.show_pdf_page(pymupdf.Rect(M, M + 40, W - M, M + 40 + ph), src, 0, keep_proportion=True)
+        caixa = pymupdf.Rect(M, M + 48 + ph, W - M, H - M)
+    else:
+        pg.show_pdf_page(pymupdf.Rect(M, M + 40, W - PW - 2 * M, H - M), src, 0, keep_proportion=True)
+        caixa = pymupdf.Rect(W - PW - M, M + 40, W - M, H - M)
     rs = resumo(status, nomes)
     pg.insert_text((M, M + 18), f"AVANÇO FÍSICO DA PRODUÇÃO | {titulo}", fontsize=18, fontname="helv", color=azul)
     pg.insert_text((M, M + 36),
                    f"Base: Plannix {data_ref}  |  Peças nesta planta: {rs['pecas']}  |  Fabricadas: {rs['fabricadas']} ({rs['pct']:.0%})  |  "
                    f"Programadas: {rs['programadas']}  |  Volume fabricado: {rs['volume_fab']:.1f} de {rs['volume']:.1f} m³ ({rs['pct_vol']:.0%})",
                    fontsize=10, fontname="helv", color=(0.35, 0.35, 0.35))
-    x0, y = W - PW - M, M + 40
-    pg.draw_rect(pymupdf.Rect(x0, y, W - M, H - M), color=(0.75, 0.75, 0.75), width=0.6)
+    _tabela(pg, caixa, nomes, status, azul)
+    return out.tobytes(garbage=3, deflate=True)
+
+
+def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
+    """Legenda e tabela de peças dentro da caixa, em quantas colunas couberem."""
+    x0, y, x1, y1 = caixa.x0, caixa.y0, caixa.x1, caixa.y1
+    pg.draw_rect(caixa, color=(0.75, 0.75, 0.75), width=0.6)
     y += 14
+    por_linha = max(1, int((x1 - x0 - 16) // 200))
     for k, (s, lab) in enumerate(LEGENDA):
-        xx, yy = x0 + 8 + (k % 2) * 200, y + (k // 2) * 14
+        xx, yy = x0 + 8 + (k % por_linha) * 200, y + (k // por_linha) * 14
         pg.draw_rect(pymupdf.Rect(xx, yy - 8, xx + 10, yy + 1), color=CORES[s][0], fill=CORES[s][0], fill_opacity=0.6)
         pg.insert_text((xx + 14, yy), lab, fontsize=8, fontname="helv")
-    y += 34
+    y += 14 * (-(-len(LEGENDA) // por_linha)) + 8
     cols = [("PEÇA", 0), ("QTD", 70), ("FAB.", 98), ("PROG.", 126), ("FALTA", 158), ("DATAS PROG.", 192)]
     ordem = sorted(nomes, key=lambda k: (status[k].produto, chave_natural(k)))
     rowh = 9.2
-    maxrows = int((H - M - y - 20) / rowh)
-    ncol = 1 if len(ordem) <= maxrows else 2
-    cw, sc = (PW - 16) / ncol, (0.70 if ncol == 2 else 1)
+    maxrows = max(1, int((y1 - y - 22) / rowh))
+    largura = x1 - x0 - 16
+    ncol = max(1, min(-(-len(ordem) // maxrows), int(largura // 190) or 1))
+    cw = largura / ncol
+    sc = min(1.0, cw / 270)
+    fs = 7.2 if sc >= 1 else 6.6
     for c in range(ncol):
         cx = x0 + 8 + c * cw
         for t, dx in cols:
             pg.insert_text((cx + dx * sc, y), t, fontsize=7, fontname="hebo", color=azul)
         pg.draw_line((cx, y + 2.5), (cx + cw - 6, y + 2.5), color=azul, width=0.6)
     for i, k in enumerate(ordem[: maxrows * ncol]):
-        c, ri = divmod(i, maxrows) if ncol == 2 else (0, i)
+        c, ri = divmod(i, maxrows)
         cx, yy = x0 + 8 + c * cw, y + rowh * (ri + 1)
         s = status[k]
         pg.draw_rect(pymupdf.Rect(cx - 4, yy - 6.5, cx - 1, yy + 1), color=CORES[s.status][0], fill=CORES[s.status][0])
         ds = ", ".join(d.strftime("%d/%m") for d in s.datas[:3]) + ("…" if len(s.datas) > 3 else "")
         vals = [k, str(s.total), str(s.fabricadas or "-"), str(s.programadas or "-"), str(s.falta or "-"), ds]
         for (t, dx), v in zip(cols, vals):
-            pg.insert_text((cx + dx * sc, yy), v, fontsize=6.6 if ncol == 2 else 7.2, fontname="helv")
+            pg.insert_text((cx + dx * sc, yy), v, fontsize=fs, fontname="helv")
     if len(ordem) > maxrows * ncol:
-        pg.insert_text((x0 + 8, H - M - 16), f"+ {len(ordem) - maxrows * ncol} peças (lista completa no sistema)", fontsize=7, fontname="helv")
-    pg.insert_text((x0 + 8, H - M - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2", fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))
-    return out.tobytes(garbage=3, deflate=True)
+        pg.insert_text((x0 + 8, y1 - 16), f"+ {len(ordem) - maxrows * ncol} peças (lista completa no sistema)", fontsize=7, fontname="helv")
+    pg.insert_text((x0 + 8, y1 - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2", fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))

@@ -149,17 +149,18 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
 
 
 def _garantir_marcas(db: Session, p: Planta) -> None:
-    """Planta sem nenhuma etiqueta de peça da obra (ex.: PDF do AutoCAD com texto SHX, lido antes de o app ler os
-    comentários do PDF): lê de novo e fica com a leitura que reconhecer mais peças."""
+    """Confere se as etiquetas da planta batem com as peças da obra. Se nenhuma bate (ex.: PDF do AutoCAD com texto SHX,
+    lido antes de o app ler os comentários do PDF), lê de novo. Ajusta grafias diferentes (LA1 x LA-1)."""
     nomes = {n for (n,) in db.execute(select(Peca.peca).where(Peca.obra_id == p.obra_id))}
-    if any(m["t"] in nomes for m in p.marcas or []):
-        return
-    try:
-        e = plantas.extrair(DATA_DIR / p.arquivo)
-    except Exception:
-        return
-    if any(m["t"] in nomes for m in e["marcas"]):
-        p.marcas = e["marcas"]
+    marcas = p.marcas or []
+    if not any(m["t"] in nomes for m in marcas):
+        try:
+            marcas = plantas.extrair(DATA_DIR / p.arquivo)["marcas"]
+        except Exception:
+            return
+    marcas, trocas = plantas.alinhar_nomes(marcas, nomes)
+    if marcas != (p.marcas or []) and any(m["t"] in nomes for m in marcas):
+        p.marcas = marcas
         (DATA_DIR / "cache" / f"planta_{p.id}.png").unlink(missing_ok=True)
         db.commit()
 
@@ -174,8 +175,10 @@ def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
         destino.unlink(missing_ok=True)
         raise ValueError(f"Não consegui ler o PDF '{titulo}'. Confira se é o PDF vetorial do projeto (não escaneado).")
     ordem = (db.scalar(select(func.max(Planta.ordem)).where(Planta.obra_id == o.id)) or 0) + 1
+    nomes = {n for (n,) in db.execute(select(Peca.peca).where(Peca.obra_id == o.id))}
+    marcas, _ = plantas.alinhar_nomes(e["marcas"], nomes)
     p = Planta(obra_id=o.id, titulo=titulo.strip()[:120], ordem=ordem, arquivo=rel, largura=e["largura"], altura=e["altura"],
-               rotacao=e["rotacao"], marcas=e["marcas"])
+               rotacao=e["rotacao"], marcas=marcas)
     db.add(p)
     db.commit()
     return p
