@@ -122,25 +122,22 @@ class Linha:
     ap: Apontamento | None
     peca: Peca | None = None
 
-    @property
-    def dia_real(self) -> tuple[date | None, bool]:
-        """Dia em que a peça foi feita e se é data oficial (concretagem no Plannix) ou provisória (saída da lista)."""
-        if self.data_fab:
-            return self.data_fab, True
-        if self.peca and self.peca.fabricada and self.peca.data_baixa:
-            return self.peca.data_baixa, False
-        return None, False
 
 
 def classificar(item: ItemProg, peca: Peca | None, ap: Apontamento | None, hoje: date, obra_acompanhada: bool = True) -> tuple[str, date | None]:
-    """Registro de produção = data de fabricação (concretagem) do Plannix. Sem ela: apontamento do PCP > data a confirmar > pendente.
+    """Registro de produção = data de fabricação (concretagem) do Plannix. Sem ela: data de execução do PCP > apontamento S/N > data a confirmar > pendente.
     Código que não existe na base, de obra acompanhada, já tinha saído da lista a realizar: conta como feito, data a confirmar."""
+    manual = ap.data_execucao if ap else None
     if peca is None and item.codigo:
+        if manual:
+            return ("NO PRAZO" if manual <= item.data else "COM ATRASO"), manual
         if ap and ap.realizado in ("S", "N"):
             return ("NO PRAZO" if ap.realizado == "S" else "NÃO REALIZADA"), None
         return ("DATA A CONFIRMAR" if obra_acompanhada else "SEM INFORMAÇÃO"), None
     if peca and peca.fabricada and peca.data_fabricacao:
         return ("NO PRAZO" if peca.data_fabricacao <= item.data else "COM ATRASO"), peca.data_fabricacao
+    if manual:   # data de execução informada pelo PCP (vale até o Plannix ter a data)
+        return ("NO PRAZO" if manual <= item.data else "COM ATRASO"), manual
     if peca and peca.fabricada:
         # saiu da lista 'a realizar' sem data de concretagem no Plannix: feita, mas o prazo só se mede com a data
         if ap and ap.realizado == "S":

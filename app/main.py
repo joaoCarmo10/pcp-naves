@@ -368,7 +368,12 @@ def apontar(item_id: int, dados: dict = Body(...), db: Session = Depends(get_db)
     if "realizado" in dados:
         v = (dados["realizado"] or "").upper()
         ap.realizado = v if v in ("S", "N") else None
-    for k, lim in (("ocorrido", 300), ("causa", 60), ("acao", 300), ("responsavel", 80)):
+    if "data_execucao" in dados:
+        try:
+            ap.data_execucao = date.fromisoformat(dados["data_execucao"]) if dados["data_execucao"] else None
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Data de execução inválida.")
+    for k, lim in (("comentario", 500), ("ocorrido", 300), ("causa", 60), ("acao", 300), ("responsavel", 80)):
         if k in dados:
             setattr(ap, k, str(dados[k] or "")[:lim])
     ap.atualizado_em = datetime.now()
@@ -378,7 +383,7 @@ def apontar(item_id: int, dados: dict = Body(...), db: Session = Depends(get_db)
     peca = db.scalar(select(Peca).where(Peca.codigo == it.codigo)) if it.codigo else None
     acomp = bool(db.scalar(select(Peca.id).join(Obra).where(Obra.nome == it.obra).limit(1)))
     st, _ = pg.classificar(it, peca, ap, date.today(), acomp)
-    return {"ok": True, "status": st, "cor": pg.COR_STATUS[st]}
+    return {"ok": True, "status": st, "cor": pg.COR_STATUS[st], "realizado": ap.realizado or ""}
 
 
 @app.post("/programacao/revisoes/{rid}/excluir")

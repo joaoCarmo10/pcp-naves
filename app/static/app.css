@@ -100,3 +100,4 @@ table.rd select.ap{max-width:170px}
 main:has(table.rd){max-width:none}
 table.rd td.obs{max-width:220px}
 .alerta-dados{background:#fde2e1;border:1px solid #e0a3a0;color:#7a1712;padding:10px 14px;border-radius:8px;margin-bottom:14px;font-weight:600}
+table.rd input.coment{width:280px}

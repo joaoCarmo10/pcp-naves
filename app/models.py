@@ -84,7 +84,9 @@ class Apontamento(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("itens_prog.id", ondelete="CASCADE"), unique=True)
     realizado: Mapped[str | None] = mapped_column(String(1), nullable=True)   # 'S', 'N' ou vazio
-    ocorrido: Mapped[str] = mapped_column(String(300), default="")   # o que houve
+    ocorrido: Mapped[str] = mapped_column(String(300), default="")   # o que houve (legado)
+    data_execucao: Mapped[date | None] = mapped_column(Date, nullable=True)   # concretagem informada pelo PCP quando o Plannix não tem
+    comentario: Mapped[str] = mapped_column(String(500), default="")
     causa: Mapped[str] = mapped_column(String(60), default="")
     acao: Mapped[str] = mapped_column(String(300), default="")
     responsavel: Mapped[str] = mapped_column(String(80), default="")

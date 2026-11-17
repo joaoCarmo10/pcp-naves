@@ -53,3 +53,10 @@ def migrar():
     if "apontamentos" in insp.get_table_names() and "ocorrido" not in {c["name"] for c in insp.get_columns("apontamentos")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE apontamentos ADD COLUMN ocorrido VARCHAR(300) DEFAULT ''"))
+    if "apontamentos" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("apontamentos")}
+        with engine.begin() as cx:
+            if "data_execucao" not in cols:
+                cx.execute(text("ALTER TABLE apontamentos ADD COLUMN data_execucao DATE"))
+            if "comentario" not in cols:
+                cx.execute(text("ALTER TABLE apontamentos ADD COLUMN comentario VARCHAR(500) DEFAULT ''"))

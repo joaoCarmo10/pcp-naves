@@ -39,16 +39,15 @@
   <div class="kpi"><b>{{ tot.ppc|pct if tot.ppc is not none else '-' }}</b><span>PPC do dia</span></div>
   <div class="kpi destaque"><b>{{ acum.ppc|pct if acum.ppc is not none else '-' }}</b><span>PPC acumulado ({{ r.inicio|dm }} a {{ d|dm }}){{ ' · filtrado' if f.obra or f.nave or f.produto or f.peca }}</span></div>
 </div>
-<p class="sub">X = dia da concretagem no Plannix. x cinza = saiu da lista "a realizar" sem data no Plannix (provisório). Em "Realizado", S/N é o apontamento do PCP; o Plannix prevalece quando tiver a data. Tudo é salvo ao digitar.</p>
+<p class="sub">Data de execução = concretagem. Vem do Plannix quando ele tem a data; quando não tem, informe aqui e o prazo passa a ser medido por ela. Tudo é salvo no banco ao digitar.</p>
 <div class="rolagem-x"><table class="t rd">
   <thead><tr>
     <th>Data</th><th>Dia</th><th>Fôrma</th><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th class="n">Vol. (m³)</th><th>Observação</th>
     <th>Realizado</th>
-    {% for x in semana %}<th class="c dsem">{{ DIAS[x.weekday()] }}<br><span>{{ x|dm }}</span></th>{% endfor %}
-    <th>O que houve</th><th>Porque</th><th>Plano de ação</th>
+    <th>Data de execução</th><th>Comentário</th>
   </tr></thead>
   <tbody>
-  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set dr = l.dia_real %}
+  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set plannix = l.peca and l.peca.data_fabricacao %}
   <tr data-id="{{ i.id }}">
     <td class="nw">{{ i.data.strftime('%d/%m/%y') }}</td><td>{{ DIAS[i.data.weekday()] }}</td>
     <td class="nw">{{ i.forma }}</td><td class="nw">{{ i.obra }}</td><td class="nw">{{ i.peca }}</td><td class="meta">{{ i.codigo or '' }}</td>
@@ -56,11 +55,10 @@
     <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td><td class="n">{{ i.volume|num(3) if i.volume else '' }}</td>
     <td class="obs">{{ i.obs }}</td>
     <td class="nw"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button>
-      <br><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if dr[0] and dr[0] not in semana %}<br><span class="meta">fab. {{ dr[0]|dm }}</span>{% endif %}</td>
-    {% for x in semana %}<td class="c dsem">{% if dr[0] == x %}{% if dr[1] %}<b>X</b>{% else %}<span class="prov">x</span>{% endif %}{% endif %}</td>{% endfor %}
-    <td><input class="ap" data-k="ocorrido" type="text" value="{{ a.ocorrido if a else '' }}" aria-label="O que houve"></td>
-    <td><select class="ap" data-k="causa" aria-label="Porque"><option value=""></option>{% for c in CAUSAS %}<option {{ 'selected' if a and a.causa == c }}>{{ c }}</option>{% endfor %}</select></td>
-    <td><input class="ap" data-k="acao" type="text" value="{{ a.acao if a else '' }}" aria-label="Plano de ação"></td>
+      <br><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span></td>
+    <td class="nw">{% if plannix %}<b>{{ l.peca.data_fabricacao.strftime('%d/%m/%y') }}</b><br><span class="meta">Plannix</span>
+      {% else %}<input class="ap" data-k="data_execucao" type="date" value="{{ a.data_execucao.isoformat() if a and a.data_execucao else '' }}" aria-label="Data de execução" style="width:140px">{% endif %}</td>
+    <td><input class="ap coment" data-k="comentario" type="text" value="{{ a.comentario if a else '' }}" aria-label="Comentário"></td>
   </tr>
   {% else %}<tr><td colspan="24" class="vazio">Nada programado neste dia{{ ' com esses filtros' if f.obra or f.nave or f.produto or f.peca }}.</td></tr>{% endfor %}
   </tbody>

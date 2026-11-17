@@ -124,10 +124,15 @@ def test_programacao_pxr(cliente):
     for u in ["/programacao", f"/programacao?rev={rev.id}&dia=2026-11-10", f"/programacao/quadro?rev={rev.id}"]:
         assert cliente.get(u).status_code == 200
     # realizado do dia: lista suspensa de dias, PPC acumulado, X no dia da concretagem e "o que houve"
-    cliente.post(f"/apontamentos/{it.id}", json={"ocorrido": "Ferragem atrasou"})
+    cliente.post(f"/apontamentos/{it.id}", json={"comentario": "Ferragem atrasou"})
     html = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10").text
     assert '<select id="dia"' in html and "PPC acumulado" in html and "Ferragem atrasou" in html
-    assert "<b>X</b>" in cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-09").text   # 1001 concretada em 10/11
+    assert "10/11/26" in cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-09").text   # 1001 concretada em 10/11 (Plannix)
+    # data de execução informada pelo PCP vale quando o Plannix não tem data
+    it2 = next(l.item for l in pg.linhas(db, rev) if l.item.codigo == "1002")
+    assert cliente.post(f"/apontamentos/{it2.id}", json={"data_execucao": "2026-11-10"}).json()["status"] == "NO PRAZO"
+    assert cliente.post(f"/apontamentos/{it2.id}", json={"data_execucao": "2026-11-12"}).json()["status"] == "COM ATRASO"
+    assert 'value="2026-11-12"' in cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10").text
     # filtros por obra, nave, produto e peça
     h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&nave=N3").text
     assert "1003" in h and "1002" not in h
