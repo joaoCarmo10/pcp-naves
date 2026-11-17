@@ -635,7 +635,8 @@ def armacao_tela(request: Request, dia: str | None = None, rev: int | None = Non
         x[1] += i.qtd if sit[i.id]["armado"] else 0
     dias = sorted({date.today() + timedelta(days=k) for k in range(-2, 8)} | {d})
     dias = [x for x in dias if x.weekday() != 6]
-    link = str(request.base_url).rstrip("/") + f"/armador/{arm.token_armador()}"
+    esquema = request.headers.get("x-forwarded-proto", request.url.scheme)   # Railway entrega HTTPS pelo proxy
+    link = f"{esquema}://{request.url.netloc}/armador/{arm.token_armador()}"
     return tpl.TemplateResponse(request, "armacao.html", {
         "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "grupos": _grupos_armacao(itens, sit, incluidos), "pecas": pecas,
         "armadas": armadas, "por_nave": dict(sorted(por_nave.items())), "dv": dv, "incluidos": incluidos, "retirados": retirados,
