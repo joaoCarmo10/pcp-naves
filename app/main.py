@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import io
 import os
@@ -28,7 +29,9 @@ SENHA = os.getenv("APP_PASSWORD", "")
 app = FastAPI(title="PCP Naves")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=BASE / "templates")
-tpl.env.globals.update(CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS)
+# versão do CSS na URL: a cada deploy com CSS novo o navegador baixa de novo (evita tela quebrada por cache)
+VERSAO_CSS = hashlib.md5((BASE / "static" / "app.css").read_bytes()).hexdigest()[:8]
+tpl.env.globals.update(CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS, VERSAO_CSS=VERSAO_CSS)
 tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
