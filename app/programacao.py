@@ -120,6 +120,16 @@ class Linha:
     data_fab: date | None
     desvio: int | None
     ap: Apontamento | None
+    peca: Peca | None = None
+
+    @property
+    def dia_real(self) -> tuple[date | None, bool]:
+        """Dia em que a peça foi feita e se é data oficial (concretagem no Plannix) ou provisória (saída da lista)."""
+        if self.data_fab:
+            return self.data_fab, True
+        if self.peca and self.peca.fabricada and self.peca.data_baixa:
+            return self.peca.data_baixa, False
+        return None, False
 
 
 def classificar(item: ItemProg, peca: Peca | None, ap: Apontamento | None, hoje: date, obra_acompanhada: bool = True) -> tuple[str, date | None]:
@@ -157,7 +167,7 @@ def linhas(db: Session, rev: RevisaoProg, inicio: date | None = None, fim: date 
     out = []
     for i in itens:
         st, df = classificar(i, pecas.get(i.codigo), i.apontamento, hoje, i.obra in acompanhadas)
-        out.append(Linha(i, st, df, (df - i.data).days if df else None, i.apontamento))
+        out.append(Linha(i, st, df, (df - i.data).days if df else None, i.apontamento, pecas.get(i.codigo)))
     return out
 
 

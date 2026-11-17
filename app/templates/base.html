@@ -11,7 +11,7 @@
   <span class="marca">PCP NAVES</span>
   <nav>
     <a href="/" class="{{ 'ativo' if request.url.path == '/' }}">Avanço das obras</a>
-    <a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}">Programação</a>
+    <a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}">Realizado do dia</a>
     <a href="/pxr" class="{{ 'ativo' if request.url.path.startswith('/pxr') }}">Programado x realizado</a>
     <a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}">Importar dados</a>
   </nav>

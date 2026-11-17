@@ -47,3 +47,6 @@ def migrar():
     if "pecas" in insp.get_table_names() and "data_baixa" not in {c["name"] for c in insp.get_columns("pecas")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE pecas ADD COLUMN data_baixa DATE"))
+    if "apontamentos" in insp.get_table_names() and "ocorrido" not in {c["name"] for c in insp.get_columns("apontamentos")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE apontamentos ADD COLUMN ocorrido VARCHAR(300) DEFAULT ''"))

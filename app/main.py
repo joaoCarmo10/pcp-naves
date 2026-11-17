@@ -290,13 +290,13 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
         futuros = [x for x in dias if x >= d]
         d = futuros[0] if futuros else dias[-1]
     ls = pg.linhas(db, r, d, d)
-    grupos = {}
-    for l in ls:
-        grupos.setdefault(l.item.nave or "-", {}).setdefault(l.item.forma or "-", []).append(l)
+    acum = pg.totais(pg.linhas(db, r, r.inicio, d))
+    seg = d - timedelta(days=d.weekday())
+    semana = [seg + timedelta(days=k) for k in range(6)]
     i = dias.index(d)
     return tpl.TemplateResponse(request, "programacao.html", {
         "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
-        "grupos": grupos, "tot": pg.totais(ls), "hoje": date.today(), "base": ultima_base(db)})
+        "ls": ls, "tot": pg.totais(ls), "acum": acum, "semana": semana, "hoje": date.today(), "base": ultima_base(db)})
 
 
 @app.get("/programacao/quadro", response_class=HTMLResponse)
@@ -355,7 +355,7 @@ def apontar(item_id: int, dados: dict = Body(...), db: Session = Depends(get_db)
     if "realizado" in dados:
         v = (dados["realizado"] or "").upper()
         ap.realizado = v if v in ("S", "N") else None
-    for k, lim in (("causa", 60), ("acao", 300), ("responsavel", 80)):
+    for k, lim in (("ocorrido", 300), ("causa", 60), ("acao", 300), ("responsavel", 80)):
         if k in dados:
             setattr(ap, k, str(dados[k] or "")[:lim])
     ap.atualizado_em = datetime.now()

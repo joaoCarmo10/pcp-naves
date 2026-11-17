@@ -1,40 +1,62 @@
 {% extends "base.html" %}
 {% import "_apont.html" as ap %}
-{% block titulo %}Programação | PCP Naves{% endblock %}
+{% block titulo %}Realizado do dia | PCP Naves{% endblock %}
 {% block corpo %}
 {% if not r %}
-<h1>Programação</h1>
+<h1>Realizado do dia</h1>
 <div class="vazio">Nenhuma programação importada. Envie a planilha de programação (.xlsx) em <a href="/importar">Importar dados</a>.</div>
 {% else %}
 <div class="filtros">
-  <div style="flex:1"><h1>Programação do dia</h1>
+  <div style="flex:1"><h1>Realizado do dia</h1>
     <p class="sub" style="margin:0">{{ r.nome }} · {{ r.inicio|dm }} a {{ r.fim|dm }} · <a href="/programacao/quadro?rev={{ r.id }}">ver quinzena por fôrma</a></p></div>
-  <form method="get"><label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
-    {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label></form>
+  <form method="get" class="filtros" style="margin:0">
+    <label for="dia">Dia
+      <span style="display:flex;gap:4px;align-items:center">
+        {% if ant %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ ant }}" title="Dia anterior">‹</a>{% endif %}
+        <select id="dia" name="dia" onchange="this.form.submit()">
+          {% for x in dias %}<option value="{{ x }}" {{ 'selected' if x == d }}>{{ DIAS[x.weekday()] }} {{ x.strftime('%d/%m/%y') }}{{ ' (hoje)' if x == hoje }}</option>{% endfor %}
+        </select>
+        {% if prox %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ prox }}" title="Próximo dia">›</a>{% endif %}
+      </span></label>
+    <label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.dia.value='';this.form.submit()">
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+  </form>
 </div>
-<div class="navdias">
-  {% for x in dias %}<a href="/programacao?rev={{ r.id }}&dia={{ x }}" class="{{ 'ativo' if x == d }} {{ 'passado' if x < hoje }}">{{ DIAS[x.weekday()] }} {{ x|dm }}</a>{% endfor %}
-</div>
+{% set feitas = tot['NO PRAZO'] + tot['COM ATRASO'] + tot['DATA A CONFIRMAR'] %}
 <div class="kpis" style="margin-bottom:6px">
   <div class="kpi"><b>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</b><span>dia programado</span></div>
   <div class="kpi"><b>{{ tot.prog + tot.pend }}</b><span>peças programadas</span></div>
-  <div class="kpi"><b>{{ tot['NO PRAZO'] }}</b><span>no prazo</span></div>
+  <div class="kpi"><b>{{ feitas }}</b><span>realizadas</span></div>
   <div class="kpi"><b>{{ tot['NÃO REALIZADA'] }}</b><span>não realizadas</span></div>
   <div class="kpi"><b>{{ tot.ppc|pct if tot.ppc is not none else '-' }}</b><span>PPC do dia</span></div>
+  <div class="kpi destaque"><b>{{ acum.ppc|pct if acum.ppc is not none else '-' }}</b><span>PPC acumulado ({{ r.inicio|dm }} a {{ d|dm }})</span></div>
 </div>
-<p class="sub">Marque S quando a peça for concretada e N quando não sair, com a causa. A data de concretagem do Plannix é o registro oficial e prevalece sobre o apontamento.</p>
-{% for nave, formas in grupos|dictsort %}
-<div class="grupo-nave">{{ {'N1':'NAVE 1','N2':'NAVE 2','N3':'NAVE 3'}.get(nave, 'SEM NAVE') }}</div>
-<div class="rolagem-x"><table class="t">
-  <thead>{{ ap.cabecalho() }}</thead>
+<p class="sub">X = dia da concretagem no Plannix. x cinza = saiu da lista "a realizar" sem data no Plannix (provisório). Em "Realizado", S/N é o apontamento do PCP; o Plannix prevalece quando tiver a data. Tudo é salvo ao digitar.</p>
+<div class="rolagem-x"><table class="t rd">
+  <thead><tr>
+    <th>Data</th><th>Dia</th><th>Fôrma</th><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th class="n">Vol. (m³)</th><th>Observação</th>
+    <th>Realizado</th>
+    {% for x in semana %}<th class="c dsem">{{ DIAS[x.weekday()] }}<br><span>{{ x|dm }}</span></th>{% endfor %}
+    <th>O que houve</th><th>Porque</th><th>Plano de ação</th>
+  </tr></thead>
   <tbody>
-  {% for forma, ls in formas|dictsort %}
-    <tr class="grupo-forma"><td colspan="12">{{ forma }} · {{ ls|sum(attribute='item.qtd') }} peça{{ 's' if ls|sum(attribute='item.qtd') != 1 }}</td></tr>
-    {% for l in ls %}{{ ap.linha(l) }}{% endfor %}
-  {% endfor %}
+  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set dr = l.dia_real %}
+  <tr data-id="{{ i.id }}">
+    <td class="nw">{{ i.data.strftime('%d/%m/%y') }}</td><td>{{ DIAS[i.data.weekday()] }}</td>
+    <td class="nw">{{ i.forma }}</td><td class="nw">{{ i.obra }}</td><td class="nw">{{ i.peca }}</td><td class="meta">{{ i.codigo or '' }}</td>
+    <td>{{ i.produto }}</td><td>{{ i.secao }}</td>
+    <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td><td class="n">{{ i.volume|num(3) if i.volume else '' }}</td>
+    <td class="obs">{{ i.obs }}</td>
+    <td class="nw"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button>
+      <br><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if dr[0] and dr[0] not in semana %}<br><span class="meta">fab. {{ dr[0]|dm }}</span>{% endif %}</td>
+    {% for x in semana %}<td class="c dsem">{% if dr[0] == x %}{% if dr[1] %}<b>X</b>{% else %}<span class="prov">x</span>{% endif %}{% endif %}</td>{% endfor %}
+    <td><input class="ap" data-k="ocorrido" type="text" value="{{ a.ocorrido if a else '' }}" aria-label="O que houve"></td>
+    <td><select class="ap" data-k="causa" aria-label="Porque"><option value=""></option>{% for c in CAUSAS %}<option {{ 'selected' if a and a.causa == c }}>{{ c }}</option>{% endfor %}</select></td>
+    <td><input class="ap" data-k="acao" type="text" value="{{ a.acao if a else '' }}" aria-label="Plano de ação"></td>
+  </tr>
+  {% else %}<tr><td colspan="24" class="vazio">Nada programado neste dia.</td></tr>{% endfor %}
   </tbody>
 </table></div>
-{% endfor %}
 <form method="post" action="/programacao/revisoes/{{ r.id }}/excluir" style="margin-top:24px" onsubmit="return confirm('Excluir esta revisão e os apontamentos dela?')">
   <button class="perigo" type="submit">Excluir esta revisão</button>
 </form>

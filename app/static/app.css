@@ -83,3 +83,19 @@ tr.salvo td{background:#e6f4ea!important;transition:background .3s}
 .barras .b .col{width:70%;display:flex;flex-direction:column-reverse;border-radius:3px 3px 0 0;overflow:hidden}
 .barras .b span{margin-top:3px;white-space:nowrap}
 .rolagem-x{overflow:auto}
+/* realizado do dia */
+.botao-sec{display:inline-block;padding:5px 10px;border:1px solid var(--linha);border-radius:6px;background:#fff;color:var(--texto);font-weight:600}
+.kpi.destaque{padding-left:12px;box-shadow:inset 3px 0 0 var(--azul)}
+table.rd td{font-size:12px;padding:4px 6px;vertical-align:middle}
+table.rd td.nw{white-space:nowrap}
+table.rd td.obs{min-width:180px;font-size:11px;color:var(--suave)}
+table.rd .c{text-align:center}
+table.rd th.dsem{min-width:38px;text-align:center}
+table.rd th.dsem span{font-weight:400;font-size:10px;opacity:.8}
+table.rd td.dsem{border-left:1px solid var(--linha)}
+table.rd td.dsem b{color:var(--azul);font-size:13px}
+table.rd .prov{color:var(--suave)}
+table.rd input.ap{width:170px}
+table.rd select.ap{max-width:170px}
+main:has(table.rd){max-width:none}
+table.rd td.obs{max-width:220px}

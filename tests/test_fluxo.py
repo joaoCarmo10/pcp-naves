@@ -123,3 +123,8 @@ def test_programacao_pxr(cliente):
     assert "Armação" in html and "Antecipar armação" in html
     for u in ["/programacao", f"/programacao?rev={rev.id}&dia=2026-11-10", f"/programacao/quadro?rev={rev.id}"]:
         assert cliente.get(u).status_code == 200
+    # realizado do dia: lista suspensa de dias, PPC acumulado, X no dia da concretagem e "o que houve"
+    cliente.post(f"/apontamentos/{it.id}", json={"ocorrido": "Ferragem atrasou"})
+    html = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10").text
+    assert '<select id="dia"' in html and "PPC acumulado" in html and "Ferragem atrasou" in html
+    assert "<b>X</b>" in cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-09").text   # 1001 concretada em 10/11
