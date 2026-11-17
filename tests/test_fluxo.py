@@ -238,3 +238,12 @@ def test_armacao(cliente):
     assert anon.get("/armacao", follow_redirects=False).status_code == 303 or not m.SENHA
     assert cliente.post("/armacao/marcar", json={"codigos": ["1003"], "armado": False}).json()["n"] == 1
     assert cliente.get(f"/armador/{tok}").status_code == 200
+
+
+def test_importar_varios(cliente):
+    # "a realizar" enviado antes do realizado na seleção: o app processa o realizado primeiro
+    r = cliente.post("/importar", files=[("arquivo", ("a_realizar.xls", A_REALIZAR)), ("arquivo", ("realizado.xls", COMPLETA))],
+                     follow_redirects=False)
+    from urllib.parse import unquote
+    msg = unquote(r.headers["location"])
+    assert "erro" not in msg and msg.index("realizado.xls") < msg.index("a_realizar.xls")

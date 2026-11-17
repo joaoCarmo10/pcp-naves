@@ -2,11 +2,11 @@
 {% block titulo %}Importar dados | PCP Naves{% endblock %}
 {% block corpo %}
 <h1>Importar dados</h1>
-<p class="sub">Exportação do Plannix (.xls, completa ou lista "a realizar") ou planilha de programação do PCP (.xlsx).</p>
+<p class="sub">Selecione <b>vários arquivos de uma vez</b> (Ctrl+clique): o realizado e o "a realizar" do dia entram juntos, na ordem certa. Aceita exportações do Plannix (.xls), programação (.xlsx) e pacote (.zip).</p>
 {% if msg %}<div class="aviso ok">{{ msg }}</div>{% endif %}
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
 <form class="linha" method="post" enctype="multipart/form-data">
-  <label for="arquivo">Arquivo<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv,.zip" required></label>
+  <label for="arquivo">Arquivos<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv,.zip" multiple required></label>
   <button type="submit">Importar</button>
 </form>
 <h2>Como cada arquivo é lido</h2>

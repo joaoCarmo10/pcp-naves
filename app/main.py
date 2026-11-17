@@ -105,30 +105,47 @@ def importar_form(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/importar")
-async def importar(arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
-    conteudo = await arquivo.read()
-    nome = arquivo.filename or "arquivo"
-    if nome.lower().endswith(".zip"):
+async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    """Aceita um ou vários arquivos de uma vez (ex.: realizado + a realizar do dia). Ordem de processamento:
+    pacotes .zip, exportações completas (com data de fabricação), listas a realizar e por último programações."""
+    arquivos = [((a.filename or "arquivo"), await a.read()) for a in arquivo if a.filename]
+    if not arquivos:
+        return RedirectResponse(f"/importar?erro={quote('Escolha pelo menos um arquivo.')}", status_code=303)
+
+    def ordem(x):
+        nome, conteudo = x
+        n = nome.lower()
+        if n.endswith(".zip"):
+            return 0
+        if n.endswith(".xlsx"):
+            return 3
         try:
-            msg = importar_pacote(db, conteudo)
+            df = plannix.ler_exportacao(conteudo)
+            completa = "Data Fabricação" in df.columns and df["Data Fabricação"].map(plannix._data).notna().any()
+            return 1 if completa else 2
+        except ValueError:
+            return 2
+
+    msgs = []
+    for nome, conteudo in sorted(arquivos, key=ordem):
+        try:
+            if nome.lower().endswith(".zip"):
+                msgs.append(importar_pacote(db, conteudo))
+                continue
+            (DATA_DIR / "importacoes" / f"{date.today():%Y%m%d}_{secrets.token_hex(3)}_{Path(nome).name}").write_bytes(conteudo)
+            if nome.lower().endswith(".xlsx"):
+                imp = pg.importar_programacao(db, conteudo, nome)
+                msgs.append(f"{nome}: programação importada como nova revisão ({imp.resumo['linhas']} linhas).")
+            else:
+                imp = plannix.importar_exportacao(db, conteudo, nome)
+                r = imp.resumo
+                msgs.append(f"{nome}: {'lista a realizar' if imp.tipo == 'a_realizar' else 'realizado (completa)'}, {r['linhas']} linhas, "
+                            f"{r['novas']} peças novas, {r['saiu_lista']} saíram da lista.")
         except (ValueError, zipfile.BadZipFile) as e:
             db.rollback()
-            return RedirectResponse(f"/importar?erro={quote(str(e))}", status_code=303)
-        return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
-    (DATA_DIR / "importacoes" / f"{date.today():%Y%m%d}_{secrets.token_hex(3)}_{Path(nome).name}").write_bytes(conteudo)
-    try:
-        if nome.lower().endswith(".xlsx"):
-            imp = pg.importar_programacao(db, conteudo, nome)
-            msg = f"Programação importada como nova revisão: {imp.resumo['linhas']} linhas."
-        else:
-            imp = plannix.importar_exportacao(db, conteudo, nome)
-            r = imp.resumo
-            msg = (f"{'Lista a realizar' if imp.tipo == 'a_realizar' else 'Exportação completa'}: {r['linhas']} linhas, "
-                   f"{r['novas']} peças novas, {r['saiu_lista']} marcadas como fabricadas por terem saído da lista.")
-    except ValueError as e:
-        db.rollback()
-        return RedirectResponse(f"/importar?erro={quote(str(e))}", status_code=303)
-    return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
+            msgs.append(f"{nome}: ERRO, {e}")
+            return RedirectResponse(f"/importar?erro={quote(' | '.join(msgs))}", status_code=303)
+    return RedirectResponse(f"/importar?msg={quote(' | '.join(msgs))}", status_code=303)
 
 
 def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
