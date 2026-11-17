@@ -18,7 +18,7 @@
   <span class="base">Base Plannix: {{ base }}</span>
   <a href="/sair" style="color:#c4d0e3;font-size:12px">Sair</a>
 </header>
-<main>{% block corpo %}{% endblock %}</main>
+<main>{% if DADOS_EFEMEROS %}<div class="alerta-dados">Atenção: o app está sem volume no Railway. Tudo o que for importado some no próximo deploy. Adicione um volume ao serviço (Settings → Volumes).</div>{% endif %}{% block corpo %}{% endblock %}</main>
 {% block scripts %}{% endblock %}
 </body>
 </html>

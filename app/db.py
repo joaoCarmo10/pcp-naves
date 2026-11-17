@@ -4,7 +4,10 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATA_DIR = Path(os.getenv("DATA_DIR", "./data")).resolve()
+# no Railway, se houver volume montado, os dados vão para ele mesmo sem configurar DATA_DIR
+DATA_DIR = Path(os.getenv("DATA_DIR") or os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "./data").resolve()
+# sem volume e sem Postgres no Railway, tudo some a cada deploy
+DADOS_EFEMEROS = bool(os.getenv("RAILWAY_ENVIRONMENT_NAME") or os.getenv("RAILWAY_ENVIRONMENT")) and not os.getenv("RAILWAY_VOLUME_MOUNT_PATH") and not os.getenv("DATABASE_URL")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 (DATA_DIR / "plantas").mkdir(exist_ok=True)
 (DATA_DIR / "importacoes").mkdir(exist_ok=True)

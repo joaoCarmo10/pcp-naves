@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import plannix, plantas, programacao as pg
-from .db import DATA_DIR, Base, engine, get_db, migrar
+from .db import DADOS_EFEMEROS, DATA_DIR, Base, engine, get_db, migrar
 from .models import Apontamento, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
@@ -28,7 +28,7 @@ SENHA = os.getenv("APP_PASSWORD", "")
 app = FastAPI(title="PCP Naves")
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=BASE / "templates")
-tpl.env.globals.update(CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA)
+tpl.env.globals.update(CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS)
 tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
