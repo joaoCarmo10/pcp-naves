@@ -24,6 +24,13 @@ def extrair(caminho: Path) -> dict:
         t = _norm(w[4])
         if ETIQUETA.match(t):
             palavras.append({"t": t, "r": [round(v, 2) for v in w[:4]]})
+    # AutoCAD com fonte SHX desenha o texto como linhas; com PDFSHX=1 ele grava cada texto também como comentário
+    # (anotação) com o conteúdo e a posição. É assim que as etiquetas aparecem nesses PDFs.
+    for a in pg.annots() or []:
+        t = _norm((a.info.get("content") or "").strip())
+        if t and " " not in t and ETIQUETA.match(t):
+            r = a.rect
+            palavras.append({"t": t, "r": [round(v, 2) for v in (r.x0, r.y0, r.x1, r.y1)]})
     return dict(largura=pg.rect.width, altura=pg.rect.height, rotacao=pg.rotation, marcas=palavras)
 
 

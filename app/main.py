@@ -148,6 +148,21 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
     return RedirectResponse(f"/importar?msg={quote(' | '.join(msgs))}", status_code=303)
 
 
+def _garantir_marcas(db: Session, p: Planta) -> None:
+    """Planta salva sem nenhuma etiqueta (ex.: PDF do AutoCAD com texto SHX, lido antes de o app ler os comentários):
+    tenta ler de novo uma vez."""
+    if p.marcas:
+        return
+    try:
+        e = plantas.extrair(DATA_DIR / p.arquivo)
+    except Exception:
+        return
+    if e["marcas"]:
+        p.marcas = e["marcas"]
+        (DATA_DIR / "cache" / f"planta_{p.id}.png").unlink(missing_ok=True)
+        db.commit()
+
+
 def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
     rel = f"plantas/{o.sigla}_{secrets.token_hex(4)}.pdf"
     destino = DATA_DIR / rel
@@ -211,6 +226,7 @@ def obra(request: Request, obra_id: int, db: Session = Depends(get_db)):
     st = status_da_obra(db, o.id)
     pl = []
     for p in o.plantas:
+        _garantir_marcas(db, p)
         nomes = {m["t"] for m in p.marcas} & set(st)
         pl.append(dict(p=p, r=resumo(st, nomes)))
     return tpl.TemplateResponse(request, "obra.html", {"o": o, "r": resumo(st), "prod": por_produto(st), "plantas": pl, "base": ultima_base(db)})
@@ -241,6 +257,7 @@ async def planta_upload(obra_id: int, titulo: str = Form(...), arquivo: UploadFi
 @app.post("/plantas/{pid}/excluir")
 def planta_excluir(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
+    _garantir_marcas(db, p)
     oid = p.obra_id
     (DATA_DIR / p.arquivo).unlink(missing_ok=True)
     (DATA_DIR / "cache" / f"planta_{pid}.png").unlink(missing_ok=True)
@@ -252,6 +269,7 @@ def planta_excluir(pid: int, db: Session = Depends(get_db)):
 @app.get("/plantas/{pid}", response_class=HTMLResponse)
 def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
+    _garantir_marcas(db, p)
     st = status_da_obra(db, p.obra_id)
     caminho = DATA_DIR / p.arquivo
     png, zoom = plantas.imagem_base(caminho, p.id)
@@ -265,6 +283,7 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
 @app.get("/plantas/{pid}/imagem")
 def planta_imagem(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
+    _garantir_marcas(db, p)
     png, _ = plantas.imagem_base(DATA_DIR / p.arquivo, p.id)
     return FileResponse(png, media_type="image/png", headers={"Cache-Control": "max-age=86400"})
 
@@ -272,6 +291,7 @@ def planta_imagem(pid: int, db: Session = Depends(get_db)):
 @app.get("/plantas/{pid}/a2.pdf")
 def planta_a2(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
+    _garantir_marcas(db, p)
     st = status_da_obra(db, p.obra_id)
     pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, p.marcas, st, f"{p.obra.nome.upper()} - {p.titulo.upper()}", ultima_base(db))
     nome = f"Avanco_{p.obra.nome}_{p.titulo}_{date.today():%d-%m}.pdf".replace(" ", "_")

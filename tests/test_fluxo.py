@@ -264,3 +264,19 @@ def test_all_data(cliente):
     assert p["1001"].fabricada and p["1001"].origem_fabricacao == "plannix"
     assert not p["1004"].fabricada and not p["1002"].fabricada
     assert db.scalars(select(Importacao).order_by(Importacao.id.desc())).first().tipo == "geral"
+
+
+def test_planta_com_comentarios_shx(tmp_path):
+    """PDF do AutoCAD com texto SHX: etiquetas vêm dos comentários (anotações) e não do texto."""
+    import pymupdf
+    from app import plantas
+    doc = pymupdf.open()
+    pg = doc.new_page(width=600, height=400)
+    pg.draw_line((50, 50), (300, 50))                       # desenho sem texto
+    a = pg.add_rect_annot(pymupdf.Rect(100, 100, 130, 115))
+    a.set_info(content="LC1")
+    a.update()
+    f = tmp_path / "shx.pdf"
+    doc.save(f)
+    e = plantas.extrair(f)
+    assert [m["t"] for m in e["marcas"]] == ["LC1"]
