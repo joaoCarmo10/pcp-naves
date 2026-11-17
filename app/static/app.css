@@ -4,12 +4,6 @@
 html,body{margin:0;height:100%}
 body{font-family:"Segoe UI",Calibri,Roboto,Arial,sans-serif;font-size:14px;color:var(--texto);background:var(--fundo)}
 a{color:var(--azul2);text-decoration:none}a:hover{text-decoration:underline}
-header.topo{background:var(--azul);color:#fff;display:flex;align-items:center;gap:24px;padding:0 20px;height:52px}
-header.topo .marca{font-weight:700;letter-spacing:.04em}
-header.topo nav{display:flex;gap:4px;flex:1}
-header.topo nav a{color:#dbe4f3;padding:8px 12px;border-radius:6px}
-header.topo nav a:hover,header.topo nav a.ativo{background:rgba(255,255,255,.12);color:#fff;text-decoration:none}
-header.topo .base{font-size:12px;color:#c4d0e3}
 main{padding:20px;max-width:1500px;margin:0 auto}
 h1{font-size:22px;margin:0 0 4px;color:var(--azul)}
 h2{font-size:16px;margin:24px 0 10px;color:var(--azul)}
@@ -178,7 +172,7 @@ body.armador h2{font-size:17px;margin:18px 0 8px}
 .arm-linha .ok{width:22px;font-size:18px;color:#2e7d32;font-weight:700}
 .arm-linha.armada{background:#f1f9f3}
 @media print{
-  header,nav,.nao-imprime,.alerta-dados{display:none!important}
+  .lateral,.nao-imprime,.alerta-dados{display:none!important}
   .so-imprime{display:block;font-size:14px}
   body{background:#fff}
   main{max-width:none;padding:0}
@@ -187,3 +181,35 @@ body.armador h2{font-size:17px;margin:18px 0 8px}
   table.compacta td,table.compacta th{font-size:10px;padding:2px 4px}
   @page{size:A4;margin:10mm}
 }
+/* menu lateral retrátil */
+:root{--lat:224px}
+html.menu-fechado{--lat:60px}
+.lateral{position:fixed;inset:0 auto 0 0;width:var(--lat);background:var(--azul);color:#fff;display:flex;flex-direction:column;z-index:40;transition:width .18s ease;overflow:hidden}
+body{padding-left:var(--lat);transition:padding-left .18s ease}
+.lat-topo{display:flex;align-items:center;gap:10px;height:54px;padding:0 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+.lat-topo .marca{font-weight:700;letter-spacing:.04em;white-space:nowrap}
+.lateral svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.lat-toggle,.lat-abrir-movel{background:none;border:none;color:#dbe4f3;padding:6px;border-radius:6px;cursor:pointer;display:flex}
+.lat-toggle:hover{background:rgba(255,255,255,.12)}
+.lateral nav{flex:1;overflow-y:auto;padding:8px}
+.lat-grupo{margin-bottom:10px}
+.lat-grupo>span{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#9fb2cf;padding:8px 10px 4px;white-space:nowrap}
+.lateral nav a,.lat-rodape a{display:flex;align-items:center;gap:12px;color:#dbe4f3;padding:9px 10px;border-radius:7px;white-space:nowrap;font-size:14px}
+.lateral nav a:hover,.lateral nav a.ativo,.lat-rodape a:hover{background:rgba(255,255,255,.13);color:#fff;text-decoration:none}
+.lateral nav a.ativo{box-shadow:inset 3px 0 0 #8fb3e6}
+.lat-rodape{border-top:1px solid rgba(255,255,255,.12);padding:8px}
+.lat-rodape .base{display:block;font-size:11px;color:#9fb2cf;padding:4px 10px;white-space:nowrap}
+html.menu-fechado .lateral .marca,html.menu-fechado .lateral nav a span,html.menu-fechado .lat-grupo>span,html.menu-fechado .lat-rodape .base,html.menu-fechado .lat-rodape a span{display:none}
+html.menu-fechado .lat-grupo{border-top:1px solid rgba(255,255,255,.08);padding-top:6px}
+html.menu-fechado .lateral nav a,html.menu-fechado .lat-rodape a{justify-content:center;padding:10px 0}
+.lat-abrir-movel{display:none}
+@media (max-width:900px){
+  body{padding-left:0}
+  .lateral{width:240px;transform:translateX(-100%);transition:transform .2s ease}
+  html.menu-movel .lateral{transform:none;box-shadow:0 0 40px rgba(0,0,0,.35)}
+  html.menu-fechado .lateral .marca,html.menu-fechado .lateral nav a span,html.menu-fechado .lat-grupo>span,html.menu-fechado .lat-rodape .base,html.menu-fechado .lat-rodape a span{display:initial}
+  .lat-abrir-movel{display:flex;position:fixed;top:8px;left:8px;z-index:41;background:var(--azul);color:#fff}
+  main{padding-top:52px}
+}
+@media print{.lateral,.lat-abrir-movel{display:none!important}body{padding-left:0!important}}
+body.armador,body.sem-menu{padding-left:0!important}
