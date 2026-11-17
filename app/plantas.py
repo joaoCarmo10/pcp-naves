@@ -64,12 +64,15 @@ def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: s
         nomes.add(mk["t"])
         cor = CORES[s.status][0]
         pg0.draw_rect(pymupdf.Rect(mk["r"]) + (-1.5, -1.5, 1.5, 1.5), color=cor, fill=cor, fill_opacity=0.35, width=1.2, overlay=True)
+    if pg0.rotation:
+        # folha girada no CAD: desfaz a rotação (marcas incluídas) para a folha caber inteira no A2
+        pg0.remove_rotation()
     out = pymupdf.open()
     W, H = pymupdf.paper_size("a2-l")
     pg = out.new_page(width=W, height=H)
     M, PW = 24, 430
     azul = (0.12, 0.22, 0.39)
-    pg.show_pdf_page(pymupdf.Rect(M, M + 40, W - PW - 2 * M, H - M), src, 0, keep_proportion=True, rotate=-pg0.rotation)
+    pg.show_pdf_page(pymupdf.Rect(M, M + 40, W - PW - 2 * M, H - M), src, 0, keep_proportion=True)
     rs = resumo(status, nomes)
     pg.insert_text((M, M + 18), f"AVANÇO FÍSICO DA PRODUÇÃO | {titulo}", fontsize=18, fontname="helv", color=azul)
     pg.insert_text((M, M + 36),
