@@ -36,6 +36,7 @@ Base.metadata.create_all(engine)
 migrar()
 with SessionLocal() as _db:
     fm.carga_inicial(_db)
+    fm.completar(_db)
 
 
 def ultima_base(db: Session) -> str:
@@ -440,6 +441,7 @@ def _preencher(f: Forma, campos: dict) -> None:
     f.tipo = campos["tipo"] if campos["tipo"] in fm.TIPOS else "linear"
     f.secao = campos["secao"].strip()[:40]
     f.secoes_aceitas = campos["secoes_aceitas"].strip()[:120]
+    f.produtos = campos["produtos"].strip().upper()[:120]
     f.comprimento = _num(campos["comprimento"])
     f.capacidade = _num(campos["capacidade"]) or 1
     f.ritmo_dias = max(1, int(_num(campos["ritmo_dias"]) or 1))
@@ -450,7 +452,7 @@ def _preencher(f: Forma, campos: dict) -> None:
 
 async def _campos(request: Request) -> dict:
     fd = await request.form()
-    ks = ["codigo", "nave", "nome", "tipo", "secao", "secoes_aceitas", "comprimento", "capacidade", "ritmo_dias", "inicio", "fim",
+    ks = ["codigo", "nave", "nome", "tipo", "secao", "secoes_aceitas", "produtos", "comprimento", "capacidade", "ritmo_dias", "inicio", "fim",
           "situacao", "obs", "dia", "versao_em"]
     return {k: str(fd.get(k, "") or "") for k in ks}
 
@@ -497,3 +499,31 @@ def forma_excluir(fid: int, dia: str = Form(""), db: Session = Depends(get_db)):
     db.delete(f)
     db.commit()
     return RedirectResponse(f"/formas?dia={dia}", status_code=303)
+
+
+@app.get("/formas/{fid}/detalhe", response_class=HTMLResponse)
+def forma_detalhe(request: Request, fid: int, dia: str | None = None, db: Session = Depends(get_db)):
+    """Conteúdo do pop-up: dados da fôrma, o que está programado nela e peças a fazer que cabem nela."""
+    f = db.get(Forma, fid) or _404()
+    d = _data(dia) or date.today()
+    r = pg.revisao_atual(db)
+    prog = [l for l in pg.linhas(db, r, d) if l.item.forma and fm.item_e_da_forma(l.item.forma, f)] if r else []
+    por_dia, ocup = {}, {}
+    for l in prog:
+        i = l.item
+        ocup[i.data] = ocup.get(i.data, 0) + ((i.comprimento or 0) * l.qtd if f.tipo != "unidade" else l.qtd)
+        g = por_dia.setdefault(i.data, {})
+        k = (i.obra, i.peca, i.secao, i.comprimento, l.status)   # peças iguais numa linha só
+        if k not in g:
+            g[k] = {"obra": i.obra, "peca": i.peca, "secao": i.secao, "comp": i.comprimento, "status": l.status, "qtd": 0}
+        g[k]["qtd"] += l.qtd
+    por_dia = {k: list(v.values()) for k, v in por_dia.items()}
+    # peças a fazer que cabem: seção da fôrma (ou adaptação) e comprimento até o útil
+    programados = {l.item.codigo for l in prog if l.item.codigo}
+    q = select(Peca).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))
+    cabem = [p for p in db.scalars(q) if fm.aceita(f, p.produto, p.secao, p.comprimento)]
+    cabem.sort(key=lambda p: (p.obra.prioridade or 99, p.obra.nome, p.produto, chave_natural(p.peca)))
+    resumo_cabem = Counter(p.obra.nome for p in cabem)
+    return tpl.TemplateResponse(request, "_forma_detalhe.html", {
+        "f": f, "d": d, "r": r, "por_dia": dict(sorted(por_dia.items())), "ocup": ocup, "cabem": cabem[:80], "n_cabem": len(cabem),
+        "resumo_cabem": resumo_cabem.most_common(), "programados": programados, "fm": fm})

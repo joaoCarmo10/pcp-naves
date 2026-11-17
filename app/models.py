@@ -130,6 +130,7 @@ class Forma(Base):
     tipo: Mapped[str] = mapped_column(String(10), default="linear")       # linear | unidade | pista
     secao: Mapped[str] = mapped_column(String(40), default="")            # como a fábrica chama, ex.: 80x60
     secoes_aceitas: Mapped[str] = mapped_column(String(120), default="")  # adaptações, ex.: 40x60, 40x50
+    produtos: Mapped[str] = mapped_column(String(120), default="")        # restringe por produto, ex.: ESCADA
     comprimento: Mapped[float | None] = mapped_column(Float, nullable=True)   # m úteis (linear e pista)
     capacidade: Mapped[float] = mapped_column(Float, default=1)           # linear/pista: giros por dia; unidade: peças por dia
     ritmo_dias: Mapped[int] = mapped_column(Integer, default=1)           # produz a cada N dias (escada 2 = 2)

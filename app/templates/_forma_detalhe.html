@@ -1,0 +1,37 @@
+<div class="pop-cab">
+  <div><h2 style="margin:0">{{ f.nome_completo }}</h2>
+    <span class="meta">{{ fm.TIPO_CURTO.get(f.tipo, f.tipo) }}{% if f.secao %} · seção {{ f.secao }}{% endif %}{% if f.secoes_aceitas %} · aceita {{ f.secoes_aceitas }}{% endif %}{% if f.produtos %} · só {{ f.produtos }}{% endif %}
+      · {% if f.tipo == 'unidade' %}{{ '%g'|format(f.capacidade) }} pç/dia{% else %}{{ '%g'|format(f.comprimento or 0) }} m úteis{% endif %}{% if f.ritmo_dias > 1 %} · a cada {{ f.ritmo_dias }} dias{% endif %}
+      · {{ fm.SITUACOES.get(f.situacao, f.situacao) }}{% if f.obs %} · {{ f.obs }}{% endif %}</span></div>
+  <div style="display:flex;gap:6px"><a class="botao-sec" href="/formas?dia={{ d.isoformat() }}&sel={{ f.id }}">Editar</a><button type="button" class="botao-sec" onclick="this.closest('dialog').close()">Fechar</button></div>
+</div>
+
+<h3>Programado nesta fôrma {% if r %}<span class="meta">({{ r.nome }}, a partir de {{ d|dm }})</span>{% endif %}</h3>
+{% if not por_dia %}<p class="meta">Nada programado nesta fôrma a partir de {{ d|dm }}.</p>{% endif %}
+{% for dia_, ls in por_dia.items() %}{% set oc = ocup[dia_] %}
+<div class="pop-dia">
+  <b>{{ DIAS[dia_.weekday()] }} {{ dia_|dm }}</b>
+  {% if f.tipo == 'unidade' %}<span>{{ oc|int }} de {{ '%g'|format(f.capacidade) }} pç</span>
+  {% elif f.comprimento %}{% set pc = oc / f.comprimento %}<span class="{{ 'estoura' if pc > 1.001 }}">{{ oc|num(1) }} de {{ '%g'|format(f.comprimento) }} m ({{ pc|pct }})</span>
+    <i class="barra"><i style="width:{{ [pc * 100, 100]|min }}%"></i></i>{% endif %}
+</div>
+<table class="t compacta fixa"><colgroup><col style="width:22%"><col style="width:28%"><col style="width:14%"><col style="width:12%"><col style="width:8%"><col style="width:16%"></colgroup><tbody>
+  {% for g in ls %}<tr><td>{{ g.obra }}</td><td><b>{{ g.peca }}</b></td><td>{{ g.secao }}</td>
+    <td class="n">{{ g.comp|num(2) if g.comp else '' }} m</td><td class="n">{{ g.qtd }}x</td>
+    <td><span class="st" style="background:{{ COR_STATUS[g.status] }}">{{ g.status }}</span></td></tr>{% endfor %}
+</tbody></table>
+{% endfor %}
+
+<h3>Peças a fazer que cabem nesta fôrma <span class="meta">({{ n_cabem }})</span></h3>
+{% if not f.secao and not f.secoes_aceitas and not f.produtos %}<p class="meta">Cadastre a seção ou o produto da fôrma para ver as peças compatíveis.</p>
+{% elif not n_cabem %}<p class="meta">Nenhuma peça pendente compatível com esta fôrma.</p>
+{% else %}
+<p class="meta">{% if f.produtos %}Produto {{ f.produtos }}{% endif %}{% if f.secao or f.secoes_aceitas %}{{ ', ' if f.produtos }}seção {{ f.secao }}{% if f.secoes_aceitas %}{{ ' ou ' if f.secao }}{{ f.secoes_aceitas }}{% endif %}{% endif %}{% if f.comprimento and f.tipo != 'unidade' %}, comprimento até {{ '%g'|format(f.comprimento) }} m{% endif %}. Por obra:
+  {% for o, n in resumo_cabem %}{{ o }} {{ n }}{{ ', ' if not loop.last }}{% endfor %}.</p>
+<table class="t compacta">
+  <thead><tr><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th></th></tr></thead>
+  <tbody>{% for p in cabem %}<tr><td>{{ p.obra.nome }}</td><td><b>{{ p.peca }}</b></td><td class="meta">{{ p.codigo }}</td><td>{{ p.produto }}</td><td>{{ p.secao }}</td>
+    <td class="n">{{ p.comprimento|num(2) if p.comprimento else '' }}</td><td>{% if p.codigo in programados %}<span class="meta">programada</span>{% endif %}</td></tr>{% endfor %}</tbody>
+</table>
+{% if n_cabem > cabem|length %}<p class="meta">Mostrando {{ cabem|length }} de {{ n_cabem }}, na ordem de prioridade das obras.</p>{% endif %}
+{% endif %}

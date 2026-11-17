@@ -60,3 +60,6 @@ def migrar():
                 cx.execute(text("ALTER TABLE apontamentos ADD COLUMN data_execucao DATE"))
             if "comentario" not in cols:
                 cx.execute(text("ALTER TABLE apontamentos ADD COLUMN comentario VARCHAR(500) DEFAULT ''"))
+    if "formas" in insp.get_table_names() and "produtos" not in {c["name"] for c in insp.get_columns("formas")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE formas ADD COLUMN produtos VARCHAR(120) DEFAULT ''"))

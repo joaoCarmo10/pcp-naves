@@ -8,6 +8,7 @@
     <label>Tipo<select name="tipo">{% for k, n in fm.TIPOS.items() %}<option value="{{ k }}" {{ 'selected' if f and f.tipo == k }}>{{ n }}</option>{% endfor %}</select></label>
     <label>Seção<input name="secao" value="{{ f.secao if f else '' }}" placeholder="ex.: 30x60"></label>
     <label>Seções aceitas (adaptação)<input name="secoes_aceitas" value="{{ f.secoes_aceitas if f else '' }}" placeholder="ex.: 40x60, 40x50"></label>
+    <label>Só produtos<input name="produtos" value="{{ f.produtos if f else '' }}" placeholder="ex.: ESCADA (vazio = qualquer)"></label>
     <label>Comprimento útil (m)<input name="comprimento" value="{{ '%g'|format(f.comprimento) if f and f.comprimento else '' }}" inputmode="decimal" placeholder="linear e pista"></label>
     <label>Capacidade<input name="capacidade" value="{{ '%g'|format(f.capacidade) if f else '1' }}" inputmode="decimal" title="Linear e pista: giros por dia. Por unidade: peças por dia."></label>
     <label>Produz a cada (dias)<input name="ritmo_dias" value="{{ f.ritmo_dias if f else 1 }}" inputmode="numeric"></label>
@@ -20,7 +21,7 @@
 {% block corpo %}
 <div class="filtros">
   <div style="flex:1"><h1>Fôrmas e naves</h1>
-    <p class="sub" style="margin:0">Layout das fôrmas vigentes no dia. Arraste uma fôrma para mudar a posição; clique para editar.</p></div>
+    <p class="sub" style="margin:0">Layout das fôrmas vigentes no dia. Arraste uma fôrma para mudar a posição; clique para ver o que ela produz.</p></div>
   <form method="get" class="filtros" style="margin:0">
     <label for="dia">Dia<input id="dia" name="dia" type="date" value="{{ d.isoformat() }}" onchange="this.form.submit()"></label>
     <a class="botao-sec" href="/formas">Hoje</a>
@@ -104,6 +105,7 @@
     </table></div>
   </section>
 </div>
+<dialog id="pop-forma" class="pop"><div class="pop-corpo"></div></dialog>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -127,12 +129,20 @@ document.querySelectorAll('svg.layout').forEach(svg => {
   svg.addEventListener('pointerup', async () => {
     if (!alvo) return;
     const g = alvo; alvo = null; g.classList.remove('arrastando');
-    if (!moveu) { location.href = `/formas?dia={{ d.isoformat() }}&sel=${g.dataset.id}`; return; }
+    if (!moveu) { abrir(g.dataset.id); return; }
     const r = await fetch(`/formas/${g.dataset.id}/posicao`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ x: +g.dataset.nx, y: +g.dataset.ny }) });
     if (!r.ok) { alert('Não foi possível salvar a posição. Recarregue a página.'); return; }
     g.classList.add('salvo'); setTimeout(() => g.classList.remove('salvo'), 600);
   });
 });
+async function abrir(id) {
+  const dlg = document.getElementById('pop-forma');
+  dlg.querySelector('.pop-corpo').innerHTML = '<p class="meta">Carregando...</p>';
+  dlg.showModal();
+  const r = await fetch(`/formas/${id}/detalhe?dia={{ d.isoformat() }}`);
+  dlg.querySelector('.pop-corpo').innerHTML = r.ok ? await r.text() : '<p>Não foi possível carregar a fôrma.</p>';
+}
+document.getElementById('pop-forma').addEventListener('click', e => { if (e.target.id === 'pop-forma') e.target.close(); });
 </script>
 {% endblock %}

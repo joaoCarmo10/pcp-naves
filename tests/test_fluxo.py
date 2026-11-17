@@ -175,3 +175,6 @@ def test_formas(cliente):
     novo = dict(campos, codigo="n3f15", nave="N3", nome="F15 30x60", comprimento="12", versao_em="")
     assert cliente.post("/formas/nova", data=novo, follow_redirects=False).status_code == 303
     assert db.scalar(select(Forma).where(Forma.codigo == "N3F15")).nave == "N3"
+    # pop-up da fôrma
+    h = cliente.get(f"/formas/{f4.id}/detalhe?dia=2026-11-17").text
+    assert "Programado nesta fôrma" in h and "Peças a fazer que cabem" in h

@@ -49,6 +49,44 @@ INICIAIS = [
 ]
 
 
+# seções que cada fôrma já produziu nas programações (rev5 e Rev07) e restrição por produto
+COMPLEMENTO = {
+    "N1F1": ("", "30x60", ""), "N1F2": ("", "40x60", ""), "N3F1": ("", "20x50", ""), "N3F2": ("", "20x70", ""),
+    "N3F3": ("", "20x87", ""), "N3F4": ("", "40x60", ""), "N3F6": ("", "40x80", ""),
+    "N2P1": ("21x125", "", "LAJE"), "N2P2": ("21x125", "", "LAJE"),
+    "N3ESC1": ("", "", "ESCADA"), "N3ESC2": ("", "", "ESCADA"), "N3LAJE": ("VARIAVEL", "", "LAJE"),
+    "N3SAPATA": ("", "", "SAPATA"), "N3NJ": ("", "", "NEW JERSEY"),
+}
+
+
+def completar(db: Session) -> None:
+    """Preenche seção, adaptações e produtos das fôrmas da carga inicial, só onde o campo ainda está vazio."""
+    for f in db.scalars(select(Forma).where(Forma.codigo.in_(list(COMPLEMENTO)))):
+        sec, aceitas, prods = COMPLEMENTO[f.codigo]
+        if sec and not f.secao:
+            f.secao = sec
+        if aceitas and not f.secoes_aceitas:
+            f.secoes_aceitas = aceitas
+        if prods and not f.produtos:
+            f.produtos = prods
+    db.commit()
+
+
+def aceita(f: Forma, produto: str, secao: str, comprimento: float | None) -> bool:
+    """A peça cabe na fôrma? Produto (se a fôrma restringe), seção (nome ou adaptação) e comprimento útil."""
+    prods = {_norm(x) for x in (f.produtos or "").split(",") if _norm(x)}
+    if prods and _norm(produto) not in prods:
+        return False
+    secs = secoes(f)
+    if secs and _norm(secao) not in secs:
+        return False
+    if not prods and not secs:
+        return False
+    if f.tipo != "unidade" and f.comprimento and (comprimento or 0) > f.comprimento:
+        return False
+    return True
+
+
 def tamanho(f: Forma) -> float:
     return f.comprimento if f.tipo in ("linear", "pista") and f.comprimento else UNID_COMP
 
@@ -114,3 +152,18 @@ def capacidade_dia(formas: list[Forma], d: date) -> dict:
         else:
             out["metros"] += (f.comprimento or 0) * f.capacidade
     return out
+
+
+def _norm(s: str) -> str:
+    return (s or "").upper().replace("×", "X").replace(" ", "")
+
+
+def secoes(f: Forma) -> set[str]:
+    return {_norm(s) for s in [f.secao] + (f.secoes_aceitas or "").split(",") if _norm(s)}
+
+
+def item_e_da_forma(forma_txt: str, f: Forma) -> bool:
+    """A programação guarda a fôrma como texto ('N1 - F2 80x60 (80m)'); casa pelo prefixo nave + nome."""
+    t = _norm(forma_txt)
+    alvo = _norm(f"{f.nave}-{f.nome}")
+    return t == alvo or t.startswith(alvo + "(") or t.startswith(alvo) and not t[len(alvo):len(alvo) + 1].isdigit()
