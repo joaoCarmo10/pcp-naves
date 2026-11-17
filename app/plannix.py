@@ -44,6 +44,12 @@ def ler_exportacao(conteudo: bytes) -> pd.DataFrame:
     faltando = {"Peça", "Código", "Nome Obra", "Produto"} - set(df.columns)
     if faltando:
         raise ValueError(f"Arquivo não parece uma exportação do Plannix. Faltam as colunas: {', '.join(sorted(faltando))}")
+    # data de concretagem é o registro de produção: se a exportação trouxer essa coluna, ela vale como data de fabricação
+    concreto = [c for c in df.columns if "CONCRET" in c.upper() and "DATA" in c.upper()]
+    if concreto:
+        c = df[concreto[0]]
+        base = df["Data Fabricação"] if "Data Fabricação" in df.columns else ""
+        df["Data Fabricação"] = c.where(c.map(_data).notna(), base)
     return df
 
 
