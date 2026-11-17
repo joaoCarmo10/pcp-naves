@@ -80,22 +80,27 @@ def _obra(db: Session, nome_plannix: str) -> Obra:
 
 
 def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importacao:
-    """Completa (com 'Data Fabricação' preenchida) ou lista 'a realizar' (todas sem data).
+    """Geral ('all data': com e sem data), completa (só com data) ou lista 'a realizar' (todas sem data).
     Na lista 'a realizar', peça da mesma obra que não está na lista conta como fabricada."""
     df = ler_exportacao(conteudo)
-    tem_data = df["Data Fabricação"].map(_data).notna().any() if "Data Fabricação" in df.columns else False
-    tipo = "completa" if tem_data else "a_realizar"
+    datas = df["Data Fabricação"].map(_data) if "Data Fabricação" in df.columns else None
+    com = int(datas.notna().sum()) if datas is not None else 0
+    # geral ("all data"): fabricadas com data + pendentes sem data, retrato completo do Plannix
+    # completa: só fabricadas (realizado do dia) | a_realizar: só pendentes
+    tipo = "geral" if com and com < len(df) else ("completa" if com else "a_realizar")
     hoje = date.today()
     baixa = data_da_baixa()
     obras_no_arquivo: dict[int, Obra] = {}
     codigos = set()
     novas = atualizadas = 0
     existentes = {p.codigo: p for p in db.scalars(select(Peca))}
+    cache_obras: dict[str, Obra] = {}
     for r in df.to_dict("records"):
         codigo = str(r["Código"]).strip()
         if not codigo:
             continue
-        obra = _obra(db, r["Nome Obra"])
+        nome_obra = str(r["Nome Obra"])
+        obra = cache_obras.get(nome_obra) or cache_obras.setdefault(nome_obra, _obra(db, nome_obra))
         obras_no_arquivo[obra.id] = obra
         codigos.add(codigo)
         p = existentes.get(codigo)
@@ -115,7 +120,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         df_ = _data(r.get("Data Fabricação", ""))
         if df_:
             p.fabricada, p.data_fabricacao, p.origem_fabricacao = True, df_, "plannix"
-        elif tipo == "a_realizar":
+        elif tipo in ("a_realizar", "geral"):   # sem data no Plannix = pendente (o Plannix manda)
             p.fabricada, p.data_fabricacao, p.origem_fabricacao, p.data_baixa = False, None, None, None
         p.atualizada_em = datetime.now()
     saiu_lista = 0

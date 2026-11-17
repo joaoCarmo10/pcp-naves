@@ -247,3 +247,20 @@ def test_importar_varios(cliente):
     from urllib.parse import unquote
     msg = unquote(r.headers["location"])
     assert "erro" not in msg and msg.index("realizado.xls") < msg.index("a_realizar.xls")
+
+
+def test_all_data(cliente):
+    """Arquivo único com fabricadas (com data) e pendentes (sem data): o Plannix manda nas duas pontas."""
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Importacao, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/importar", files={"arquivo": ("a_realizar.xls", A_REALIZAR)})   # 1002 e 1004 saem da lista: baixa provisória
+    db = SessionLocal()
+    assert db.scalar(select(Peca).where(Peca.codigo == "1004")).fabricada
+    cliente.post("/importar", files={"arquivo": ("all_data.xls", COMPLETA)})       # Plannix: 1004 sem data = pendente
+    db.expire_all()
+    p = {x.codigo: x for x in db.scalars(select(Peca))}
+    assert p["1001"].fabricada and p["1001"].origem_fabricacao == "plannix"
+    assert not p["1004"].fabricada and not p["1002"].fabricada
+    assert db.scalars(select(Importacao).order_by(Importacao.id.desc())).first().tipo == "geral"

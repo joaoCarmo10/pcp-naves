@@ -23,7 +23,7 @@
   <tr><th>Data</th><th>Arquivo</th><th>Tipo</th><th>Resumo</th></tr>
   {% for i in imps %}
   <tr><td>{{ i.criada_em.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ i.arquivo }}</td>
-      <td>{{ {'completa':'Completa','a_realizar':'A realizar','programacao':'Programação'}[i.tipo] }}</td>
+      <td>{{ {'completa':'Realizado','geral':'All data','a_realizar':'A realizar','programacao':'Programação'}.get(i.tipo, i.tipo) }}</td>
       <td>{{ i.resumo.linhas }} linhas{% if i.resumo.obras %} · {{ i.resumo.obras|join(', ') }}{% endif %}</td></tr>
   {% endfor %}
 </table>

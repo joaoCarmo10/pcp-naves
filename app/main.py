@@ -121,8 +121,8 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
             return 3
         try:
             df = plannix.ler_exportacao(conteudo)
-            completa = "Data Fabricação" in df.columns and df["Data Fabricação"].map(plannix._data).notna().any()
-            return 1 if completa else 2
+            com = int(df["Data Fabricação"].map(plannix._data).notna().sum()) if "Data Fabricação" in df.columns else 0
+            return 1 if com else 2   # geral e completa antes da lista a realizar
         except ValueError:
             return 2
 
@@ -139,7 +139,7 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
             else:
                 imp = plannix.importar_exportacao(db, conteudo, nome)
                 r = imp.resumo
-                msgs.append(f"{nome}: {'lista a realizar' if imp.tipo == 'a_realizar' else 'realizado (completa)'}, {r['linhas']} linhas, "
+                msgs.append(f"{nome}: { {'a_realizar': 'lista a realizar', 'completa': 'realizado', 'geral': 'all data (realizado + a realizar)'}.get(imp.tipo, imp.tipo) }, {r['linhas']} linhas, "
                             f"{r['novas']} peças novas, {r['saiu_lista']} saíram da lista.")
         except (ValueError, zipfile.BadZipFile) as e:
             db.rollback()
