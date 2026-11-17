@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from openpyxl import load_workbook
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session, selectinload
 
 from .models import Apontamento, Importacao, ItemProg, Obra, Peca, RevisaoProg
@@ -121,6 +121,11 @@ class Linha:
     desvio: int | None
     ap: Apontamento | None
     peca: Peca | None = None
+    qtd: int | None = None   # parte do item (lote sem código dividido em feito e não feito)
+
+    def __post_init__(self):
+        if self.qtd is None:
+            self.qtd = self.item.qtd
 
 
 
@@ -161,17 +166,45 @@ def linhas(db: Session, rev: RevisaoProg, inicio: date | None = None, fim: date 
     cods = {i.codigo for i in itens if i.codigo}
     pecas = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_(cods)))} if cods else {}
     acompanhadas = {o.nome for o in db.scalars(select(Obra)) if o.pecas}
+    lotes = _lotes_sem_codigo(db, [i for i in itens if not i.codigo and i.qtd > 1])
     out = []
     for i in itens:
+        feitos = lotes.get(i.id)
+        if feitos is not None and not (i.apontamento and i.apontamento.data_execucao):
+            # lote sem código (ex.: New Jersey): conta no Plannix as peças da obra com o mesmo nome concretadas no dia
+            n = min(feitos, i.qtd)
+            if n:
+                out.append(Linha(i, "NO PRAZO", i.data, 0, i.apontamento, None, n))
+            if i.qtd - n:
+                st = "PENDENTE" if i.data >= hoje else "NÃO REALIZADA"
+                out.append(Linha(i, st, None, None, i.apontamento, None, i.qtd - n))
+            continue
         st, df = classificar(i, pecas.get(i.codigo), i.apontamento, hoje, i.obra in acompanhadas)
         out.append(Linha(i, st, df, (df - i.data).days if df else None, i.apontamento, pecas.get(i.codigo)))
+    return out
+
+
+def _lotes_sem_codigo(db: Session, itens: list[ItemProg]) -> dict[int, int]:
+    """Para itens programados em lote sem código (\"NJ-180 (13 un.)\"), quantas peças da mesma obra e mesmo nome
+    o Plannix registra como concretadas na data programada."""
+    if not itens:
+        return {}
+    obras = {o.nome: o.id for o in db.scalars(select(Obra))}
+    out = {}
+    for i in itens:
+        oid = obras.get(i.obra)
+        base = (i.peca or "").split(" (")[0].strip()
+        if not oid or not base:
+            continue
+        out[i.id] = db.scalar(select(func.count(Peca.id)).where(Peca.obra_id == oid, Peca.peca == base,
+                                                                  Peca.data_fabricacao == i.data)) or 0
     return out
 
 
 def agrega(ls: list[Linha], chave) -> list[dict]:
     g = defaultdict(Counter)
     for l in ls:
-        g[chave(l)][l.status] += l.item.qtd
+        g[chave(l)][l.status] += l.qtd
     out = []
     for k, c in g.items():
         prog = sum(c.values()) - c["PENDENTE"] - c["SEM INFORMAÇÃO"]

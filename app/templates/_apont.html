@@ -9,7 +9,7 @@
   <td>{{ i.obra }}</td>
   <td style="white-space:nowrap" title="{{ i.obs }}">{{ i.peca }}{% if com_forma %}<br><span class="meta">{{ i.forma }}</span>{% endif %}</td>
   <td class="meta">{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
-  <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
+  <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td>
   <td style="white-space:nowrap"><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if l.data_fab %}<br><span class="meta">fab. {{ l.data_fab|dm }}{% if l.desvio %} ({{ '%+d'|format(l.desvio) }}d){% endif %}</span>{% endif %}</td>
   <td style="white-space:nowrap"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button></td>
   <td><select class="ap" data-k="causa" aria-label="Causa"><option value=""></option>{% for c in CAUSAS %}<option {{ 'selected' if a and a.causa == c }}>{{ c }}</option>{% endfor %}</select></td>

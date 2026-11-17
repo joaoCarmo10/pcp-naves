@@ -330,9 +330,9 @@ def programacao_quadro(request: Request, rev: int | None = None, db: Session = D
     cel = {}
     for l in ls:
         c = cel.setdefault((l.item.forma or "-", l.item.data), {"n": 0, "ok": 0, "pend": 0})
-        c["n"] += l.item.qtd
-        c["ok"] += l.item.qtd if l.status in ("NO PRAZO", "COM ATRASO", "DATA A CONFIRMAR") else 0
-        c["pend"] += l.item.qtd if l.status == "PENDENTE" else 0
+        c["n"] += l.qtd
+        c["ok"] += l.qtd if l.status in ("NO PRAZO", "COM ATRASO", "DATA A CONFIRMAR") else 0
+        c["pend"] += l.qtd if l.status == "PENDENTE" else 0
     return tpl.TemplateResponse(request, "quadro.html", {"r": r, "revs": _revisoes(db), "dias": dias, "formas": formas, "cel": cel,
                                                          "hoje": date.today(), "base": ultima_base(db)})
 
@@ -355,7 +355,7 @@ def pxr(request: Request, rev: int | None = None, de: str | None = None, ate: st
     causas = Counter()
     for l in ls:
         if l.ap and l.ap.causa and l.status in ("NÃO REALIZADA", "COM ATRASO"):
-            causas[l.ap.causa] += l.item.qtd
+            causas[l.ap.causa] += l.qtd
     nao = [l for l in ls if l.status in ("NÃO REALIZADA", "COM ATRASO")]
     nao.sort(key=lambda l: (l.status != "NÃO REALIZADA", l.item.obra, l.item.forma, l.item.data))
     return tpl.TemplateResponse(request, "pxr.html", {

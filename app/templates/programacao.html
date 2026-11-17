@@ -49,16 +49,16 @@
     <th>Data de execução</th><th>Comentário</th>
   </tr></thead>
   <tbody>
-  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set plannix = l.peca and l.peca.data_fabricacao %}
+  {% for l in ls %}{% set i = l.item %}{% set a = l.ap %}{% set plannix = l.data_fab and not (a and a.data_execucao) %}
   <tr data-id="{{ i.id }}">
     <td class="nw">{{ i.data.strftime('%d/%m/%y') }}</td><td>{{ DIAS[i.data.weekday()] }}</td>
     <td class="nw">{{ i.forma }}</td><td class="nw">{{ i.obra }}</td><td class="nw">{{ i.peca }}</td><td class="meta">{{ i.codigo or '' }}</td>
     <td>{{ i.produto }}</td><td>{{ i.secao }}</td>
-    <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td><td class="n">{{ i.volume|num(3) if i.volume else '' }}</td>
+    <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td><td class="n">{{ i.volume|num(3) if i.volume else '' }}</td>
     <td class="obs">{{ i.obs }}</td>
     <td class="nw"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button>
       <br><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span></td>
-    <td class="nw">{% if plannix %}<b>{{ l.peca.data_fabricacao.strftime('%d/%m/%y') }}</b><br><span class="meta">Plannix</span>
+    <td class="nw">{% if plannix %}<b>{{ l.data_fab.strftime('%d/%m/%y') }}</b><br><span class="meta">Plannix</span>
       {% else %}<input class="ap" data-k="data_execucao" type="date" value="{{ a.data_execucao.isoformat() if a and a.data_execucao else '' }}" aria-label="Data de execução" style="width:140px">{% endif %}</td>
     <td><input class="ap coment" data-k="comentario" type="text" value="{{ a.comentario if a else '' }}" aria-label="Comentário"></td>
   </tr>
