@@ -12,11 +12,11 @@
   <form method="get" class="filtros" style="margin:0">
     <label for="dia">Dia
       <span style="display:flex;gap:4px;align-items:center">
-        {% if ant %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ ant }}&obra={{ f.obra|urlencode }}&nave={{ f.nave }}&produto={{ f.produto|urlencode }}&peca={{ f.peca|urlencode }}" title="Dia anterior">‹</a>{% endif %}
+        {% if ant %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ ant }}&obra={{ f.obra|urlencode }}&nave={{ f.nave }}&produto={{ f.produto|urlencode }}&peca={{ f.peca|urlencode }}&situacao={{ f.situacao }}" title="Dia anterior">‹</a>{% endif %}
         <select id="dia" name="dia" onchange="this.form.submit()">
           {% for x in dias %}<option value="{{ x }}" {{ 'selected' if x == d }}>{{ DIAS[x.weekday()] }} {{ x.strftime('%d/%m/%y') }}{{ ' (hoje)' if x == hoje }}</option>{% endfor %}
         </select>
-        {% if prox %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ prox }}&obra={{ f.obra|urlencode }}&nave={{ f.nave }}&produto={{ f.produto|urlencode }}&peca={{ f.peca|urlencode }}" title="Próximo dia">›</a>{% endif %}
+        {% if prox %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ prox }}&obra={{ f.obra|urlencode }}&nave={{ f.nave }}&produto={{ f.produto|urlencode }}&peca={{ f.peca|urlencode }}&situacao={{ f.situacao }}" title="Próximo dia">›</a>{% endif %}
       </span></label>
     <label for="obra">Obra<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas</option>
       {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
@@ -24,8 +24,10 @@
       {% for x in opcoes.nave %}<option value="{{ x }}" {{ 'selected' if x == f.nave }}>{{ {'N1':'Nave 1','N2':'Nave 2','N3':'Nave 3'}.get(x, x) }}</option>{% endfor %}</select></label>
     <label for="produto">Produto<select id="produto" name="produto" onchange="this.form.submit()"><option value="">Todos</option>
       {% for x in opcoes.produto %}<option {{ 'selected' if x == f.produto }}>{{ x }}</option>{% endfor %}</select></label>
+    <label for="situacao">Realizado<select id="situacao" name="situacao" onchange="this.form.submit()">
+      {% for v, n in [('', 'Todos'), ('sim', 'Sim (realizadas)'), ('nao', 'Não realizadas'), ('atraso', 'Com atraso'), ('confirmar', 'Data a confirmar'), ('pendente', 'Pendentes')] %}<option value="{{ v }}" {{ 'selected' if v == f.situacao }}>{{ n }}</option>{% endfor %}</select></label>
     <label for="peca">Peça ou código<input id="peca" name="peca" type="search" value="{{ f.peca }}" placeholder="ex.: VR, P163" style="width:120px" onchange="this.form.submit()"></label>
-    {% if f.obra or f.nave or f.produto or f.peca %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ d }}">Limpar</a>{% endif %}
+    {% if f.obra or f.nave or f.produto or f.peca or f.situacao %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ d }}">Limpar</a>{% endif %}
     <label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.dia.value='';this.form.submit()">
       {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
   </form>
@@ -60,7 +62,7 @@
       {% else %}<input class="ap" data-k="data_execucao" type="date" value="{{ a.data_execucao.isoformat() if a and a.data_execucao else '' }}" aria-label="Data de execução" style="width:140px">{% endif %}</td>
     <td><input class="ap coment" data-k="comentario" type="text" value="{{ a.comentario if a else '' }}" aria-label="Comentário"></td>
   </tr>
-  {% else %}<tr><td colspan="24" class="vazio">Nada programado neste dia{{ ' com esses filtros' if f.obra or f.nave or f.produto or f.peca }}.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="24" class="vazio">Nada programado neste dia{{ ' com esses filtros' if f.obra or f.nave or f.produto or f.peca or f.situacao }}.</td></tr>{% endfor %}
   </tbody>
 </table></div>
 <form method="post" action="/programacao/revisoes/{{ r.id }}/excluir" style="margin-top:24px" onsubmit="return confirm('Excluir esta revisão e os apontamentos dela?')">

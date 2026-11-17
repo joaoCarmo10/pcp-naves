@@ -138,3 +138,8 @@ def test_programacao_pxr(cliente):
     assert "1003" in h and "1002" not in h
     h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&produto=VIGA&peca=vr1").text
     assert "1002" in h and "1003" not in h
+    # filtro de situação: só lista, indicadores continuam do dia inteiro
+    h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&situacao=nao").text
+    assert "1003" in h and "1002" not in h
+    h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&situacao=atraso").text
+    assert "1002" in h and "1003" not in h

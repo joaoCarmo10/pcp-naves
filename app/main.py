@@ -281,7 +281,7 @@ def _data(s: str | None) -> date | None:
 
 @app.get("/programacao", response_class=HTMLResponse)
 def programacao_dia(request: Request, rev: int | None = None, dia: str | None = None, obra: str = "", nave: str = "",
-                    produto: str = "", peca: str = "", db: Session = Depends(get_db)):
+                    produto: str = "", peca: str = "", situacao: str = "", db: Session = Depends(get_db)):
     r = _rev(db, rev)
     if not r:
         return tpl.TemplateResponse(request, "programacao.html", {"r": None, "revs": [], "base": ultima_base(db)})
@@ -303,13 +303,20 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
     opcoes = {"obra": sorted({l.item.obra for l in todas if l.item.obra}), "nave": sorted({l.item.nave for l in todas if l.item.nave}),
               "produto": sorted({l.item.produto for l in todas if l.item.produto})}
     ls = [l for l in todas if passa(l)]
+    tot = pg.totais(ls)   # indicadores não dependem do filtro de situação
+    feitos = ("NO PRAZO", "COM ATRASO", "DATA A CONFIRMAR")
+    sit = {"sim": lambda s: s in feitos, "nao": lambda s: s == "NÃO REALIZADA", "pendente": lambda s: s == "PENDENTE",
+           "atraso": lambda s: s == "COM ATRASO", "confirmar": lambda s: s == "DATA A CONFIRMAR"}.get(situacao)
+    f["situacao"] = situacao if sit else ""
+    if sit:
+        ls = [l for l in ls if sit(l.status)]
     acum = pg.totais([l for l in pg.linhas(db, r, r.inicio, d) if passa(l)])
     seg = d - timedelta(days=d.weekday())
     semana = [seg + timedelta(days=k) for k in range(6)]
     i = dias.index(d)
     return tpl.TemplateResponse(request, "programacao.html", {
         "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
-        "ls": ls, "tot": pg.totais(ls), "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db)})
+        "ls": ls, "tot": tot, "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db)})
 
 
 @app.get("/programacao/quadro", response_class=HTMLResponse)
