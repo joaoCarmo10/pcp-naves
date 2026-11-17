@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="300"><meta name="robots" content="noindex">
+<title>Armação | PCP Naves</title><link rel="stylesheet" href="/static/app.css"></head>
+<body class="armador">
+<main>
+  <h1>Lista de armação</h1>
+  <p class="meta">Atualiza sozinha a cada 5 minutos. Peças com ✓ já estão armadas.</p>
+  {% if not listas %}<div class="vazio">Nenhuma lista divulgada para os próximos dias.</div>{% endif %}
+  {% for l in listas %}
+  <section class="arm-dia">
+    <h2>{{ DIAS[l.d.weekday()] }} {{ l.d.strftime('%d/%m') }} <span class="meta">· {{ l.armadas }} de {{ l.pecas }} armadas · divulgada {{ l.dv.criada_em.strftime('%d/%m %H:%M') }}</span></h2>
+    {% for (nave, forma), ls in l.grupos.items() %}
+    <div class="arm-forma"><div class="arm-cab"><b>{{ forma or nave }}</b></div>
+      {% for y in ls %}{% set x = y.x %}
+      <div class="arm-linha {{ 'armada' if y.s.armado }}">
+        <span class="ok">{{ '✓' if y.s.armado else '' }}</span>
+        <span><b>{{ x.peca }}</b>{% if x.qtd > 1 %} ×{{ x.qtd }}{% endif %} <span class="meta">{{ x.obra }}</span><br>
+          <span class="meta">{{ x.produto }} · {{ x.secao }}{% if x.comp %} · {{ x.comp|num(2) }} m{% endif %}{% if x.codigo %} · {{ x.codigo }}{% endif %}</span></span>
+      </div>{% endfor %}
+    </div>{% endfor %}
+  </section>
+  {% endfor %}
+</main></body></html>

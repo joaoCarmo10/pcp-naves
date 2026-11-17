@@ -148,3 +148,24 @@ class Forma(Base):
     def nome_completo(self) -> str:
         extra = f" ({self.comprimento:g}m)" if self.comprimento else ""
         return f"{self.nave} - {self.nome}{extra}"
+
+
+class Armacao(Base):
+    """Armação marcada no app. Vale para a peça (código), não para a linha da programação: se a peça muda de dia
+    ou de revisão, continua armada. Lotes sem código (ex.: NJ da planilha) ficam pelo item."""
+    __tablename__ = "armacoes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    codigo: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
+    item_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    armado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    obs: Mapped[str] = mapped_column(String(200), default="")
+
+
+class Divulgacao(Base):
+    """Lista de armação divulgada ao armador para um dia (foto da programação no momento da divulgação)."""
+    __tablename__ = "divulgacoes"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dia: Mapped[date] = mapped_column(Date, index=True)
+    revisao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    itens: Mapped[list] = mapped_column(JSON, default=list)   # [{id, codigo, obra, peca, forma, nave, secao, comp, qtd, produto}]

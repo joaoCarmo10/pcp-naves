@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block titulo %}Armação | PCP Naves{% endblock %}
+{% block corpo %}
+<div class="filtros nao-imprime">
+  <div style="flex:1"><h1>Armação</h1>
+    <p class="sub" style="margin:0">Lista das peças programadas para o dia, para divulgar ao armador na véspera e marcar o que já está armado.</p></div>
+  {% if r %}
+  <form method="get" class="filtros" style="margin:0">
+    <label for="dia">Dia da concretagem<select id="dia" name="dia" onchange="this.form.submit()">
+      {% for x in dias %}<option value="{{ x }}" {{ 'selected' if x == d }}>{{ DIAS[x.weekday()] }} {{ x.strftime('%d/%m/%y') }}{{ ' (hoje)' if x == hoje }}</option>{% endfor %}</select></label>
+    <label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+  </form>
+  {% endif %}
+</div>
+{% if not r %}<div class="vazio">Nenhuma programação importada.</div>{% else %}
+<h2 class="so-imprime">Armação para {{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m/%Y') }} · {{ r.nome }}{% if dv %} · divulgada em {{ dv.criada_em.strftime('%d/%m %H:%M') }}{% endif %}</h2>
+<div class="kpis" style="margin-bottom:8px">
+  <div class="kpi"><b>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</b><span>concretagem</span></div>
+  <div class="kpi"><b>{{ pecas }}</b><span>peças programadas</span></div>
+  <div class="kpi"><b>{{ armadas }}</b><span>armadas</span></div>
+  <div class="kpi destaque"><b>{{ (armadas / pecas)|pct if pecas else '-' }}</b><span>prontidão da armação</span></div>
+  {% for n, x in por_nave.items() %}<div class="kpi"><b>{{ (x[1] / x[0])|pct if x[0] else '-' }}</b><span>{{ n }}: {{ x[1] }} de {{ x[0] }}</span></div>{% endfor %}
+</div>
+<section class="cartao nao-imprime divulga">
+  <div>
+    {% if dv %}<b>Divulgada em {{ dv.criada_em.strftime('%d/%m às %H:%M') }}</b> com {{ dv.itens|length }} linhas.
+      {% if incluidos or retirados %}<span class="alerta-mud">Mudou depois: {{ incluidos|length }} incluída(s), {{ retirados|length }} retirada(s). Divulgue de novo para o armador ver.</span>{% endif %}
+    {% else %}<b>Ainda não divulgada.</b> O armador só vê a lista depois de divulgar.{% endif %}
+  </div>
+  <div class="acoes" style="margin-top:6px">
+    <form method="post" action="/armacao/divulgar" style="display:inline"><input type="hidden" name="dia" value="{{ d }}"><input type="hidden" name="rev" value="{{ r.id }}">
+      <button type="submit" {{ 'disabled' if not pecas }}>{{ 'Divulgar de novo' if dv else 'Divulgar ao armador' }}</button></form>
+    <button type="button" class="botao-sec" onclick="window.print()">Imprimir (A4)</button>
+    <span class="meta">Link do armador (só leitura, sem senha):</span>
+    <input id="link" value="{{ link }}" readonly style="width:300px" aria-label="Link do armador">
+    <button type="button" class="botao-sec" onclick="navigator.clipboard.writeText(document.getElementById('link').value);this.textContent='Copiado'">Copiar</button>
+  </div>
+</section>
+{% if not grupos %}<div class="vazio">Nada programado para {{ d|dm }} nesta revisão.</div>{% endif %}
+{% for (nave, forma), ls in grupos.items() %}
+<section class="arm-forma">
+  <div class="arm-cab"><b>{{ forma or nave }}</b>
+    <span class="meta">{{ ls|selectattr('s.armado')|map(attribute='i.qtd')|sum }} de {{ ls|map(attribute='i.qtd')|sum }} armadas</span>
+    <button type="button" class="botao-sec nao-imprime" onclick="marcarForma(this, true)">Marcar fôrma toda</button></div>
+  <table class="t compacta">
+    <thead><tr><th style="width:70px">Armada</th><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th>Registro</th></tr></thead>
+    <tbody>{% for x in ls %}{% set i = x.i %}{% set s = x.s %}
+      <tr class="{{ 'armada' if s.armado }}" data-cod="{{ i.codigo or '' }}" data-id="{{ i.id }}">
+        <td class="c"><input type="checkbox" class="chk-arm" {{ 'checked' if s.armado }} {{ 'disabled' if s.origem in ('Plannix', 'Fabricada') }} aria-label="Armada {{ i.peca }}"></td>
+        <td>{{ i.obra }}</td><td><b>{{ i.peca }}</b>{% if x.novo %} <span class="novo">após divulgação</span>{% endif %}</td><td class="meta">{{ i.codigo or '' }}</td>
+        <td>{{ i.produto }}</td><td>{{ i.secao }}</td><td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
+        <td class="meta reg">{% if s.armado %}{{ s.origem }}{% if s.quando %} {{ s.quando.strftime('%d/%m %H:%M') if s.quando.hour is defined else s.quando.strftime('%d/%m') }}{% endif %}{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endfor %}
+{% if retirados %}
+<section class="cartao nao-imprime"><b>Saíram da lista depois da divulgação</b>
+  <div class="meta">{% for x in retirados %}{{ x.forma }}: {{ x.peca }} ({{ x.obra }}){{ '; ' if not loop.last }}{% endfor %}</div></section>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+async function enviar(trs, armado) {
+  const codigos = [], item_ids = [];
+  trs.forEach(tr => tr.dataset.cod ? codigos.push(tr.dataset.cod) : item_ids.push(+tr.dataset.id));
+  const r = await fetch('/armacao/marcar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ codigos, item_ids, armado }) });
+  if (!r.ok) { alert('Não foi possível salvar. Recarregue a página.'); return false; }
+  const agora = new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '');
+  trs.forEach(tr => { tr.classList.toggle('armada', armado); tr.querySelector('.chk-arm').checked = armado; tr.querySelector('.reg').textContent = armado ? 'App ' + agora : ''; });
+  return true;
+}
+document.querySelectorAll('.chk-arm').forEach(c => c.addEventListener('change', () => enviar([c.closest('tr')], c.checked)));
+function marcarForma(btn, armado) {
+  const trs = [...btn.closest('.arm-forma').querySelectorAll('tbody tr')].filter(tr => !tr.querySelector('.chk-arm').disabled && !tr.classList.contains('armada'));
+  if (trs.length) enviar(trs, armado);
+}
+</script>
+{% endblock %}

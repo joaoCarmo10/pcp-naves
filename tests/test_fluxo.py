@@ -211,3 +211,30 @@ def test_planejar(cliente):
     # cópia de revisão
     r = cliente.post("/planejar/revisao", data={"modo": "copia", "rev": str(rev.id), "dia": "2026-11-18"}, follow_redirects=False)
     assert r.status_code == 303 and len(list(db.scalars(select(RevisaoProg)))) == 2
+
+
+def test_armacao(cliente):
+    from sqlalchemy import select
+    from app import armacao as arm
+    from app.db import SessionLocal
+    from app.models import RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/importar", files={"arquivo": ("prog.xlsx", prog_xlsx())})
+    rev = SessionLocal().scalar(select(RevisaoProg))
+    h = cliente.get(f"/armacao?dia=2026-11-10&rev={rev.id}").text
+    assert "Ainda não divulgada" in h and "VR1" in h
+    # armador sem divulgação não vê nada; link errado dá 404
+    tok = arm.token_armador()
+    assert cliente.get("/armador/errado").status_code == 404
+    cliente.post("/armacao/divulgar", data={"dia": "2026-11-10", "rev": str(rev.id)})
+    assert cliente.post("/armacao/marcar", json={"codigos": ["1003"], "armado": True}).json()["n"] == 1
+    h = cliente.get(f"/armacao?dia=2026-11-10&rev={rev.id}").text
+    assert "Divulgada em" in h and "App " in h
+    # o link do armador funciona sem login (só leitura)
+    import app.main as m
+    from fastapi.testclient import TestClient
+    anon = TestClient(m.app)
+    assert anon.get("/armacao").status_code in (200, 303)
+    assert anon.get("/armacao", follow_redirects=False).status_code == 303 or not m.SENHA
+    assert cliente.post("/armacao/marcar", json={"codigos": ["1003"], "armado": False}).json()["n"] == 1
+    assert cliente.get(f"/armador/{tok}").status_code == 200

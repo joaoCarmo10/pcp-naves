@@ -18,9 +18,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import formas as fm, planejar as pl, plannix, plantas, programacao as pg
+from . import armacao as arm, formas as fm, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Forma, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Divulgacao, Forma, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -47,7 +47,7 @@ def ultima_base(db: Session) -> str:
 
 @app.middleware("http")
 async def exige_login(request: Request, call_next):
-    livre = request.url.path.startswith(("/static", "/login", "/saude"))
+    livre = request.url.path.startswith(("/static", "/login", "/saude", "/armador/"))   # /armador/<token>: só leitura
     if SENHA and not livre and not request.session.get("ok"):
         return RedirectResponse("/login", status_code=303)
     return await call_next(request)
@@ -607,3 +607,67 @@ def planejar_forma(request: Request, fid: int, rev: int, dia: str, db: Session =
     itens = sorted(por.get(f.id, []), key=lambda i: (i.obra, chave_natural(i.peca)))
     return tpl.TemplateResponse(request, "_planejar_forma.html", {"f": f, "d": d, "itens": itens, "cap": pl.capacidade(f, d),
                                                                   "uso": pl.uso(f, itens)})
+
+
+# ---------------------------------------------------------------- armação (lista D-1 do armador)
+def _grupos_armacao(itens, sit, incluidos=frozenset()):
+    grupos = {}
+    for i in itens:
+        g = grupos.setdefault((i.nave, i.forma), [])
+        g.append({"i": i, "s": sit[i.id], "novo": i.id in incluidos})
+    return grupos
+
+
+@app.get("/armacao", response_class=HTMLResponse)
+def armacao_tela(request: Request, dia: str | None = None, rev: int | None = None, db: Session = Depends(get_db)):
+    r = _rev(db, rev)
+    d = _data(dia) or arm.proximo_dia_util(date.today())
+    itens = arm.itens_do_dia(db, r, d) if r else []
+    sit = arm.situacao(db, itens)
+    dv = arm.ultima_divulgacao(db, d)
+    incluidos, retirados = arm.diferencas(dv, itens)
+    pecas = sum(i.qtd for i in itens)
+    armadas = sum(i.qtd for i in itens if sit[i.id]["armado"])
+    por_nave = {}
+    for i in itens:
+        x = por_nave.setdefault(i.nave, [0, 0])
+        x[0] += i.qtd
+        x[1] += i.qtd if sit[i.id]["armado"] else 0
+    dias = sorted({date.today() + timedelta(days=k) for k in range(-2, 8)} | {d})
+    dias = [x for x in dias if x.weekday() != 6]
+    link = str(request.base_url).rstrip("/") + f"/armador/{arm.token_armador()}"
+    return tpl.TemplateResponse(request, "armacao.html", {
+        "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "grupos": _grupos_armacao(itens, sit, incluidos), "pecas": pecas,
+        "armadas": armadas, "por_nave": dict(sorted(por_nave.items())), "dv": dv, "incluidos": incluidos, "retirados": retirados,
+        "link": link, "hoje": date.today(), "base": ultima_base(db)})
+
+
+@app.post("/armacao/marcar")
+def armacao_marcar(dados: dict = Body(...), db: Session = Depends(get_db)):
+    n = arm.marcar(db, [str(c) for c in dados.get("codigos", []) if c], [int(x) for x in dados.get("item_ids", [])], bool(dados.get("armado")))
+    return {"ok": True, "n": n}
+
+
+@app.post("/armacao/divulgar")
+def armacao_divulgar(dia: str = Form(...), rev: str = Form(""), db: Session = Depends(get_db)):
+    r = _rev(db, int(rev) if rev else None) or _404()
+    d = _data(dia) or _404()
+    arm.divulgar(db, r, d)
+    return RedirectResponse(f"/armacao?dia={d}&rev={r.id}&divulgado=1", status_code=303)
+
+
+@app.get("/armador/{token}", response_class=HTMLResponse)
+def armador(request: Request, token: str, db: Session = Depends(get_db)):
+    if not hmac.compare_digest(token, arm.token_armador()):
+        raise HTTPException(404)
+    hoje = date.today()
+    listas = []
+    for d in sorted({x for (x,) in db.execute(select(Divulgacao.dia).where(Divulgacao.dia >= hoje))})[:3]:
+        dv = arm.ultima_divulgacao(db, d)
+        sit = arm.situacao(db, dv.itens)
+        grupos = {}
+        for x in sorted(dv.itens, key=lambda x: (x["nave"], x["forma"], x["obra"], chave_natural(x["peca"]))):
+            grupos.setdefault((x["nave"], x["forma"]), []).append({"x": x, "s": sit[x["id"]]})
+        listas.append({"d": d, "dv": dv, "grupos": grupos, "pecas": sum(x["qtd"] for x in dv.itens),
+                       "armadas": sum(x["qtd"] for x in dv.itens if sit[x["id"]]["armado"])})
+    return tpl.TemplateResponse(request, "armador.html", {"listas": listas, "hoje": hoje})

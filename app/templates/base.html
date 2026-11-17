@@ -13,6 +13,7 @@
     <a href="/" class="{{ 'ativo' if request.url.path == '/' }}">Avanço das obras</a>
     <a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}">Realizado do dia</a>
     <a href="/pxr" class="{{ 'ativo' if request.url.path.startswith('/pxr') }}">Programado x realizado</a>
+    <a href="/armacao" class="{{ 'ativo' if request.url.path.startswith('/armacao') }}">Armação</a>
     <a href="/planejar" class="{{ 'ativo' if request.url.path.startswith('/planejar') }}">Planejar</a>
     <a href="/formas" class="{{ 'ativo' if request.url.path.startswith('/formas') }}">Fôrmas e naves</a>
     <a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}">Importar dados</a>

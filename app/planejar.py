@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from . import formas as fm
-from .models import Forma, ItemProg, Obra, Peca, RevisaoProg
+from .models import Armacao, Forma, ItemProg, Obra, Peca, RevisaoProg
 from .status import chave_natural
 
 # prioridade das obras (alinhamento de 14/11): Farol > Elite > Bay > demais
@@ -54,6 +54,7 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
     ja = set()
     if rev:
         ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    armadas_app = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
     grupos: dict[tuple, dict] = {}
     q = select(Peca, Obra).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))
     for p, o in db.execute(q):
@@ -65,7 +66,7 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
             g = grupos[k] = {"obra": o.nome, "prio": o.prioridade or 99, "peca": p.peca, "secao": p.secao, "comp": p.comprimento,
                              "produto": p.produto, "codigos": [], "armadas": 0}
         g["codigos"].append(p.codigo)
-        if p.hora_armacao:
+        if p.hora_armacao or p.codigo in armadas_app:
             g["armadas"] += 1
     out = list(grupos.values())
     for g in out:
