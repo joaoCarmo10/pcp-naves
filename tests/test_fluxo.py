@@ -128,3 +128,8 @@ def test_programacao_pxr(cliente):
     html = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10").text
     assert '<select id="dia"' in html and "PPC acumulado" in html and "Ferragem atrasou" in html
     assert "<b>X</b>" in cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-09").text   # 1001 concretada em 10/11
+    # filtros por obra, nave, produto e peça
+    h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&nave=N3").text
+    assert "1003" in h and "1002" not in h
+    h = cliente.get(f"/programacao?rev={rev.id}&dia=2026-11-10&produto=VIGA&peca=vr1").text
+    assert "1002" in h and "1003" not in h

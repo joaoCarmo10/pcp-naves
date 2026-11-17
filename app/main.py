@@ -280,7 +280,8 @@ def _data(s: str | None) -> date | None:
 
 
 @app.get("/programacao", response_class=HTMLResponse)
-def programacao_dia(request: Request, rev: int | None = None, dia: str | None = None, db: Session = Depends(get_db)):
+def programacao_dia(request: Request, rev: int | None = None, dia: str | None = None, obra: str = "", nave: str = "",
+                    produto: str = "", peca: str = "", db: Session = Depends(get_db)):
     r = _rev(db, rev)
     if not r:
         return tpl.TemplateResponse(request, "programacao.html", {"r": None, "revs": [], "base": ultima_base(db)})
@@ -289,14 +290,26 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
     if d not in dias:
         futuros = [x for x in dias if x >= d]
         d = futuros[0] if futuros else dias[-1]
-    ls = pg.linhas(db, r, d, d)
-    acum = pg.totais(pg.linhas(db, r, r.inicio, d))
+    f = {"obra": obra.strip(), "nave": nave.strip(), "produto": produto.strip(), "peca": peca.strip()}
+    busca = f["peca"].upper()
+
+    def passa(l) -> bool:
+        i = l.item
+        return ((not f["obra"] or i.obra == f["obra"]) and (not f["nave"] or i.nave == f["nave"])
+                and (not f["produto"] or i.produto == f["produto"])
+                and (not busca or busca in (i.peca or "").upper() or busca in (i.codigo or "")))
+
+    todas = pg.linhas(db, r, d, d)
+    opcoes = {"obra": sorted({l.item.obra for l in todas if l.item.obra}), "nave": sorted({l.item.nave for l in todas if l.item.nave}),
+              "produto": sorted({l.item.produto for l in todas if l.item.produto})}
+    ls = [l for l in todas if passa(l)]
+    acum = pg.totais([l for l in pg.linhas(db, r, r.inicio, d) if passa(l)])
     seg = d - timedelta(days=d.weekday())
     semana = [seg + timedelta(days=k) for k in range(6)]
     i = dias.index(d)
     return tpl.TemplateResponse(request, "programacao.html", {
         "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
-        "ls": ls, "tot": pg.totais(ls), "acum": acum, "semana": semana, "hoje": date.today(), "base": ultima_base(db)})
+        "ls": ls, "tot": pg.totais(ls), "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db)})
 
 
 @app.get("/programacao/quadro", response_class=HTMLResponse)
