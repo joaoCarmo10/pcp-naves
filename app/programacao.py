@@ -71,10 +71,16 @@ def importar_programacao(db: Session, conteudo: bytes, arquivo: str) -> Importac
             if not isinstance(d, date):
                 continue
             forma = _txt(g(row, "FÔRMA", "FORMA"))
-            obra = _txt(g(row, "OBRA", "NOME OBRA"))
+            obra = _txt(g(row, "OBRA", "NOME OBRA", "NOME DA OBRA (PLANNIX)"))
             sigla = obra.split("-")[0].strip()
             obra = obras.get(sigla, obra[:80])
             cod = _txt(g(row, "CÓDIGO", "CODIGO")) or None
+            if not obra:   # planilha sem coluna de obra: usa a obra da peça no Plannix (ou do lote, pelo nome)
+                pc = db.scalar(select(Peca).where(Peca.codigo == cod)) if cod else None
+                if not pc and not cod:
+                    base = _txt(g(row, "PEÇA")).split(" (")[0].strip()
+                    pc = db.scalar(select(Peca).where(Peca.peca == base).limit(1)) if base else None
+                obra = pc.obra.nome if pc else ""
             qtd = g(row, "QTD")
             it = ItemProg(data=d, nave=_nave(forma, aba), forma=forma, obra=obra, peca=_txt(g(row, "PEÇA")), codigo=cod,
                           produto=_txt(g(row, "PRODUTO")), secao=_txt(g(row, "SEÇÃO")),
@@ -194,10 +200,12 @@ def _lotes_sem_codigo(db: Session, itens: list[ItemProg]) -> dict[int, int]:
     for i in itens:
         oid = obras.get(i.obra)
         base = (i.peca or "").split(" (")[0].strip()
-        if not oid or not base:
+        if not base:
             continue
-        out[i.id] = db.scalar(select(func.count(Peca.id)).where(Peca.obra_id == oid, Peca.peca == base,
-                                                                  Peca.data_fabricacao == i.data)) or 0
+        q = select(func.count(Peca.id)).where(Peca.peca == base, Peca.data_fabricacao == i.data)
+        if oid:   # sem obra na planilha, procura o nome da peça em todas as obras
+            q = q.where(Peca.obra_id == oid)
+        out[i.id] = db.scalar(q) or 0
     return out
 
 
