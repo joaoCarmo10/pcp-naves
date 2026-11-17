@@ -178,3 +178,36 @@ def test_formas(cliente):
     # pop-up da fôrma
     h = cliente.get(f"/formas/{f4.id}/detalhe?dia=2026-11-17").text
     assert "Programado nesta fôrma" in h and "Peças a fazer que cabem" in h
+
+
+def test_planejar(cliente):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    r = cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": "2026-11-18"}, follow_redirects=False)
+    assert r.status_code == 303
+    db = SessionLocal()
+    from app.models import Obra
+    db.scalar(select(Obra)).ativa = True     # obra de teste não está entre as acompanhadas
+    db.commit()
+    rev = db.scalar(select(RevisaoProg))
+    h = cliente.get(f"/planejar?rev={rev.id}&dia=2026-11-18").text
+    assert "Peças a programar" in h and '"1004"' in h          # P2 40x40 está na lista de faltantes
+    f4 = db.scalar(select(Forma).where(Forma.codigo == "N1F4"))
+    j = cliente.post("/planejar/alocar", json={"rev": rev.id, "dia": "2026-11-18", "forma": f4.id, "codigos": ["1004"]}).json()
+    assert j["ok"]
+    # VR1 20x60 não encaixa na 40x40: pede confirmação; forçando, grava com observação
+    j = cliente.post("/planejar/alocar", json={"rev": rev.id, "dia": "2026-11-18", "forma": f4.id, "codigos": ["1002"]}).json()
+    assert not j["ok"] and j["pode_forcar"] and "não cabe" in j["problemas"][0]
+    j = cliente.post("/planejar/alocar", json={"rev": rev.id, "dia": "2026-11-18", "forma": f4.id, "codigos": ["1002"], "forcar": True}).json()
+    assert j["ok"]
+    itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id)))
+    assert {i.codigo for i in itens} == {"1002", "1004"} and all(i.forma == "N1 - F4 40x40 (16m)" for i in itens)
+    assert '"1004"' not in cliente.get(f"/planejar?rev={rev.id}&dia=2026-11-18").text.split("const FALT")[1][:2000]
+    h = cliente.get(f"/planejar/forma/{f4.id}?rev={rev.id}&dia=2026-11-18").text
+    assert "P2" in h and "Forçado" in h
+    assert cliente.post("/planejar/remover", json={"ids": [i.id for i in itens]}).json()["n"] == 2
+    # cópia de revisão
+    r = cliente.post("/planejar/revisao", data={"modo": "copia", "rev": str(rev.id), "dia": "2026-11-18"}, follow_redirects=False)
+    assert r.status_code == 303 and len(list(db.scalars(select(RevisaoProg)))) == 2

@@ -18,7 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import formas as fm, plannix, plantas, programacao as pg
+from . import formas as fm, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Forma, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
@@ -37,6 +37,7 @@ migrar()
 with SessionLocal() as _db:
     fm.carga_inicial(_db)
     fm.completar(_db)
+    pl.completar_prioridades(_db)
 
 
 def ultima_base(db: Session) -> str:
@@ -527,3 +528,82 @@ def forma_detalhe(request: Request, fid: int, dia: str | None = None, db: Sessio
     return tpl.TemplateResponse(request, "_forma_detalhe.html", {
         "f": f, "d": d, "r": r, "por_dia": dict(sorted(por_dia.items())), "ocup": ocup, "cabem": cabem[:80], "n_cabem": len(cabem),
         "resumo_cabem": resumo_cabem.most_common(), "programados": programados, "fm": fm})
+
+
+# ---------------------------------------------------------------- quadro de planejamento (arrastar peças para as fôrmas)
+@app.get("/planejar", response_class=HTMLResponse)
+def planejar_tela(request: Request, rev: int | None = None, dia: str | None = None, db: Session = Depends(get_db)):
+    r = _rev(db, rev)
+    hoje = date.today()
+    d = _data(dia) or hoje
+    # dias oferecidos: período da revisão e as próximas 3 semanas, sem domingos
+    base = {hoje + timedelta(days=k) for k in range(-3, 22)}
+    if r and r.inicio and r.fim:
+        base |= {r.inicio + timedelta(days=k) for k in range((r.fim - r.inicio).days + 1)}
+    base.add(d)
+    dias = sorted(x for x in base if x.weekday() != 6)
+    vig = [f for f in db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)) if f.vigente(d)]
+    por, sobra = pl.itens_por_forma(db, r, d, vig) if r else ({}, [])
+    naves = []
+    for n, nome in fm.NAVES.items():
+        fs = [f for f in vig if f.nave == n]
+        w, h = fm.dimensoes_nave(fs)
+        linhas = []
+        for f in fs:
+            cap, us = pl.capacidade(f, d), pl.uso(f, por.get(f.id, []))
+            linhas.append({"f": f, "cap": cap, "uso": us, "n": sum(i.qtd for i in por.get(f.id, [])),
+                           "secoes": sorted(fm.secoes(f)), "produtos": [fm._norm(x) for x in (f.produtos or "").split(",") if x.strip()]})
+        tot_cap = sum(x["cap"] for x in linhas if x["f"].tipo != "unidade")
+        tot_uso = sum(x["uso"] for x in linhas if x["f"].tipo != "unidade")
+        naves.append({"cod": n, "nome": nome, "linhas": linhas, "w": w, "h": h, "cap": tot_cap, "uso": tot_uso})
+    falt = pl.faltantes(db, r) if r else []
+    i = dias.index(d)
+    return tpl.TemplateResponse(request, "planejar.html", {
+        "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
+        "naves": naves, "sobra": sobra, "falt": falt, "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
+        "tamanho": fm.tamanho, "altura": fm.altura, "hoje": hoje, "base": ultima_base(db)})
+
+
+@app.post("/planejar/alocar")
+def planejar_alocar(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    f = db.get(Forma, int(dados["forma"])) or _404()
+    d = _data(dados.get("dia")) or _404()
+    cods = [str(c) for c in dados.get("codigos", [])][:500]
+    return pl.alocar(db, r, f, d, cods, bool(dados.get("forcar")))
+
+
+@app.post("/planejar/remover")
+def planejar_remover(dados: dict = Body(...), db: Session = Depends(get_db)):
+    ids = [int(x) for x in dados.get("ids", [])]
+    n = 0
+    for it in db.scalars(select(ItemProg).where(ItemProg.id.in_(ids))):
+        db.delete(it)
+        n += 1
+    db.commit()
+    return {"ok": True, "n": n}
+
+
+@app.post("/planejar/revisao")
+def planejar_revisao(rev: str = Form(""), dia: str = Form(""), modo: str = Form("copia"), db: Session = Depends(get_db)):
+    agora = datetime.now()
+    if modo == "copia" and rev:
+        r = db.get(RevisaoProg, int(rev)) or _404()
+        nova = pl.copiar_revisao(db, r, f"Planejamento {agora:%d/%m %H:%M} (cópia de {r.nome})")
+    else:
+        d = _data(dia) or date.today()
+        nova = RevisaoProg(nome=f"Planejamento {agora:%d/%m %H:%M}", inicio=d, fim=d)
+        db.add(nova)
+        db.commit()
+    return RedirectResponse(f"/planejar?rev={nova.id}&dia={dia}", status_code=303)
+
+
+@app.get("/planejar/forma/{fid}", response_class=HTMLResponse)
+def planejar_forma(request: Request, fid: int, rev: int, dia: str, db: Session = Depends(get_db)):
+    f = db.get(Forma, fid) or _404()
+    r = db.get(RevisaoProg, rev) or _404()
+    d = _data(dia) or _404()
+    por, _ = pl.itens_por_forma(db, r, d, [f])
+    itens = sorted(por.get(f.id, []), key=lambda i: (i.obra, chave_natural(i.peca)))
+    return tpl.TemplateResponse(request, "_planejar_forma.html", {"f": f, "d": d, "itens": itens, "cap": pl.capacidade(f, d),
+                                                                  "uso": pl.uso(f, itens)})

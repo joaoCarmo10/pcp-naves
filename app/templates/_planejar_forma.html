@@ -1,0 +1,18 @@
+<div class="pop-cab">
+  <div><h2 style="margin:0">{{ f.nome_completo }} · {{ DIAS[d.weekday()] }} {{ d|dm }}</h2>
+    <span class="meta">{% if f.tipo == 'unidade' %}{{ uso|int }} de {{ '%g'|format(cap) }} pç{% else %}{{ uso|num(1) }} de {{ '%g'|format(cap) }} m{% endif %}
+    {% if f.secao or f.secoes_aceitas %} · seção {{ f.secao }}{% if f.secoes_aceitas %} / {{ f.secoes_aceitas }}{% endif %}{% endif %}{% if f.produtos %} · só {{ f.produtos }}{% endif %}</span></div>
+  <button type="button" class="botao-sec" onclick="this.closest('dialog').close()">Fechar</button>
+</div>
+{% if not itens %}<p class="meta" style="margin-top:12px">Nada programado nesta fôrma no dia. Arraste peças da lista para ela.</p>
+{% else %}
+<table class="t compacta" style="margin-top:10px">
+  <thead><tr><th><input type="checkbox" aria-label="Marcar todas" onclick="this.closest('table').querySelectorAll('tbody input').forEach(c=>c.checked=this.checked)"></th>
+    <th>Obra</th><th>Peça</th><th>Código</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th>Obs.</th></tr></thead>
+  <tbody>{% for i in itens %}<tr><td><input type="checkbox" value="{{ i.id }}" aria-label="Marcar {{ i.peca }}"></td><td>{{ i.obra }}</td><td><b>{{ i.peca }}</b></td>
+    <td class="meta">{{ i.codigo or '' }}</td><td>{{ i.secao }}</td><td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
+    <td class="meta">{{ i.obs }}</td></tr>{% endfor %}</tbody>
+</table>
+<div class="acoes"><button type="button" class="perigo" onclick="removerMarcadas(this)">Tirar marcadas desta fôrma</button>
+  <span class="meta">As peças voltam para a lista de faltantes.</span></div>
+{% endif %}

@@ -136,3 +136,29 @@ dialog.pop::backdrop{background:rgba(20,30,45,.45)}
 .pop-dia .barra i{display:block;height:100%;background:var(--prog)}
 table.compacta td,table.compacta th{font-size:12px;padding:3px 6px}
 table.fixa{table-layout:fixed;width:100%}
+/* planejar */
+.plan{display:grid;grid-template-columns:340px 1fr;gap:14px;align-items:start}
+.lista-falt{position:sticky;top:8px;background:#fff;border:1px solid var(--linha);border-radius:10px;display:flex;flex-direction:column;max-height:calc(100vh - 24px)}
+.lf-cab{padding:10px 12px;border-bottom:1px solid var(--linha)}
+.lf-filtros{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px}
+.lf-filtros input[type=search]{grid-column:1/-1}
+#lf-itens{overflow:auto;padding:8px;display:flex;flex-direction:column;gap:6px}
+.card-peca{border:1px solid var(--linha);border-left:4px solid var(--prog);border-radius:7px;padding:6px 8px;font-size:12px;cursor:grab;background:#fff;touch-action:none;user-select:none}
+.card-peca:hover{background:#f3f7fd}
+.card-peca .arm{color:#2e7d32;font-weight:600}
+.cp-qtd{margin-top:3px;font-size:11px;color:var(--suave)}
+.cp-qtd input{width:56px;padding:1px 4px}
+.quadro{min-width:0}
+.plan-svg g.forma{cursor:pointer}
+.plan-svg g.forma rect.enche{fill:#8fb3e6;stroke:none;opacity:.85}
+.plan-svg g.forma.unidade rect.enche{fill:#9fd2ab}
+.plan-svg g.forma.estourada rect.enche{fill:#f2a19d}
+.plan-svg g.forma.parada rect.fundo{fill:#eceff3;stroke:#b3bcc8;stroke-dasharray:.3 .2}
+.plan-svg g.forma.parada text{fill:#8a94a3}
+body.arrastando-peca .plan-svg g.forma.alvo-nao{opacity:.3}
+body.arrastando-peca .plan-svg g.forma.alvo-ok rect.fundo{stroke:#2e7d32;stroke-width:.25}
+body.arrastando-peca .plan-svg g.forma.alvo-cheia rect.fundo{stroke:#d18f00;stroke-width:.25}
+body.arrastando-peca .plan-svg g.forma.sobre rect.fundo{stroke-width:.45}
+body.arrastando-peca{cursor:grabbing;user-select:none}
+.fantasma{position:fixed;z-index:50;pointer-events:none;background:var(--azul);color:#fff;padding:4px 9px;border-radius:6px;font-size:12px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+@media (max-width:1000px){.plan{grid-template-columns:1fr}.lista-falt{position:static;max-height:50vh}}

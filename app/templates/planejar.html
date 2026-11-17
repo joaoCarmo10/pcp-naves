@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block titulo %}Planejar | PCP Naves{% endblock %}
+{% block corpo %}
+<div class="filtros">
+  <div style="flex:1"><h1>Planejar</h1>
+    <p class="sub" style="margin:0">Arraste as peças da lista para as fôrmas do dia. Verde cabe, amarelo passa da capacidade, vermelho não encaixa. Clique numa fôrma para ver ou tirar peças.</p></div>
+  {% if r %}
+  <form method="get" class="filtros" style="margin:0">
+    <label for="dia">Dia
+      <span style="display:flex;gap:4px;align-items:center">
+        {% if ant %}<a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ ant }}" title="Dia anterior">‹</a>{% endif %}
+        <select id="dia" name="dia" onchange="this.form.submit()">
+          {% for x in dias %}<option value="{{ x }}" {{ 'selected' if x == d }}>{{ DIAS[x.weekday()] }} {{ x.strftime('%d/%m/%y') }}{{ ' (hoje)' if x == hoje }}</option>{% endfor %}
+        </select>
+        {% if prox %}<a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ prox }}" title="Próximo dia">›</a>{% endif %}
+      </span></label>
+    <label for="rev">Revisão em edição<select id="rev" name="rev" onchange="this.form.submit()">
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+  </form>
+  {% endif %}
+  <form method="post" action="/planejar/revisao" class="filtros" style="margin:0">
+    <input type="hidden" name="rev" value="{{ r.id if r else '' }}"><input type="hidden" name="dia" value="{{ d }}">
+    {% if r %}<button type="submit" name="modo" value="copia" class="botao-sec" title="Cria uma revisão nova com tudo desta e passa a editar a nova">Nova revisão (cópia)</button>{% endif %}
+    <button type="submit" name="modo" value="vazia" class="botao-sec">Nova revisão vazia</button>
+  </form>
+</div>
+{% if not r %}
+<div class="vazio">Não há revisão de programação. Crie uma revisão vazia ou importe a planilha em <a href="/importar">Importar dados</a>.</div>
+{% else %}
+<p class="meta" style="margin:-4px 0 10px">Você está editando <b>{{ r.nome }}</b>. As mudanças valem na hora no Realizado do dia e no programado x realizado. Para guardar a versão anterior, crie uma cópia antes.</p>
+<div class="plan">
+  <aside class="lista-falt">
+    <div class="lf-cab">
+      <b>Peças a programar</b> <span class="meta" id="lf-n"></span>
+      <div class="lf-filtros">
+        <select id="f-obra" aria-label="Obra"><option value="">Todas as obras</option>{% for o in obras %}<option>{{ o }}</option>{% endfor %}</select>
+        <select id="f-prod" aria-label="Produto"><option value="">Todos os produtos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
+        <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção">
+        <label class="meta" style="display:flex;gap:4px;align-items:center"><input id="f-arm" type="checkbox" style="width:auto"> só armadas</label>
+      </div>
+    </div>
+    <div id="lf-itens"></div>
+  </aside>
+  <div class="quadro">
+    {% for n in naves %}
+    <section class="nave">
+      <div class="nave-cab"><b>{{ n.nome }}</b>
+        {% if n.cap %}<span>Lineares: <b>{{ n.uso|num(1) }}</b> de {{ n.cap|num(0) }} m ({{ (n.uso / n.cap)|pct }})</span>{% endif %}</div>
+      <div class="rolagem-x">
+      <svg class="layout plan-svg" viewBox="0 0 {{ n.w }} {{ n.h }}" width="{{ (n.w * 13)|int }}" height="{{ (n.h * 13)|int }}" role="img" aria-label="{{ n.nome }} em {{ d|dm }}">
+        <rect x="0" y="0" width="{{ n.w }}" height="{{ n.h }}" class="piso"/>
+        {% for m in range(0, n.w|int, 10) %}<line x1="{{ m }}" y1="0" x2="{{ m }}" y2="{{ n.h }}" class="grade"/>{% endfor %}
+        {% for x in n.linhas %}{% set f = x.f %}{% set t = tamanho(f) %}{% set a = altura(f) %}{% set pc = (x.uso / x.cap) if x.cap else 0 %}
+        <g class="forma {{ f.tipo }} {{ 'parada' if not x.cap }} {{ 'estourada' if x.cap and pc > 1.001 }}" data-id="{{ f.id }}" data-tipo="{{ f.tipo }}"
+           data-comp="{{ f.comprimento or '' }}" data-livre="{{ (x.cap - x.uso)|round(2) }}" data-secoes="{{ x.secoes|join('|') }}" data-produtos="{{ x.produtos|join('|') }}"
+           data-nome="{{ f.nome }}" transform="translate({{ f.x }},{{ f.y }})">
+          <title>{{ f.nome_completo }} · {% if f.tipo == 'unidade' %}{{ x.uso|int }} de {{ '%g'|format(x.cap) }} pç{% else %}{{ x.uso|num(1) }} de {{ '%g'|format(x.cap) }} m{% endif %}</title>
+          <rect class="fundo" width="{{ t }}" height="{{ a }}" rx="0.25"/>
+          {% if x.cap %}<rect class="enche" width="{{ t * ([pc, 1]|min) }}" height="{{ a }}" rx="0.25"/>{% endif %}
+          {% if f.tipo == 'unidade' %}
+          <text x="0.4" y="1.1">{{ f.nome }}</text>
+          <text x="0.4" y="2.3" class="det">{% if x.cap %}{{ x.uso|int }} de {{ '%g'|format(x.cap) }} pç{% else %}sem produção no dia{% endif %}</text>
+          {% else %}
+          <text x="0.4" y="{{ a * 0.7 }}">{{ f.nome }} · {% if x.cap %}{{ x.uso|num(1) }} / {{ '%g'|format(x.cap) }} m{% if x.n %} · {{ x.n }} pç{% endif %}{% else %}sem produção no dia{% endif %}</text>
+          {% endif %}
+        </g>
+        {% endfor %}
+      </svg>
+      </div>
+    </section>
+    {% endfor %}
+    {% if sobra %}
+    <section class="cartao"><b>Programado em fôrma que não está no cadastro ({{ sobra|length }})</b>
+      <p class="meta">Vieram da planilha com outro nome de fôrma. Cadastre a fôrma ou ajuste o nome para elas entrarem no desenho.</p>
+      <div class="meta">{% for i in sobra[:40] %}{{ i.forma }}: {{ i.peca }}{{ '; ' if not loop.last }}{% endfor %}{% if sobra|length > 40 %} ...{% endif %}</div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+<dialog id="pop-forma" class="pop"><div class="pop-corpo"></div></dialog>
+<div id="fantasma" class="fantasma" hidden></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+{% if r %}
+<script>
+const REV = {{ r.id }}, DIA = "{{ d }}";
+const FALT = {{ falt|tojson }};
+const lista = document.getElementById('lf-itens'), fObra = document.getElementById('f-obra'), fProd = document.getElementById('f-prod'),
+      fBusca = document.getElementById('f-busca'), fArm = document.getElementById('f-arm');
+const norm = s => (s || '').toUpperCase().replace(/×/g, 'X').replace(/\s/g, '');
+const num = v => (v == null ? '' : (+v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }));
+
+// ---- estado salvo entre recargas (filtros e rolagem)
+const est = JSON.parse(sessionStorage.getItem('planejar') || '{}');
+if (est.rev === REV) { fObra.value = est.obra || ''; fProd.value = est.prod || ''; fBusca.value = est.busca || ''; fArm.checked = !!est.arm; }
+function guardar() {
+  sessionStorage.setItem('planejar', JSON.stringify({ rev: REV, obra: fObra.value, prod: fProd.value, busca: fBusca.value, arm: fArm.checked,
+    y: window.scrollY, ly: lista.scrollTop }));
+}
+
+function desenhar() {
+  const b = norm(fBusca.value);
+  const vis = FALT.filter(g => (!fObra.value || g.obra === fObra.value) && (!fProd.value || g.produto === fProd.value)
+    && (!b || norm(g.peca).includes(b) || norm(g.secao).includes(b)) && (!fArm.checked || g.armadas));
+  const pecas = vis.reduce((s, g) => s + g.codigos.length, 0);
+  document.getElementById('lf-n').textContent = `${pecas} peças em ${vis.length} grupos`;
+  lista.innerHTML = vis.slice(0, 400).map(g => {
+    const i = FALT.indexOf(g), n = g.codigos.length;
+    return `<div class="card-peca" data-i="${i}">
+      <div><b>${g.peca}</b> <span class="meta">${g.obra}</span></div>
+      <div class="meta">${g.produto} · ${g.secao || 's/ seção'}${g.comp ? ' · ' + num(g.comp) + ' m' : ''}${g.armadas ? ` · <span class="arm">${g.armadas} armada${g.armadas > 1 ? 's' : ''}</span>` : ''}</div>
+      <div class="cp-qtd">${n > 1 ? `<input type="number" min="1" max="${n}" value="1" aria-label="Quantidade a programar"> de ${n}` : '1 peça'}</div>
+    </div>`;
+  }).join('') + (vis.length > 400 ? `<p class="meta">Mostrando 400 de ${vis.length} grupos. Use os filtros.</p>` : '');
+}
+[fObra, fProd, fArm].forEach(e => e.addEventListener('change', () => { desenhar(); guardar(); }));
+fBusca.addEventListener('input', () => { desenhar(); guardar(); });
+desenhar();
+if (est.rev === REV) { window.scrollTo(0, est.y || 0); lista.scrollTop = est.ly || 0; }
+
+// ---- encaixe peça x fôrma (o servidor valida de novo ao gravar)
+function encaixe(g, qtd, el) {
+  const secs = el.dataset.secoes ? el.dataset.secoes.split('|') : [], prods = el.dataset.produtos ? el.dataset.produtos.split('|') : [];
+  if (prods.length && !prods.includes(norm(g.produto))) return 'nao';
+  if (secs.length && !secs.includes(norm(g.secao))) return 'nao';
+  if (!secs.length && !prods.length) return 'nao';
+  if (el.dataset.tipo !== 'unidade' && el.dataset.comp && (g.comp || 0) > +el.dataset.comp) return 'nao';
+  const precisa = el.dataset.tipo === 'unidade' ? qtd : (g.comp || 0) * qtd;
+  return precisa > +el.dataset.livre + 1e-6 ? 'cheia' : 'ok';
+}
+
+// ---- arrastar (ponteiro: funciona com mouse e toque)
+const fant = document.getElementById('fantasma');
+let arr = null;
+lista.addEventListener('pointerdown', e => {
+  const c = e.target.closest('.card-peca'); if (!c || e.target.closest('input')) return;
+  const g = FALT[+c.dataset.i], inp = c.querySelector('input');
+  arr = { g, c, qtd: inp ? Math.max(1, Math.min(+inp.value || 1, g.codigos.length)) : 1, x0: e.clientX, y0: e.clientY, ativo: false, alvo: null };
+});
+document.addEventListener('pointermove', e => {
+  if (!arr) return;
+  if (!arr.ativo) {
+    if (Math.abs(e.clientX - arr.x0) + Math.abs(e.clientY - arr.y0) < 6) return;
+    arr.ativo = true; document.body.classList.add('arrastando-peca');
+    fant.textContent = `${arr.qtd}x ${arr.g.peca} · ${arr.g.secao}`; fant.hidden = false;
+    document.querySelectorAll('.plan-svg g.forma').forEach(el => el.classList.add('alvo-' + encaixe(arr.g, arr.qtd, el)));
+  }
+  e.preventDefault();
+  fant.style.left = e.clientX + 12 + 'px'; fant.style.top = e.clientY + 12 + 'px';
+  const el = document.elementFromPoint(e.clientX, e.clientY), g = el && el.closest && el.closest('.plan-svg g.forma');
+  if (arr.alvo && arr.alvo !== g) arr.alvo.classList.remove('sobre');
+  arr.alvo = g; if (g) g.classList.add('sobre');
+});
+document.addEventListener('pointerup', async () => {
+  if (!arr) return;
+  const a = arr; arr = null; fant.hidden = true; document.body.classList.remove('arrastando-peca');
+  document.querySelectorAll('.plan-svg g.forma').forEach(el => el.classList.remove('alvo-ok', 'alvo-cheia', 'alvo-nao', 'sobre'));
+  if (!a.ativo || !a.alvo) return;
+  await alocar(a.g, a.qtd, a.alvo, false);
+});
+async function alocar(g, qtd, el, forcar) {
+  const r = await fetch('/planejar/alocar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rev: REV, dia: DIA, forma: +el.dataset.id, codigos: g.codigos.slice(0, qtd), forcar }) });
+  if (!r.ok) { alert('Não foi possível programar. Recarregue a página.'); return; }
+  const j = await r.json();
+  if (!j.ok) {
+    if (j.pode_forcar && confirm(j.problemas.join('\n') + '\n\nProgramar mesmo assim?')) return alocar(g, qtd, el, true);
+    if (!j.pode_forcar) alert(j.problemas.join('\n'));
+    return;
+  }
+  guardar(); location.reload();
+}
+
+// ---- clique na fôrma: peças do dia, com opção de tirar
+const dlg = document.getElementById('pop-forma');
+document.querySelectorAll('.plan-svg g.forma').forEach(el => el.addEventListener('click', async () => {
+  dlg.querySelector('.pop-corpo').innerHTML = '<p class="meta">Carregando...</p>'; dlg.showModal();
+  const r = await fetch(`/planejar/forma/${el.dataset.id}?rev=${REV}&dia=${DIA}`);
+  dlg.querySelector('.pop-corpo').innerHTML = r.ok ? await r.text() : '<p>Não foi possível carregar.</p>';
+}));
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+async function removerMarcadas(btn) {
+  const ids = [...dlg.querySelectorAll('tbody input:checked')].map(c => +c.value);
+  if (!ids.length) { alert('Marque as peças que quer tirar.'); return; }
+  const r = await fetch('/planejar/remover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+  if (r.ok) { guardar(); location.reload(); }
+}
+</script>
+{% endif %}
+{% endblock %}
