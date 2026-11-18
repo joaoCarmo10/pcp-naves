@@ -225,3 +225,7 @@ select.nv-editar{background:#e3f1e6}select.nv-ver{background:#eef3fb}select.nv-n
 .sync p{margin:4px 0}
 .sync-alerta{border-color:#d9822b;background:#fff7ec}
 .sync .token{width:100%;max-width:520px;font-family:monospace}
+.filtros label.check{flex-direction:row;align-items:center;gap:6px;align-self:flex-end;padding-bottom:6px}
+.pecas-mod tr.sem-cad td{color:var(--suave)}
+.pecas-mod tr.sem-cad td b{color:var(--texto)}
+.tag-revisar{display:inline-block;padding:0 6px;border-radius:9px;background:#fde7cf;color:#8a4b0f;font-size:11px;font-weight:600}

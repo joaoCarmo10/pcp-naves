@@ -417,3 +417,11 @@ def test_plannix_automatico(cliente):
     pg = cliente.get("/importar").text
     assert "Último envio recusado" in pg and "Plannix (automático)" in pg
     assert cliente.post("/api/plannix", content=COMPLETA, headers={"Authorization": "Bearer errado"}).status_code == 401
+
+
+def test_modulo_pecas(cliente):
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    h = cliente.get("/pecas").text
+    assert "tipos de peça" in h and "Sem prancha" in h and 'href="/pecas"' in h
+    assert cliente.get("/pecas?situacao=com").status_code == 200
+    assert "Nenhuma peça" in cliente.get("/pecas?q=NAOEXISTE").text

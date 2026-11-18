@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Peças | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Peças</h1>
+<p class="sub">Um tipo de peça por linha (obra + nome + etapa). Medidas e quantidades do Plannix, armadura e protensão das pranchas.{% if base %} Base: {{ base }}.{% endif %}</p>
+
+<form method="get" class="filtros">
+  <label for="obra">Obra<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas</option>
+    {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
+  <label for="produto">Produto<select id="produto" name="produto" onchange="this.form.submit()"><option value="">Todos</option>
+    {% for x in opcoes.produto %}<option {{ 'selected' if x == f.produto }}>{{ x }}</option>{% endfor %}</select></label>
+  <label for="situacao">Prancha<select id="situacao" name="situacao" onchange="this.form.submit()">
+    {% for v, n in [('', 'Todas'), ('com', 'Com cadastro'), ('ok', 'Conferidas'), ('revisar', 'A revisar'), ('sem', 'Sem prancha')] %}
+    <option value="{{ v }}" {{ 'selected' if v == f.situacao }}>{{ n }}</option>{% endfor %}</select></label>
+  <label for="q">Peça<input id="q" name="q" value="{{ f.q }}" placeholder="ex.: VLP1" size="10"></label>
+  <label class="check"><input type="checkbox" name="pend" value="1" {{ 'checked' if f.pend }} onchange="this.form.submit()"> Só com pendentes</label>
+  <label class="check"><input type="checkbox" name="prot" value="1" {{ 'checked' if f.prot }} onchange="this.form.submit()"> Só protendidas</label>
+  <button type="submit" class="sec">Filtrar</button>
+  {% if f.values()|select|list %}<a class="botao-sec" href="/pecas">Limpar</a>{% endif %}
+</form>
+
+<div class="kpis">
+  <div class="kpi"><b>{{ tot.tipos }}</b><span>tipos de peça</span></div>
+  <div class="kpi"><b>{{ tot.com }}</b><span>com prancha lida{% if tot.rev %} ({{ tot.rev }} a revisar){% endif %}</span></div>
+  <div class="kpi"><b>{{ tot.pend }}</b><span>unidades pendentes</span></div>
+  <div class="kpi"><b>{{ tot.vol_pend|num(1) }}</b><span>m³ pendentes</span></div>
+  {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço passivo pendente (só peças com prancha)</span></div>{% endif %}
+  {% if tot.ativo_pend %}<div class="kpi"><b>{{ (tot.ativo_pend / 1000)|num(2) }} t</b><span>cordoalha pendente</span></div>{% endif %}
+</div>
+
+{% if linhas %}
+<div class="rolagem-x"><table class="t compacta pecas-mod" style="margin-top:12px">
+  <thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Produto</th><th>Seção</th><th class="n">Compr. (m)</th><th class="n">Vol. (m³)</th>
+    <th class="n" title="Da prancha; com ~ é estimado por 2,5 t/m³">Peso (t)</th><th>fck</th><th class="n">Aço passivo (kg)</th><th>Protensão</th><th>Içamento</th>
+    <th class="n">Feitas / total</th><th>Prancha</th></tr></thead>
+  <tbody>{% for t in linhas %}{% set c = t.c %}
+    <tr class="{{ 'sem-cad' if not c }}">
+      <td class="meta">{{ t.o.nome }}</td>
+      <td style="white-space:nowrap">{% if c %}<a href="/cadastro/{{ c.id }}"><b>{{ t.nome }}</b></a>{% else %}<b>{{ t.nome }}</b>{% endif %}</td>
+      <td class="meta">{{ t.item or '-' }}</td>
+      <td>{{ t.produto }}</td>
+      <td class="meta">{{ t.secao }}</td>
+      <td class="n">{{ t.comp|num(2) if t.comp else '' }}</td>
+      <td class="n">{{ t.vol|num(3) if t.vol else '' }}</td>
+      <td class="n">{% if c and c.peso %}{{ (c.peso / 1000)|num(2) }}{% elif t.vol %}<span class="meta">~{{ (t.vol * 2.5)|num(2) }}</span>{% endif %}</td>
+      <td>{{ ('%g' % c.fck) if c and c.fck else '' }}</td>
+      <td class="n">{{ c.aco_passivo|num(1) if c and c.aco_passivo else '' }}</td>
+      <td style="white-space:nowrap">{% if c and c.cordoalhas %}<span class="prot">{{ c.protensao }}</span>{% if c.forca %} <span class="meta">{{ (c.forca / 1000)|num(1) }} tf</span>{% endif %}{% elif c %}<span class="meta">não</span>{% endif %}</td>
+      <td class="meta">{{ c.icamento if c else '' }}</td>
+      <td class="n">{{ t.fab }}/{{ t.n }}</td>
+      <td style="white-space:nowrap">{% if c %}{{ c.revisao }} {% if c.situacao == 'revisar' %}<span class="tag-revisar">revisar</span>{% else %}<span class="meta">ok</span>{% endif %}
+        {% else %}<a class="meta" href="/obras/{{ t.o.id }}/pecas">enviar</a>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div>
+{% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros.</p>{% endif %}
+{% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
+{% endblock %}

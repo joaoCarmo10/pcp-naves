@@ -1029,6 +1029,57 @@ def perfil_excluir(request: Request, pid: int, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------- cadastro de peças (pranchas de detalhamento)
+@app.get("/pecas", response_class=HTMLResponse)
+def pecas_modulo(request: Request, db: Session = Depends(get_db)):
+    """Características de todas as peças: um tipo por linha (obra + nome + etapa), dados do Plannix
+    completados pelo cadastro lido das pranchas."""
+    qp = request.query_params
+    f = {k: qp.get(k, "") for k in ("obra", "produto", "situacao", "q", "pend", "prot")}
+    obras = {o.id: o for o in db.scalars(select(Obra))}
+    idx = cad.indice(db)
+    tipos: dict = {}
+    for p in db.scalars(select(Peca)):
+        k = (p.obra_id, cad._canon(p.peca), p.item or "")
+        t = tipos.get(k)
+        if not t:
+            t = tipos[k] = {"o": obras[p.obra_id], "nome": p.peca, "item": p.item or "", "produto": p.produto, "secao": p.secao,
+                            "comp": p.comprimento, "vol": p.vol_projeto or p.volume, "n": 0, "fab": 0, "c": cad.de_peca(idx, p)}
+        t["n"] += 1
+        t["fab"] += 1 if p.fabricada else 0
+    todos = list(tipos.values())
+    opcoes = {"obra": sorted({t["o"].nome for t in todos}), "produto": sorted({t["produto"] for t in todos if t["produto"]})}
+    busca = cad._canon(f["q"].strip())
+
+    def passa(t):
+        c = t["c"]
+        if f["obra"] and t["o"].nome != f["obra"]:
+            return False
+        if f["produto"] and t["produto"] != f["produto"]:
+            return False
+        if f["situacao"] == "sem" and c:
+            return False
+        if f["situacao"] in ("ok", "revisar") and (not c or c.situacao != f["situacao"]):
+            return False
+        if f["situacao"] == "com" and not c:
+            return False
+        if busca and busca not in cad._canon(t["nome"]):
+            return False
+        if f["pend"] and t["fab"] >= t["n"]:
+            return False
+        if f["prot"] and not (c and c.cordoalhas):
+            return False
+        return True
+    linhas = sorted((t for t in todos if passa(t)), key=lambda t: (t["o"].nome, t["produto"], chave_natural(t["nome"]), chave_natural(t["item"])))
+    tot = {"tipos": len(linhas), "com": sum(1 for t in linhas if t["c"]), "rev": sum(1 for t in linhas if t["c"] and t["c"].situacao == "revisar"),
+           "pend": sum(t["n"] - t["fab"] for t in linhas),
+           "vol_pend": sum((t["vol"] or 0) * (t["n"] - t["fab"]) for t in linhas),
+           "aco_pend": sum((t["c"].aco_passivo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"]),
+           "ativo_pend": sum((t["c"].aco_ativo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"])}
+    LIMITE = 800
+    return tpl.TemplateResponse(request, "pecas.html", {"linhas": linhas[:LIMITE], "cortadas": max(0, len(linhas) - LIMITE),
+                                                        "f": f, "opcoes": opcoes, "tot": tot, "base": ultima_base(db)})
+
+
 @app.get("/obras/{obra_id}/pecas", response_class=HTMLResponse)
 def cadastro_tela(request: Request, obra_id: int, db: Session = Depends(get_db)):
     o = db.get(Obra, obra_id) or _404()
