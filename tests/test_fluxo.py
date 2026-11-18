@@ -497,3 +497,24 @@ def test_prancha_em_obra_errada_aparece(cliente):
     h = cliente.get(f"/pecas?obra={o.nome}").text
     assert "Pranchas sem peça no Plannix (1)" in h and "ZZ9" in h
     assert "ZZ9 não existe nesta obra no Plannix" in h
+
+
+def test_reler_orfaos(cliente):
+    import time
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import CadastroPeca, Obra
+    test_prancha_em_obra_errada_aparece(cliente)
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    from app import cadastro as cad
+    antes = len(cad.ANDAMENTO[o.id]["msgs"])
+    h = cliente.post("/pecas/reler", data={"obra_id": str(o.id)}).text
+    assert "1 prancha(s) sendo lida(s) de novo" in h
+    for _ in range(50):
+        if len(cad.ANDAMENTO[o.id]["msgs"]) > antes:
+            break
+        time.sleep(0.1)
+    time.sleep(0.1)
+    db.expire_all()
+    assert [c.peca for c in db.scalars(select(CadastroPeca))] == ["ZZ9"]

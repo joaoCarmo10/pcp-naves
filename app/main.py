@@ -1086,6 +1086,30 @@ async def _receber_pranchas(request: Request, o: Obra, arquivo: list[UploadFile]
     return RedirectResponse(_pecas_url(o), status_code=303)
 
 
+@app.post("/pecas/reler")
+def pecas_reler(request: Request, obra_id: int = Form(0), db: Session = Depends(get_db)):
+    """Lê de novo as pranchas que não se ligaram a nenhuma peça (útil depois de melhorar o leitor ou de importar
+    um 'all data' novo). Não mexe nos cadastros já ligados, que podem ter correções feitas à mão."""
+    d = ptab.montar(db, {"obra": db.get(Obra, obra_id).nome} if obra_id else {})
+    por_obra: dict[int, list] = {}
+    for c in d["orfaos"]:
+        caminho = DATA_DIR / c.arquivo if c.arquivo else None
+        if caminho and caminho.exists():
+            por_obra.setdefault(c.obra_id, []).append((c.nome_arquivo or caminho.name, caminho))
+            db.delete(c)
+    db.commit()
+    for oid, lote in por_obra.items():
+        st = cad.ANDAMENTO.get(oid)
+        if not st or st["feitos"] >= st["total"]:
+            cad.ANDAMENTO[oid] = st = {"total": 0, "feitos": 0, "msgs": [], "em": datetime.now()}
+        st["total"] += len(lote)
+        _ocr_fila.submit(cad.processar, oid, lote)
+    n = sum(len(v) for v in por_obra.values())
+    _flash(request, f"{n} prancha(s) sendo lida(s) de novo." if n else "Nenhuma prancha para reler.")
+    o = db.get(Obra, obra_id) if obra_id else None
+    return RedirectResponse(_pecas_url(o) if o else "/pecas", status_code=303)
+
+
 @app.post("/pecas/pranchas")
 async def pecas_enviar(request: Request, obra_id: int = Form(...), arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
     return await _receber_pranchas(request, db.get(Obra, obra_id) or _404(), arquivo)

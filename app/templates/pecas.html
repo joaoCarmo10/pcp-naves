@@ -112,7 +112,11 @@
 {% if orfaos %}
 <section class="cartao aviso-orfaos" style="margin-top:16px">
   <h2 style="margin-top:0">Pranchas sem peça no Plannix ({{ orfaos|length }})</h2>
-  <p class="meta">Foram lidas, mas o nome ou a etapa não bate com nenhuma peça desta obra no Plannix. Normalmente é prancha enviada na obra errada ou "all data" desatualizado. Abra, confira e exclua se for o caso.</p>
+  <form method="post" action="/pecas/reler" class="filtros" style="margin:0 0 8px">
+    <p class="meta" style="flex:1;margin:0">Foram lidas, mas o nome ou a etapa não bate com nenhuma peça desta obra no Plannix. Pode ser modelo de prancha que o leitor ainda não conhece, prancha enviada na obra errada ou "all data" desatualizado.</p>
+    <input type="hidden" name="obra_id" value="{{ sel.id if sel else 0 }}">
+    <button type="submit" class="sec">Ler de novo</button>
+  </form>
   <table class="t compacta"><thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Arquivo</th><th>Motivo</th></tr></thead><tbody>
   {% for c in orfaos %}<tr><td class="meta">{{ obras_map[c.obra_id].nome }}</td><td><a href="/cadastro/{{ c.id }}"><b>{{ c.peca }}</b></a></td>
     <td class="meta">{{ c.etapas or '-' }}</td><td class="meta">{{ c.nome_arquivo }}</td><td class="meta">{{ (c.alertas or ['sem etapa correspondente'])|join(' | ') }}</td></tr>{% endfor %}
