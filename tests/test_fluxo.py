@@ -280,3 +280,31 @@ def test_planta_com_comentarios_shx(tmp_path):
     doc.save(f)
     e = plantas.extrair(f)
     assert [m["t"] for m in e["marcas"]] == ["LC1"]
+
+
+def test_pecas_identicas(cliente):
+    """LE1 programada com um código e concretada com outro de mesmo nome: conta no dia em que foi feita."""
+    from datetime import date
+    from sqlalchemy import select
+    from openpyxl import Workbook
+    from app import programacao as pg
+    from app.db import SessionLocal
+    from app.models import RevisaoProg
+    base = tsv([
+        ["LE1", "2001", "9999-OBRA-TESTE", "9999", "1", "ESCADA", "VARIAVEL", "1", "0,900", "-", "3,200", "-"],
+        ["LE1", "2002", "9999-OBRA-TESTE", "9999", "1", "ESCADA", "VARIAVEL", "1", "0,900", "-", "3,200", "-"],
+        ["LE1", "2009", "9999-OBRA-TESTE", "9999", "1", "ESCADA", "VARIAVEL", "1", "0,900", "17/11/2026", "3,200", "-"],
+    ])
+    cliente.post("/importar", files={"arquivo": ("all.xls", base)})
+    wb = Workbook(); ws = wb.active; ws.title = "N1 + N3"
+    ws.append(["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (m)", "QTD"])
+    ws.append([date(2026, 11, 16), "SEG", "N3 - ESCADA 1", "9999-OBRA-TESTE", "LE1", "2001", "ESCADA", "VARIAVEL", 3.2, 1])
+    ws.append([date(2026, 11, 17), "TER", "N3 - ESCADA 1", "9999-OBRA-TESTE", "LE1", "2002", "ESCADA", "VARIAVEL", 3.2, 1])
+    import io
+    b = io.BytesIO(); wb.save(b)
+    cliente.post("/importar", files={"arquivo": ("prog.xlsx", b.getvalue())})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg).order_by(RevisaoProg.id.desc())).first()
+    st = {l.item.codigo: l for l in pg.linhas(db, rev, hoje=date(2026, 11, 18))}
+    assert st["2002"].status == "NO PRAZO" and st["2002"].troca == "2009"      # a feita em 17/11 atende o dia 17
+    assert st["2001"].status == "NÃO REALIZADA"

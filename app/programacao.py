@@ -3,7 +3,7 @@ import io
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, timedelta, datetime
 
 from openpyxl import load_workbook
 from sqlalchemy import select, func
@@ -128,6 +128,8 @@ class Linha:
     ap: Apontamento | None
     peca: Peca | None = None
     qtd: int | None = None   # parte do item (lote sem código dividido em feito e não feito)
+    troca: str | None = None  # código da peça idêntica que foi concretada no lugar da programada
+    origem: str | None = None  # de onde vem a data: plannix | manual
 
     def __post_init__(self):
         if self.qtd is None:
@@ -173,6 +175,7 @@ def linhas(db: Session, rev: RevisaoProg, inicio: date | None = None, fim: date 
     pecas = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_(cods)))} if cods else {}
     acompanhadas = {o.nome for o in db.scalars(select(Obra)) if o.pecas}
     lotes = _lotes_sem_codigo(db, [i for i in itens if not i.codigo and i.qtd > 1])
+    subst = substitutas(db, rev)
     out = []
     for i in itens:
         feitos = lotes.get(i.id)
@@ -180,13 +183,72 @@ def linhas(db: Session, rev: RevisaoProg, inicio: date | None = None, fim: date 
             # lote sem código (ex.: New Jersey): conta no Plannix as peças da obra com o mesmo nome concretadas no dia
             n = min(feitos, i.qtd)
             if n:
-                out.append(Linha(i, "NO PRAZO", i.data, 0, i.apontamento, None, n))
+                out.append(Linha(i, "NO PRAZO", i.data, 0, i.apontamento, None, n, origem="plannix"))
             if i.qtd - n:
                 st = "PENDENTE" if i.data >= hoje else "NÃO REALIZADA"
                 out.append(Linha(i, st, None, None, i.apontamento, None, i.qtd - n))
             continue
         st, df = classificar(i, pecas.get(i.codigo), i.apontamento, hoje, i.obra in acompanhadas)
-        out.append(Linha(i, st, df, (df - i.data).days if df else None, i.apontamento, pecas.get(i.codigo)))
+        troca = None
+        if i.id in subst:   # peça idêntica: vale a fila de concretagens do grupo
+            sp = subst[i.id]
+            if sp:
+                df, troca = sp.data_fabricacao, (sp.codigo if sp.codigo != i.codigo else None)
+                st = "NO PRAZO" if df <= i.data else "COM ATRASO"
+            else:
+                df = None
+                st = "NO PRAZO" if i.apontamento and i.apontamento.realizado == "S" else ("PENDENTE" if i.data >= hoje else "NÃO REALIZADA")
+        pc = pecas.get(i.codigo)
+        if not df:
+            origem = None
+        elif i.id in subst or (pc and pc.data_fabricacao == df):
+            origem = "plannix"
+        else:
+            origem = "manual" if i.apontamento and i.apontamento.data_execucao == df else "plannix"
+        out.append(Linha(i, st, df, (df - i.data).days if df else None, i.apontamento, pc, troca=troca, origem=origem))
+    return out
+
+
+def substitutas(db: Session, rev: RevisaoProg) -> dict[int, Peca | None]:
+    """Peças com o mesmo nome na mesma obra são iguais: a produção pode concretar qualquer uma delas. Para cada grupo,
+    as concretagens (por data) atendem os itens programados na ordem das datas, sem olhar o código. Devolve, por item,
+    a peça que o atendeu (None = ainda não atendido). Calculado sobre a revisão inteira."""
+    itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None))
+                            .options(selectinload(ItemProg.apontamento)).order_by(ItemProg.data, ItemProg.id)))
+    if not itens:
+        return {}
+    na_rev = {i.codigo for i in itens}
+    pecas = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_(na_rev)))}
+    grupos: dict[tuple, list[ItemProg]] = {}
+    for i in itens:
+        p = pecas.get(i.codigo)
+        # fora da fila: data informada pelo PCP e peça que saiu da lista sem data (feita, data a confirmar)
+        if p and not (i.apontamento and i.apontamento.data_execucao) and not (p.fabricada and not p.data_fabricacao):
+            grupos.setdefault((p.obra_id, p.peca), []).append(i)
+    grupos = {k: v for k, v in grupos.items() if len(v) > 1 or not pecas[v[0].codigo].data_fabricacao}
+    if not grupos:
+        return {}
+    desde = (rev.inicio or itens[0].data) - timedelta(days=7)
+    fabs: dict[tuple, list[Peca]] = {}
+    for p in db.scalars(select(Peca).where(Peca.data_fabricacao.is_not(None), Peca.peca.in_({k[1] for k in grupos}))):
+        k = (p.obra_id, p.peca)
+        if k in grupos and (p.codigo in na_rev or p.data_fabricacao >= desde):
+            fabs.setdefault(k, []).append(p)
+    out = {}
+    for k, its in grupos.items():
+        fila = sorted(fabs.get(k, []), key=lambda p: (p.data_fabricacao, p.codigo))
+        if not fila and all(not pecas[i.codigo].data_fabricacao for i in its):
+            continue
+        # 1º: concretagem no próprio dia programado; 2º: o que sobrou atende os itens em aberto por ordem de data
+        livres = list(fila)
+        for i in its:
+            mesma = next((p for p in livres if p.data_fabricacao == i.data), None)
+            if mesma:
+                out[i.id] = mesma
+                livres.remove(mesma)
+        for i in its:
+            if i.id not in out:
+                out[i.id] = livres.pop(0) if livres else None
     return out
 
 
