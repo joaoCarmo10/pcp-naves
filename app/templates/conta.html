@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block titulo %}Minha senha | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Minha senha</h1>
+{% if request.state.usuario and request.state.usuario.trocar %}<div class="aviso">Primeiro acesso: troque a senha provisória para continuar.</div>{% endif %}
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+{% if ok %}<div class="aviso ok">{{ ok }} <a href="/">Ir para o app</a></div>{% endif %}
+<form method="post" action="/conta" class="cartao livre" style="max-width:420px">
+  <p class="meta">Usuário: <b>{{ request.state.usuario.login if request.state.usuario else '' }}</b></p>
+  <label for="atual">Senha atual<input id="atual" type="password" name="atual" autocomplete="current-password" required></label>
+  <label for="nova">Nova senha (mínimo 8 caracteres)<input id="nova" type="password" name="nova" minlength="8" autocomplete="new-password" required></label>
+  <label for="repete">Repita a nova senha<input id="repete" type="password" name="repete" minlength="8" autocomplete="new-password" required></label>
+  <p><button type="submit">Salvar senha</button></p>
+</form>
+{% endblock %}

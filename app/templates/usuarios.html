@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários e perfis | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Usuários e perfis</h1>
+<p class="sub">Todos veem todas as obras. O perfil define, módulo a módulo, se a pessoa não acessa, só vê ou pode editar.</p>
+{% if flash %}<div class="aviso {{ 'erro' if flash.startswith('Erro') else 'ok' }}" style="font-size:14px">{{ flash }}</div>{% endif %}
+
+<section class="cartao">
+  <h2 style="margin-top:0">Usuários</h2>
+  <table class="t compacta">
+    <thead><tr><th>Login</th><th>Nome</th><th>Perfil</th><th>Ativo</th><th>Último acesso</th><th></th><th></th></tr></thead>
+    <tbody>{% for u in usuarios %}
+      <tr class="{{ '' if u.ativo else 'fora' }}">
+        <td><b>{{ u.login }}</b>{% if u.trocar_senha %} <span class="meta">(senha provisória)</span>{% endif %}</td>
+        <td><input name="nome" form="u-{{ u.id }}" value="{{ u.nome }}" aria-label="Nome de {{ u.login }}" style="width:180px"></td>
+        <td><select name="perfil_id" form="u-{{ u.id }}" aria-label="Perfil de {{ u.login }}">{% for p in perfis %}<option value="{{ p.id }}" {{ 'selected' if p.id == u.perfil_id }}>{{ p.nome }}</option>{% endfor %}</select></td>
+        <td class="c"><input type="checkbox" name="ativo" form="u-{{ u.id }}" value="1" {{ 'checked' if u.ativo }} aria-label="Ativo"></td>
+        <td class="meta">{{ u.ultimo_acesso.strftime('%d/%m %H:%M') if u.ultimo_acesso else 'nunca' }}</td>
+        <td><form method="post" action="/usuarios/{{ u.id }}" id="u-{{ u.id }}"><button type="submit" class="botao-sec">Salvar</button></form></td>
+        <td><form method="post" action="/usuarios/{{ u.id }}/senha" onsubmit="return confirm('Gerar nova senha provisória para {{ u.login }}?')"><button type="submit" class="botao-sec">Nova senha</button></form></td>
+      </tr>{% endfor %}</tbody>
+  </table>
+  <h3>Novo usuário</h3>
+  <form method="post" action="/usuarios/novo" class="filtros">
+    <label>Login<input name="login" placeholder="ex.: maria.silva" required autocapitalize="none"></label>
+    <label>Nome<input name="nome" placeholder="Maria Silva"></label>
+    <label>Perfil<select name="perfil_id">{% for p in perfis %}<option value="{{ p.id }}" {{ 'selected' if p.nome == 'Gerência' }}>{{ p.nome }}</option>{% endfor %}</select></label>
+    <button type="submit">Criar</button>
+  </form>
+  <p class="meta">O app gera uma senha provisória e mostra uma única vez. Passe para a pessoa; no primeiro acesso ela troca.</p>
+</section>
+
+<section class="cartao" id="perfis" style="margin-top:14px">
+  <h2 style="margin-top:0">Perfis</h2>
+  <div class="rolagem-x"><table class="t compacta">
+    <thead><tr><th>Módulo</th>{% for p in perfis %}<th class="c">{{ p.nome }}<br><span class="meta">{{ p.usuarios|length }} usuário(s)</span></th>{% endfor %}</tr></thead>
+    <tbody>{% for m, (nome, _) in modulos.items() %}
+      <tr><td>{{ nome }}</td>
+      {% for p in perfis %}<td class="c">
+        {% if p.sistema %}<span class="meta">editar</span>
+        {% else %}<select name="m_{{ m }}" form="perfil-{{ p.id }}" aria-label="{{ nome }} no perfil {{ p.nome }}" class="nv-{{ p.permissoes.get(m, 'nenhum') }}">
+          {% for n in ['nenhum', 'ver', 'editar'] %}<option {{ 'selected' if p.permissoes.get(m, 'nenhum') == n }}>{{ n }}</option>{% endfor %}</select>{% endif %}
+      </td>{% endfor %}</tr>{% endfor %}
+      <tr><td></td>{% for p in perfis %}<td class="c">{% if not p.sistema %}
+        <form method="post" action="/perfis/{{ p.id }}" id="perfil-{{ p.id }}" style="display:inline"><button type="submit" class="botao-sec">Salvar</button></form>
+        {% if not p.usuarios %}<form method="post" action="/perfis/{{ p.id }}/excluir" style="display:inline" onsubmit="return confirm('Excluir o perfil {{ p.nome }}?')"><button type="submit" class="perigo">Excluir</button></form>{% endif %}
+      {% else %}<span class="meta">tudo, fixo</span>{% endif %}</td>{% endfor %}</tr>
+    </tbody>
+  </table></div>
+  <h3>Novo perfil</h3>
+  <form method="post" action="/perfis/novo" class="filtros">
+    <label>Nome<input name="nome" placeholder="ex.: Supervisor N3" required></label>
+    <label>Começar igual a<select name="base_id"><option value="0">só ver (tudo)</option>{% for p in perfis if not p.sistema %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}</select></label>
+    <button type="submit">Criar perfil</button>
+  </form>
+</section>
+
+<section class="cartao" style="margin-top:14px">
+  <h2 style="margin-top:0">Últimas alterações</h2>
+  <p class="meta">Toda gravação feita no app fica registrada com o usuário.</p>
+  <div class="rolagem" style="max-height:300px"><table class="t compacta"><tbody>
+    {% for x in log %}<tr><td class="meta" style="white-space:nowrap">{{ x.quando.strftime('%d/%m %H:%M') }}</td><td>{{ x.login }}</td><td class="meta">{{ x.acao }}</td></tr>
+    {% else %}<tr><td class="meta">Nada registrado ainda.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

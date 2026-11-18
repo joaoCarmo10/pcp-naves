@@ -308,3 +308,43 @@ def test_pecas_identicas(cliente):
     st = {l.item.codigo: l for l in pg.linhas(db, rev, hoje=date(2026, 11, 18))}
     assert st["2001"].status == "COM ATRASO" and st["2001"].troca == "2009"    # a feita em 17/11 atende a de segunda (atrasada)
     assert st["2002"].status == "NÃO REALIZADA"
+
+
+def test_usuarios_e_perfis(cliente):
+    import re
+    from fastapi.testclient import TestClient
+    import app.main as m
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Perfil, Usuario
+    db = SessionLocal()
+    assert db.scalar(select(Usuario)).login == "joao"                     # admin criado com a senha do app
+    ger = db.scalar(select(Perfil).where(Perfil.nome == "Gerência"))
+    r = cliente.post("/usuarios/novo", data={"login": "Maria.Silva", "nome": "Maria", "perfil_id": ger.id}, follow_redirects=True)
+    prov = re.search(r"Senha provisória: (\w+)", r.text).group(1)
+    # login da Maria: primeiro acesso força troca de senha
+    c2 = TestClient(m.app)
+    assert c2.post("/login", data={"usuario": "maria.silva", "senha": "errada"}).status_code == 401
+    r = c2.post("/login", data={"usuario": "maria.silva", "senha": prov}, follow_redirects=False)
+    assert r.headers["location"] == "/conta"
+    assert c2.get("/pxr", follow_redirects=False).headers["location"] == "/conta"
+    assert c2.post("/conta", data={"atual": prov, "nova": "senhaNova123", "repete": "senhaNova123"}).status_code == 200
+    # gerência: vê, não grava, não acessa importar nem usuários
+    assert c2.get("/pxr").status_code == 200
+    h = c2.get("/programacao").text
+    assert "somente-leitura" in h and "Importar dados" not in h.split("<main>")[0]
+    assert c2.post("/apontamentos/1", json={"comentario": "x"}).status_code == 403
+    assert c2.get("/importar").status_code == 403 and c2.get("/usuarios").status_code == 403
+    assert c2.post("/formas/nova", data={}).status_code == 403
+    # admin muda o perfil da gerência para editar o realizado
+    cliente.post(f"/perfis/{ger.id}", data={f"m_{k}": "ver" for k in ["obras", "realizado", "pxr", "planejar", "armacao", "formas"]} | {"m_realizado": "editar"})
+    assert c2.post("/apontamentos/999", json={"comentario": "x"}).status_code == 404   # passou da permissão (item não existe)
+    # desativar: a sessão cai
+    maria = db.scalar(select(Usuario).where(Usuario.login == "maria.silva"))
+    cliente.post(f"/usuarios/{maria.id}", data={"perfil_id": ger.id, "ativo": "", "nome": "Maria"})
+    assert c2.get("/pxr", follow_redirects=False).status_code == 303
+    # não dá para deixar o app sem administrador
+    adm = db.scalar(select(Usuario).where(Usuario.login == "joao"))
+    r = cliente.post(f"/usuarios/{adm.id}", data={"perfil_id": ger.id, "ativo": "1", "nome": "x"}, follow_redirects=True)
+    assert "pelo menos um administrador" in r.text
+    assert "POST /usuarios/novo" in cliente.get("/usuarios").text           # auditoria

@@ -7,7 +7,8 @@
 <link rel="stylesheet" href="/static/app.css?v={{ VERSAO_CSS }}">
 <script>try { if (localStorage.getItem('menu') === 'fechado') document.documentElement.classList.add('menu-fechado'); } catch (e) {}</script>
 </head>
-<body>
+{% set nv = request.state.niveis if request.state.niveis is defined else {} %}
+<body class="{{ 'somente-leitura' if request.state.nivel_pagina is defined and request.state.nivel_pagina == 1 }}">
 <aside class="lateral" aria-label="Menu">
   <div class="lat-topo">
     <button type="button" class="lat-toggle" onclick="alternaMenu()" aria-label="Recolher ou abrir o menu" title="Recolher ou abrir o menu">
@@ -15,33 +16,47 @@
     <span class="marca">PCP NAVES</span>
   </div>
   <nav>
-    <div class="lat-grupo"><span>Acompanhamento</span>
-      <a href="/" class="{{ 'ativo' if request.url.path == '/' or request.url.path.startswith(('/obras', '/plantas')) }}" title="Avanço das obras"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/></svg><span>Avanço das obras</span></a>
-      <a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}" title="Realizado do dia"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14l2.5 2.5L16 12"/></svg><span>Realizado do dia</span></a>
-      <a href="/pxr" class="{{ 'ativo' if request.url.path.startswith('/pxr') }}" title="Programado x realizado"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Programado x realizado</span></a>
-    </div>
-    <div class="lat-grupo"><span>Planejamento</span>
-      <a href="/planejar" class="{{ 'ativo' if request.url.path.startswith('/planejar') }}" title="Planejar"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg><span>Planejar</span></a>
-      <a href="/armacao" class="{{ 'ativo' if request.url.path.startswith('/armacao') }}" title="Armação"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4l16 16M4 12l8 8M12 4l8 8M4 20L20 4"/></svg><span>Armação</span></a>
-      <a href="/formas" class="{{ 'ativo' if request.url.path.startswith('/formas') }}" title="Fôrmas e naves"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="5" width="20" height="4" rx="1"/><rect x="2" y="11" width="13" height="4" rx="1"/><rect x="2" y="17" width="8" height="3" rx="1"/></svg><span>Fôrmas e naves</span></a>
-    </div>
-    <div class="lat-grupo"><span>Dados</span>
-      <a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}" title="Importar dados"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>Importar dados</span></a>
-    </div>
+    {% if nv.get('obras', 2) or nv.get('realizado', 2) or nv.get('pxr', 2) %}<div class="lat-grupo"><span>Acompanhamento</span>
+      {% if nv.get('obras', 2) %}<a href="/" class="{{ 'ativo' if request.url.path == '/' or request.url.path.startswith(('/obras', '/plantas')) }}" title="Avanço das obras"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/></svg><span>Avanço das obras</span></a>{% endif %}
+      {% if nv.get('realizado', 2) %}<a href="/programacao" class="{{ 'ativo' if request.url.path.startswith('/programacao') }}" title="Realizado do dia"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M8 14l2.5 2.5L16 12"/></svg><span>Realizado do dia</span></a>{% endif %}
+      {% if nv.get('pxr', 2) %}<a href="/pxr" class="{{ 'ativo' if request.url.path.startswith('/pxr') }}" title="Programado x realizado"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Programado x realizado</span></a>{% endif %}
+    </div>{% endif %}
+    {% if nv.get('planejar', 2) or nv.get('armacao', 2) or nv.get('formas', 2) %}<div class="lat-grupo"><span>Planejamento</span>
+      {% if nv.get('planejar', 2) %}<a href="/planejar" class="{{ 'ativo' if request.url.path.startswith('/planejar') }}" title="Planejar"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 17.5h7M17.5 14v7"/></svg><span>Planejar</span></a>{% endif %}
+      {% if nv.get('armacao', 2) %}<a href="/armacao" class="{{ 'ativo' if request.url.path.startswith('/armacao') }}" title="Armação"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 4l16 16M4 12l8 8M12 4l8 8M4 20L20 4"/></svg><span>Armação</span></a>{% endif %}
+      {% if nv.get('formas', 2) %}<a href="/formas" class="{{ 'ativo' if request.url.path.startswith('/formas') }}" title="Fôrmas e naves"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="5" width="20" height="4" rx="1"/><rect x="2" y="11" width="13" height="4" rx="1"/><rect x="2" y="17" width="8" height="3" rx="1"/></svg><span>Fôrmas e naves</span></a>{% endif %}
+    </div>{% endif %}
+    {% if nv.get('importar', 2) or nv.get('usuarios', 2) %}<div class="lat-grupo"><span>Dados</span>
+      {% if nv.get('importar', 2) %}<a href="/importar" class="{{ 'ativo' if request.url.path.startswith('/importar') }}" title="Importar dados"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>Importar dados</span></a>{% endif %}
+      {% if nv.get('usuarios', 2) %}<a href="/usuarios" class="{{ 'ativo' if request.url.path.startswith('/usuarios') }}" title="Usuários e perfis"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM21 19v-1a4 4 0 0 0-3-3.9M15.5 3.1a3.5 3.5 0 0 1 0 6.8"/></svg><span>Usuários e perfis</span></a>{% endif %}
+    </div>{% endif %}
   </nav>
   <div class="lat-rodape">
     <span class="base" title="Data da última exportação do Plannix importada">Base Plannix: {{ base }}</span>
+    {% if request.state.usuario %}<a href="/conta" title="Minha senha ({{ request.state.usuario.login }})"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/></svg><span>{{ request.state.usuario.nome }} <small>· {{ request.state.usuario.perfil }}</small></span></a>{% endif %}
     <a href="/sair" title="Sair"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg><span>Sair</span></a>
   </div>
 </aside>
 <button type="button" class="lat-abrir-movel" onclick="document.documentElement.classList.toggle('menu-movel')" aria-label="Abrir menu">
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-<main>{% if DADOS_EFEMEROS %}<div class="alerta-dados">Atenção: o app está sem volume no Railway. Tudo o que for importado some no próximo deploy. Adicione um volume ao serviço (Settings → Volumes).</div>{% endif %}{% block corpo %}{% endblock %}</main>
+<main>{% if request.state.nivel_pagina is defined and request.state.nivel_pagina == 1 %}<div class="aviso-leitura">Seu perfil pode só visualizar esta tela.</div>{% endif %}{% if DADOS_EFEMEROS %}<div class="alerta-dados">Atenção: o app está sem volume no Railway. Tudo o que for importado some no próximo deploy. Adicione um volume ao serviço (Settings → Volumes).</div>{% endif %}{% block corpo %}{% endblock %}</main>
 <script>
 function alternaMenu() {
   if (window.innerWidth <= 900) { document.documentElement.classList.remove('menu-movel'); return; }   // celular: fecha a gaveta
   const f = document.documentElement.classList.toggle('menu-fechado');
   try { localStorage.setItem('menu', f ? 'fechado' : 'aberto'); } catch (e) {}
+}
+if (document.body.classList.contains('somente-leitura')) {
+  // perfil só de leitura: trava campos de edição (filtros e consultas continuam livres); o servidor também recusa gravações
+  const trava = raiz => {
+    raiz.querySelectorAll('input, select, textarea, button').forEach(el => {
+      if (el.closest('form[method="get"], .livre, .pop-cab') || el.type === 'search') return;
+      el.disabled = true;
+    });
+    raiz.querySelectorAll('form[method="post"]').forEach(f => f.classList.add('oculto'));
+  };
+  trava(document.querySelector('main'));
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && trava(n)))).observe(document.querySelector('main'), { childList: true, subtree: true });
 }
 document.querySelector('main').addEventListener('click', () => document.documentElement.classList.remove('menu-movel'));
 </script>

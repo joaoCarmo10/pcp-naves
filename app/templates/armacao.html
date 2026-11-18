@@ -31,10 +31,10 @@
   <div class="acoes" style="margin-top:6px">
     <form method="post" action="/armacao/divulgar" style="display:inline"><input type="hidden" name="dia" value="{{ d }}"><input type="hidden" name="rev" value="{{ r.id }}">
       <button type="submit" {{ 'disabled' if not pecas }}>{{ 'Divulgar de novo' if dv else 'Divulgar ao armador' }}</button></form>
-    <button type="button" class="botao-sec" onclick="window.print()">Imprimir (A4)</button>
+    <button type="button" class="botao-sec livre" onclick="window.print()">Imprimir (A4)</button>
     <span class="meta">Link do armador (só leitura, sem senha):</span>
     <input id="link" value="{{ link }}" readonly style="width:300px" aria-label="Link do armador">
-    <button type="button" class="botao-sec" onclick="navigator.clipboard.writeText(document.getElementById('link').value);this.textContent='Copiado'">Copiar</button>
+    <button type="button" class="botao-sec livre" onclick="navigator.clipboard.writeText(document.getElementById('link').value);this.textContent='Copiado'">Copiar</button>
   </div>
 </section>
 {% if not grupos %}<div class="vazio">Nada programado para {{ d|dm }} nesta revisão.</div>{% endif %}

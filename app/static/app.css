@@ -213,3 +213,9 @@ html.menu-fechado .lateral nav a,html.menu-fechado .lat-rodape a{justify-content
 }
 @media print{.lateral,.lat-abrir-movel{display:none!important}body{padding-left:0!important}}
 body.armador,body.sem-menu{padding-left:0!important}
+.aviso-leitura{background:#eef3fb;border:1px solid #c9d7ee;color:#2f4a73;border-radius:8px;padding:6px 12px;margin-bottom:10px;font-size:13px}
+form.oculto{display:none!important}
+.lat-rodape small{opacity:.7}
+body.somente-leitura .card-peca{cursor:default}
+select.nv-editar{background:#e3f1e6}select.nv-ver{background:#eef3fb}select.nv-nenhum{background:#f6f6f6;color:#888}
+.aviso.ok{background:#e3f1e6;border:1px solid #b8dcc1;color:#1f5a2e;padding:8px 12px;border-radius:8px;margin-bottom:10px}

@@ -169,3 +169,36 @@ class Divulgacao(Base):
     revisao_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     itens: Mapped[list] = mapped_column(JSON, default=list)   # [{id, codigo, obra, peca, forma, nave, secao, comp, qtd, produto}]
+
+
+class Perfil(Base):
+    """Perfil de acesso: nível por módulo (nenhum, ver, editar)."""
+    __tablename__ = "perfis"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(60), unique=True)
+    permissoes: Mapped[dict] = mapped_column(JSON, default=dict)
+    sistema: Mapped[bool] = mapped_column(Boolean, default=False)   # Administrador: tudo, não editável
+    usuarios: Mapped[list["Usuario"]] = relationship(back_populates="perfil")
+
+
+class Usuario(Base):
+    __tablename__ = "usuarios"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    login: Mapped[str] = mapped_column(String(60), unique=True)
+    nome: Mapped[str] = mapped_column(String(120), default="")
+    senha_hash: Mapped[str] = mapped_column(String(200))
+    perfil_id: Mapped[int] = mapped_column(ForeignKey("perfis.id"))
+    ativo: Mapped[bool] = mapped_column(Boolean, default=True)
+    trocar_senha: Mapped[bool] = mapped_column(Boolean, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    ultimo_acesso: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    perfil: Mapped[Perfil] = relationship(back_populates="usuarios")
+
+
+class Auditoria(Base):
+    """Quem alterou o quê (toda gravação feita no app)."""
+    __tablename__ = "auditoria"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quando: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    login: Mapped[str] = mapped_column(String(60), default="")
+    acao: Mapped[str] = mapped_column(String(300), default="")

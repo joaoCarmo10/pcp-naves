@@ -1,4 +1,5 @@
 import hashlib
+from types import SimpleNamespace
 import hmac
 import io
 import os
@@ -12,16 +13,16 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import armacao as arm, formas as fm, planejar as pl, plannix, plantas, programacao as pg
+from . import acesso, armacao as arm, formas as fm, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Divulgacao, Forma, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Auditoria, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -41,6 +42,7 @@ with SessionLocal() as _db:
     fm.carga_inicial(_db)
     fm.completar(_db)
     pl.completar_prioridades(_db)
+    acesso.carga_inicial(_db)
 
 
 def ultima_base(db: Session) -> str:
@@ -48,12 +50,56 @@ def ultima_base(db: Session) -> str:
     return imp.criada_em.strftime("%d/%m/%Y") if imp else "sem importação"
 
 
+def _primeira_pagina(niveis: dict) -> str:
+    destinos = {"obras": "/", "realizado": "/programacao", "pxr": "/pxr", "planejar": "/planejar", "armacao": "/armacao",
+                "formas": "/formas", "importar": "/importar", "usuarios": "/usuarios"}
+    return next((destinos[m] for m in destinos if niveis.get(m)), "/conta")
+
+
 @app.middleware("http")
 async def exige_login(request: Request, call_next):
-    livre = request.url.path.startswith(("/static", "/login", "/saude", "/armador/"))   # /armador/<token>: só leitura
-    if SENHA and not livre and not request.session.get("ok"):
-        return RedirectResponse("/login", status_code=303)
-    return await call_next(request)
+    """Login por usuário e permissão por módulo: GET pede 'ver', gravação pede 'editar'. O servidor recusa mesmo que
+    alguém tente gravar por fora da tela."""
+    caminho = request.url.path
+    request.state.usuario = None
+    request.state.niveis = {m: 2 for m in acesso.MODULOS}
+    request.state.nivel_pagina = 2
+    if not SENHA or caminho.startswith(("/static", "/login", "/saude", "/armador/")):
+        return await call_next(request)
+    quer_json = "application/json" in request.headers.get("content-type", "") or request.headers.get("accept", "").startswith("application/json")
+    with SessionLocal() as db:
+        u = db.get(Usuario, request.session.get("uid")) if request.session.get("uid") else None
+        if not u or not u.ativo:
+            request.session.clear()
+            if quer_json:
+                return JSONResponse({"ok": False, "erro": "Sessão expirada. Entre de novo."}, status_code=401)
+            return RedirectResponse("/login", status_code=303)
+        niveis = {m: acesso.nivel(u, m) for m in acesso.MODULOS}
+        request.state.usuario = SimpleNamespace(id=u.id, login=u.login, nome=u.nome or u.login, perfil=u.perfil.nome,
+                                                admin=u.perfil.sistema, trocar=u.trocar_senha)
+        if not u.ultimo_acesso or (datetime.now() - u.ultimo_acesso).total_seconds() > 300:
+            u.ultimo_acesso = datetime.now()
+            db.commit()
+    request.state.niveis = niveis
+    if request.state.usuario.trocar and caminho not in ("/conta", "/sair"):
+        return RedirectResponse("/conta", status_code=303)
+    mod = acesso.modulo_do_caminho(caminho)
+    precisa = 1 if request.method in ("GET", "HEAD") else 2
+    if mod:
+        request.state.nivel_pagina = niveis[mod]
+        if niveis[mod] < precisa:
+            if caminho == "/" and request.method == "GET":
+                return RedirectResponse(_primeira_pagina(niveis), status_code=303)
+            msg = "Seu perfil só pode ver este módulo." if niveis[mod] else "Seu perfil não tem acesso a este módulo."
+            if quer_json or request.method != "GET":
+                return JSONResponse({"ok": False, "erro": msg}, status_code=403)
+            return tpl.TemplateResponse(request, "sem_acesso.html", {"msg": msg, "base": ""}, status_code=403)
+    resp = await call_next(request)
+    if request.method not in ("GET", "HEAD") and resp.status_code < 400 and caminho not in ("/conta",):
+        with SessionLocal() as db:
+            db.add(Auditoria(login=request.state.usuario.login, acao=f"{request.method} {caminho}"[:300]))
+            db.commit()
+    return resp
 
 
 # a sessão precisa envolver o middleware de login (o último adicionado roda primeiro)
@@ -71,11 +117,19 @@ def login_form(request: Request):
 
 
 @app.post("/login")
-def login(request: Request, senha: str = Form(...)):
-    if SENHA and hmac.compare_digest(senha, SENHA):
-        request.session["ok"] = True
-        return RedirectResponse("/", status_code=303)
-    return tpl.TemplateResponse(request, "login.html", {"erro": "Senha incorreta."}, status_code=401)
+def login(request: Request, senha: str = Form(...), usuario: str = Form(""), db: Session = Depends(get_db)):
+    chave = request.client.host if request.client else "?"
+    if acesso.bloqueado(chave):
+        return tpl.TemplateResponse(request, "login.html", {"erro": "Muitas tentativas. Espere 15 minutos.", "usuario": usuario}, status_code=429)
+    u = acesso.autenticar(db, usuario, senha)
+    if not u:
+        acesso.falhou(chave)
+        return tpl.TemplateResponse(request, "login.html", {"erro": "Usuário ou senha incorretos.", "usuario": usuario}, status_code=401)
+    request.session.clear()
+    request.session["uid"] = u.id
+    u.ultimo_acesso = datetime.now()
+    db.commit()
+    return RedirectResponse("/conta" if u.trocar_senha else "/", status_code=303)
 
 
 @app.get("/sair")
@@ -715,3 +769,134 @@ def armador(request: Request, token: str, db: Session = Depends(get_db)):
         listas.append({"d": d, "dv": dv, "grupos": grupos, "pecas": sum(x["qtd"] for x in dv.itens),
                        "armadas": sum(x["qtd"] for x in dv.itens if sit[x["id"]]["armado"])})
     return tpl.TemplateResponse(request, "armador.html", {"listas": listas, "hoje": hoje})
+
+
+# ---------------------------------------------------------------- minha conta, usuários e perfis
+@app.get("/conta", response_class=HTMLResponse)
+def conta(request: Request):
+    return tpl.TemplateResponse(request, "conta.html", {"erro": None, "ok": None, "base": ""})
+
+
+@app.post("/conta", response_class=HTMLResponse)
+def conta_salvar(request: Request, atual: str = Form(...), nova: str = Form(...), repete: str = Form(...), db: Session = Depends(get_db)):
+    u = db.get(Usuario, request.session.get("uid")) if request.session.get("uid") else None
+    erro = None
+    if not u:
+        return RedirectResponse("/login", status_code=303)
+    if not acesso.confere(atual, u.senha_hash):
+        erro = "Senha atual incorreta."
+    elif len(nova) < 8:
+        erro = "A nova senha precisa ter pelo menos 8 caracteres."
+    elif nova != repete:
+        erro = "A confirmação não bate com a nova senha."
+    elif nova == atual:
+        erro = "A nova senha tem que ser diferente da atual."
+    if erro:
+        return tpl.TemplateResponse(request, "conta.html", {"erro": erro, "ok": None, "base": ""}, status_code=400)
+    u.senha_hash, u.trocar_senha = acesso.gerar_hash(nova), False
+    db.commit()
+    request.state.usuario.trocar = False
+    return tpl.TemplateResponse(request, "conta.html", {"erro": None, "ok": "Senha alterada.", "base": ""})
+
+
+def _flash(request: Request, msg: str) -> None:
+    request.session["flash"] = msg
+
+
+@app.get("/usuarios", response_class=HTMLResponse)
+def usuarios_tela(request: Request, db: Session = Depends(get_db)):
+    flash = request.session.pop("flash", None)
+    return tpl.TemplateResponse(request, "usuarios.html", {
+        "usuarios": list(db.scalars(select(Usuario).order_by(Usuario.ativo.desc(), Usuario.login))),
+        "perfis": list(db.scalars(select(Perfil).order_by(Perfil.sistema.desc(), Perfil.nome))),
+        "modulos": acesso.MODULOS, "flash": flash,
+        "log": list(db.scalars(select(Auditoria).order_by(Auditoria.quando.desc()).limit(80))), "base": ultima_base(db)})
+
+
+def _admins_ativos(db: Session) -> int:
+    return len([u for u in db.scalars(select(Usuario).where(Usuario.ativo.is_(True))) if u.perfil.sistema])
+
+
+@app.post("/usuarios/novo")
+def usuario_novo(request: Request, login: str = Form(...), nome: str = Form(""), perfil_id: int = Form(...), db: Session = Depends(get_db)):
+    login = re.sub(r"[^a-z0-9._@-]", "", login.strip().lower())[:60]
+    if not login:
+        _flash(request, "Erro: informe um login (letras, números, ponto, hífen).")
+    elif db.scalar(select(Usuario.id).where(Usuario.login == login)):
+        _flash(request, f"Erro: já existe o usuário {login}.")
+    elif not db.get(Perfil, perfil_id):
+        _flash(request, "Erro: perfil inválido.")
+    else:
+        prov = acesso.senha_provisoria()
+        db.add(Usuario(login=login, nome=nome.strip()[:120], senha_hash=acesso.gerar_hash(prov), perfil_id=perfil_id, trocar_senha=True))
+        db.commit()
+        _flash(request, f"Usuário {login} criado. Senha provisória: {prov} (aparece só agora; no primeiro acesso a pessoa troca).")
+    return RedirectResponse("/usuarios", status_code=303)
+
+
+@app.post("/usuarios/{uid}")
+def usuario_editar(request: Request, uid: int, perfil_id: int = Form(...), ativo: str = Form(""), nome: str = Form(""),
+                   db: Session = Depends(get_db)):
+    u = db.get(Usuario, uid) or _404()
+    novo_perfil = db.get(Perfil, perfil_id) or _404()
+    ficaria_admin = novo_perfil.sistema and bool(ativo)
+    if u.perfil.sistema and u.ativo and not ficaria_admin and _admins_ativos(db) <= 1:
+        _flash(request, "Erro: precisa ficar pelo menos um administrador ativo.")
+        return RedirectResponse("/usuarios", status_code=303)
+    if u.id == request.session.get("uid") and not ativo:
+        _flash(request, "Erro: você não pode desativar o seu próprio usuário.")
+        return RedirectResponse("/usuarios", status_code=303)
+    u.perfil_id, u.ativo, u.nome = perfil_id, bool(ativo), nome.strip()[:120] or u.nome
+    db.commit()
+    _flash(request, f"Usuário {u.login} atualizado.")
+    return RedirectResponse("/usuarios", status_code=303)
+
+
+@app.post("/usuarios/{uid}/senha")
+def usuario_senha(request: Request, uid: int, db: Session = Depends(get_db)):
+    u = db.get(Usuario, uid) or _404()
+    prov = acesso.senha_provisoria()
+    u.senha_hash, u.trocar_senha = acesso.gerar_hash(prov), True
+    db.commit()
+    _flash(request, f"Nova senha provisória de {u.login}: {prov} (aparece só agora; no próximo acesso a pessoa troca).")
+    return RedirectResponse("/usuarios", status_code=303)
+
+
+@app.post("/perfis/novo")
+def perfil_novo(request: Request, nome: str = Form(...), base_id: int = Form(0), db: Session = Depends(get_db)):
+    nome = nome.strip()[:60]
+    if not nome or db.scalar(select(Perfil.id).where(Perfil.nome == nome)):
+        _flash(request, "Erro: nome de perfil vazio ou repetido.")
+        return RedirectResponse("/usuarios", status_code=303)
+    base_p = db.get(Perfil, base_id) if base_id else None
+    perms = dict(base_p.permissoes) if base_p and not base_p.sistema else {m: "ver" for m in acesso.MODULOS}
+    perms["usuarios"] = "nenhum" if not (base_p and base_p.sistema) else perms.get("usuarios", "nenhum")
+    db.add(Perfil(nome=nome, permissoes=perms))
+    db.commit()
+    _flash(request, f"Perfil {nome} criado. Ajuste os módulos na tabela.")
+    return RedirectResponse("/usuarios#perfis", status_code=303)
+
+
+@app.post("/perfis/{pid}")
+async def perfil_salvar(request: Request, pid: int, db: Session = Depends(get_db)):
+    p = db.get(Perfil, pid) or _404()
+    if p.sistema:
+        _flash(request, "O perfil Administrador tem acesso a tudo e não muda.")
+        return RedirectResponse("/usuarios#perfis", status_code=303)
+    fd = await request.form()
+    p.permissoes = {m: (fd.get(f"m_{m}") if fd.get(f"m_{m}") in acesso.NIVEIS else "nenhum") for m in acesso.MODULOS}
+    db.commit()
+    _flash(request, f"Perfil {p.nome} salvo.")
+    return RedirectResponse("/usuarios#perfis", status_code=303)
+
+
+@app.post("/perfis/{pid}/excluir")
+def perfil_excluir(request: Request, pid: int, db: Session = Depends(get_db)):
+    p = db.get(Perfil, pid) or _404()
+    if p.sistema or p.usuarios:
+        _flash(request, "Erro: só dá para excluir perfil sem usuários (e o Administrador não sai).")
+    else:
+        db.delete(p)
+        db.commit()
+        _flash(request, f"Perfil {p.nome} excluído.")
+    return RedirectResponse("/usuarios#perfis", status_code=303)

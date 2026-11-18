@@ -32,7 +32,7 @@
   <aside class="lista-falt">
     <div class="lf-cab">
       <b>Peças a programar</b> <span class="meta" id="lf-n"></span>
-      <div class="lf-filtros">
+      <div class="lf-filtros livre">
         <select id="f-obra" aria-label="Obra"><option value="">Todas as obras</option>{% for o in obras %}<option>{{ o }}</option>{% endfor %}</select>
         <select id="f-prod" aria-label="Produto"><option value="">Todos os produtos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
         <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção">
@@ -134,6 +134,7 @@ function encaixe(g, qtd, el) {
 const fant = document.getElementById('fantasma');
 let arr = null;
 lista.addEventListener('pointerdown', e => {
+  if (document.body.classList.contains('somente-leitura')) return;   // só visualização
   const c = e.target.closest('.card-peca'); if (!c || e.target.closest('input')) return;
   const g = FALT[+c.dataset.i], inp = c.querySelector('input');
   arr = { g, c, qtd: inp ? Math.max(1, Math.min(+inp.value || 1, g.codigos.length)) : 1, x0: e.clientX, y0: e.clientY, ativo: false, alvo: null };

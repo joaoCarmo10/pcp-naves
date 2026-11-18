@@ -120,7 +120,7 @@ document.querySelectorAll('svg.layout').forEach(svg => {
     g.setPointerCapture(e.pointerId); g.classList.add('arrastando');
   });
   svg.addEventListener('pointermove', e => {
-    if (!alvo) return;
+    if (!alvo || document.body.classList.contains('somente-leitura')) return;
     const p = pt(e), dx = p.x - ini.x, dy = p.y - ini.y;
     if (Math.abs(dx) + Math.abs(dy) > 0.3) moveu = true;
     const nx = Math.max(0, Math.round((pos.x + dx) * 2) / 2), ny = Math.max(0, Math.round((pos.y + dy) * 2) / 2);
