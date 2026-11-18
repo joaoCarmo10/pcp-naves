@@ -477,3 +477,23 @@ def test_indicios_segunda_etapa():
     assert ind(["DIMENSDO DO CONSOLO / DENTE GERBER"]) == []
     assert ind(["CONCRETAGEM EM 2A ETAPA"]) == ['nota "2a etapa"']
     assert ind(["VIGA L PROTENDIDA", "RECORTE 3X5CM"]) == []
+
+
+def test_prancha_em_obra_errada_aparece(cliente):
+    import time
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import CadastroPeca, Obra
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    r = cliente.post("/pecas/pranchas", data={"obra_id": str(o.id)},
+                     files=[("arquivo", ("X-R00.pdf", _prancha_pdf(nome="ZZ9"), "application/pdf"))])
+    for _ in range(50):
+        if db.scalar(select(CadastroPeca)):
+            break
+        time.sleep(0.1)
+    time.sleep(0.2)
+    h = cliente.get(f"/pecas?obra={o.nome}").text
+    assert "Pranchas sem peça no Plannix (1)" in h and "ZZ9" in h
+    assert "ZZ9 não existe nesta obra no Plannix" in h

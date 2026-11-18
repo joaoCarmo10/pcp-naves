@@ -6,7 +6,7 @@
 
 {% if flash %}<div class="aviso {{ 'erro' if flash.startswith('Erro') else 'ok' }}">{{ flash }}</div>{% endif %}
 {% for o, st in lendo %}<div class="aviso">{% if st.feitos < st.total %}<b>{{ o.nome }}:</b> lendo pranchas, {{ st.feitos }} de {{ st.total }}.{% else %}<b>{{ o.nome }}:</b> leitura concluída.{% endif %}
-  {% for m in st.msgs[-8:] %}<br>{{ m }}{% endfor %}</div>{% endfor %}
+  {% for m in st.msgs[-15:] %}<br>{{ m }}{% endfor %}</div>{% endfor %}
 <script>if (location.hash === "#enviar") document.addEventListener("DOMContentLoaded", () => document.getElementById("enviar").open = true)</script>
 {% if rodando %}<script>setTimeout(() => location.reload(), 8000)</script>{% endif %}
 
@@ -109,6 +109,16 @@
 </table></div>
 {% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros ou baixe o Excel.</p>{% endif %}
 {% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
+{% if orfaos %}
+<section class="cartao aviso-orfaos" style="margin-top:16px">
+  <h2 style="margin-top:0">Pranchas sem peça no Plannix ({{ orfaos|length }})</h2>
+  <p class="meta">Foram lidas, mas o nome ou a etapa não bate com nenhuma peça desta obra no Plannix. Normalmente é prancha enviada na obra errada ou "all data" desatualizado. Abra, confira e exclua se for o caso.</p>
+  <table class="t compacta"><thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Arquivo</th><th>Motivo</th></tr></thead><tbody>
+  {% for c in orfaos %}<tr><td class="meta">{{ obras_map[c.obra_id].nome }}</td><td><a href="/cadastro/{{ c.id }}"><b>{{ c.peca }}</b></a></td>
+    <td class="meta">{{ c.etapas or '-' }}</td><td class="meta">{{ c.nome_arquivo }}</td><td class="meta">{{ (c.alertas or ['sem etapa correspondente'])|join(' | ') }}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
 <script>
 (() => {
   const tab = document.getElementById("tab-pecas"), caixas = document.querySelectorAll("#grupos input[data-g]");

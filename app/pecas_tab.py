@@ -78,6 +78,9 @@ def montar(db: Session, qp) -> dict:
         if p.modelo_protensao:
             t["_modelo"][p.modelo_protensao] += 1
     todos = list(tipos.values())
+    ligados = {id(t["c"]) for t in todos if t["c"]}
+    orfaos = sorted((c for cs in idx.values() for c in cs if id(c) not in ligados and c.obra_id in obras),
+                    key=lambda c: (obras[c.obra_id].nome, chave_natural(c.peca)))
     opcoes = {"obra": sorted({t["o"].nome for t in todos}), "produto": sorted({t["produto"] for t in todos if t["produto"]})}
     busca = cad._canon(f["q"].strip())
 
@@ -120,7 +123,9 @@ def montar(db: Session, qp) -> dict:
            "ativo_pend": sum((t["c"].aco_ativo or 0) * t["pend"] for t in linhas if t["c"]),
            "barras_pend": sum((t["barras"] or 0) * t["pend"] for t in linhas),
            "e2": sum(1 for t in linhas if t["c"] and t["c"].segunda_etapa)}
-    return {"linhas": linhas, "f": f, "opcoes": opcoes, "obras": obras, "tot": tot, "diams": sorted(diams, key=chave),
+    if f["obra"]:
+        orfaos = [c for c in orfaos if obras[c.obra_id].nome == f["obra"]]
+    return {"linhas": linhas, "f": f, "opcoes": opcoes, "obras": obras, "tot": tot, "orfaos": orfaos, "diams": sorted(diams, key=chave),
             "pend_bit": {d: pend_bit[d] for d in sorted(pend_bit, key=chave)}}
 
 

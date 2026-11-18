@@ -133,6 +133,13 @@ def _uma(db: Session, obra_id: int, nome: str, caminho: Path, st: dict) -> None:
     c.alertas = alertas
     c.etapa2_indicios = list(L.etapa2)
     c.situacao = "revisar" if alertas else "ok"
+    if not L.peca:
+        st["msgs"].append(f"{nome}: não achei o nome da peça na prancha. Ficou em 'Pranchas sem peça no Plannix' para corrigir.")
+    elif L.peca not in nomes:
+        st["msgs"].append(f"{nome}: {L.peca} não existe nesta obra no Plannix. Confira se escolheu a obra certa.")
+    else:
+        st["msgs"].append(f"{nome}: {L.peca} cadastrada{f' (etapa {etapas})' if etapas and etapas != '?' else ''}"
+                          f"{', com alertas para revisar' if alertas else ''}{', 2ª etapa' if L.etapa2 else ''}.")
     c.atualizado_em = datetime.now()
     db.commit()
 

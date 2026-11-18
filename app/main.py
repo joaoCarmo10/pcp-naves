@@ -1036,11 +1036,13 @@ def pecas_modulo(request: Request, db: Session = Depends(get_db)):
     d = ptab.montar(db, request.query_params)
     obras = d["obras"]
     sel = next((o for o in obras.values() if o.nome == d["f"]["obra"]), None)
-    lendo = [(obras[oid], st) for oid, st in cad.ANDAMENTO.items() if oid in obras and (st["feitos"] < st["total"] or (sel and oid == sel.id))]
+    recente = lambda st: (datetime.now() - st.get("em", datetime.min)).total_seconds() < 3 * 3600
+    lendo = [(obras[oid], st) for oid, st in cad.ANDAMENTO.items()
+             if oid in obras and (st["feitos"] < st["total"] or (sel and oid == sel.id) or (not sel and recente(st)))]
     LIMITE = 800
     return tpl.TemplateResponse(request, "pecas.html", {
         **d, "linhas": d["linhas"][:LIMITE], "cortadas": max(0, len(d["linhas"]) - LIMITE), "base": ultima_base(db),
-        "obras": sorted(obras.values(), key=lambda o: o.nome), "sel": sel, "lendo": lendo,
+        "obras": sorted(obras.values(), key=lambda o: o.nome), "obras_map": obras, "sel": sel, "lendo": lendo,
         "rodando": any(st["feitos"] < st["total"] for _, st in lendo), "qs": request.url.query,
         "flash": request.session.pop("flash", None)})
 
@@ -1076,7 +1078,7 @@ async def _receber_pranchas(request: Request, o: Obra, arquivo: list[UploadFile]
         return RedirectResponse(_pecas_url(o) + "#enviar", status_code=303)
     st = cad.ANDAMENTO.get(o.id)
     if not st or st["feitos"] >= st["total"]:
-        cad.ANDAMENTO[o.id] = st = {"total": 0, "feitos": 0, "msgs": []}
+        cad.ANDAMENTO[o.id] = st = {"total": 0, "feitos": 0, "msgs": [], "em": datetime.now()}
     st["total"] += len(lote)
     _ocr_fila.submit(cad.processar, o.id, lote)
     _flash(request, f"{o.nome}: {len(lote)} prancha(s) recebida(s). A leitura roda em segundo plano: as com texto saem na hora, "
