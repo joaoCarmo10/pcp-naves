@@ -1166,6 +1166,32 @@ def cadastro_pdf(cid: int, db: Session = Depends(get_db)):
                     headers={"Content-Disposition": f"inline; filename=prancha_{c.id}.pdf"})
 
 
+@app.get("/cadastro/{cid}/texto")
+def cadastro_texto(request: Request, cid: int, db: Session = Depends(get_db)):
+    """Diagnóstico do leitor: linhas de texto da prancha com a posição (y) e o x de cada palavra.
+    Filtros: y0, y1, x0, x1 (pontos do PDF) e busca (só linhas que contêm o texto)."""
+    import pymupdf
+    from . import pranchas as pr
+    c = db.get(CadastroPeca, cid) or _404()
+    qp = request.query_params
+    f = lambda k, d: float(qp.get(k) or d)
+    y0, y1, x0, x1 = f("y0", -1), f("y1", 1e9), f("x0", -1), f("x1", 1e9)
+    busca = pr._n(qp.get("busca", ""))
+    with pymupdf.open(DATA_DIR / c.arquivo) as doc:
+        pg = doc[0]
+        toks, fonte = pr._tokens(pg)
+        cab = f"{c.nome_arquivo} | página {pg.rect.width:.0f}x{pg.rect.height:.0f} rot {pg.rotation} | {len(toks)} palavras | leitura: {fonte}"
+    saida = [cab]
+    for l in pr._linhas(toks):
+        l = [t for t in l if x0 <= t.xc <= x1]
+        if not l or not (y0 <= l[0].yc <= y1):
+            continue
+        if busca and busca not in pr._n(pr._texto(l)):
+            continue
+        saida.append(f"{l[0].yc:6.0f} | " + "  ".join(f"{t.t}@{t.xc:.0f}" for t in l))
+    return Response("\n".join(saida), media_type="text/plain; charset=utf-8")
+
+
 @app.post("/cadastro/{cid}/excluir")
 def cadastro_excluir(request: Request, cid: int, db: Session = Depends(get_db)):
     c = db.get(CadastroPeca, cid) or _404()
