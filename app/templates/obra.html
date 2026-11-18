@@ -3,7 +3,6 @@
 {% block corpo %}
 <p class="sub" style="margin-bottom:4px"><a href="/">Avanço das obras</a> ›</p>
 <h1>{{ o.nome }}</h1>
-<p><a class="botao-sec" href="/obras/{{ o.id }}/pecas">Cadastro de peças (pranchas)</a></p>
 <p class="sub">{{ o.nome_plannix }}</p>
 <div class="kpis" style="margin-bottom:8px">
   <div class="kpi"><b>{{ r.pct|pct }}</b><span>peças fabricadas ({{ r.fabricadas }} de {{ r.pecas }})</span></div>

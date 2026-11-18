@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}{{ c.peca }} · cadastro | PCP Naves{% endblock %}
 {% block corpo %}
-<p class="sub" style="margin:0"><a href="/obras/{{ c.obra_id }}">{{ c.obra.nome }}</a> › <a href="/obras/{{ c.obra_id }}/pecas">Cadastro de peças</a> ›</p>
+<p class="sub" style="margin:0"><a href="/obras/{{ c.obra_id }}">{{ c.obra.nome }}</a> › <a href="/pecas?obra={{ c.obra.nome|urlencode }}">Peças</a> ›</p>
 <div class="filtros"><div style="flex:1"><h1>{{ c.peca }}</h1>
   <p class="sub" style="margin:0">Prancha {{ c.prancha }} {{ c.revisao }} · {{ c.nome_arquivo }} · lida por {{ 'OCR (texto desenhado)' if c.fonte == 'ocr' else 'texto do PDF' }} · {{ c.atualizado_em.strftime('%d/%m %H:%M') }}</p></div>
   <a class="botao-sec livre" href="/cadastro/{{ c.id }}/pdf" target="_blank">Abrir prancha</a></div>

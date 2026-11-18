@@ -1075,48 +1075,33 @@ def pecas_modulo(request: Request, db: Session = Depends(get_db)):
            "vol_pend": sum((t["vol"] or 0) * (t["n"] - t["fab"]) for t in linhas),
            "aco_pend": sum((t["c"].aco_passivo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"]),
            "ativo_pend": sum((t["c"].aco_ativo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"])}
+    bit: dict[str, float] = {}
+    for t in linhas:
+        if t["c"] and t["n"] > t["fab"]:
+            for b, kg in (t["c"].bitolas or {}).items():
+                bit[b] = bit.get(b, 0) + kg * (t["n"] - t["fab"])
+    sel = next((o for o in obras.values() if o.nome == f["obra"]), None)
+    lendo = [(obras[oid], st) for oid, st in cad.ANDAMENTO.items() if oid in obras and (st["feitos"] < st["total"] or (sel and oid == sel.id))]
     LIMITE = 800
-    return tpl.TemplateResponse(request, "pecas.html", {"linhas": linhas[:LIMITE], "cortadas": max(0, len(linhas) - LIMITE),
-                                                        "f": f, "opcoes": opcoes, "tot": tot, "base": ultima_base(db)})
+    return tpl.TemplateResponse(request, "pecas.html", {
+        "linhas": linhas[:LIMITE], "cortadas": max(0, len(linhas) - LIMITE), "f": f, "opcoes": opcoes, "tot": tot, "base": ultima_base(db),
+        "bitolas": dict(sorted(bit.items(), key=lambda kv: float(kv[0]))), "obras": sorted(obras.values(), key=lambda o: o.nome),
+        "sel": sel, "lendo": lendo, "rodando": any(st["feitos"] < st["total"] for _, st in lendo),
+        "flash": request.session.pop("flash", None)})
 
 
-@app.get("/obras/{obra_id}/pecas", response_class=HTMLResponse)
-def cadastro_tela(request: Request, obra_id: int, db: Session = Depends(get_db)):
+def _pecas_url(o: Obra) -> str:
+    return f"/pecas?obra={quote(o.nome)}"
+
+
+@app.get("/obras/{obra_id}/pecas")
+def cadastro_tela(obra_id: int, db: Session = Depends(get_db)):
+    """Atalho antigo: o cadastro de peças agora vive no módulo Peças."""
     o = db.get(Obra, obra_id) or _404()
-    pecas = list(db.scalars(select(Peca).where(Peca.obra_id == o.id)))
-    idx = cad.indice(db, [o.id])
-    cads = [c for cs in idx.values() for c in cs]
-    # tipos do Plannix: nome + etapa (o mesmo nome pode mudar de medida entre etapas/blocos)
-    tipos, por_cad = {}, {}
-    falta_bit, falta_ativo, falta_pecas = {}, 0.0, 0
-    for p in pecas:
-        t = tipos.setdefault((cad._canon(p.peca), p.item), {"nome": p.peca, "item": p.item, "produto": p.produto, "secao": p.secao,
-                                                           "comp": p.comprimento, "n": 0, "fab": 0, "cad": None})
-        t["n"] += 1
-        t["fab"] += 1 if p.fabricada else 0
-        c = cad.de_peca(idx, p)
-        if c:
-            t["cad"] = c
-            x = por_cad.setdefault(c.id, {"n": 0, "fab": 0, "produto": p.produto})
-            x["n"] += 1
-            x["fab"] += 1 if p.fabricada else 0
-            if not p.fabricada:
-                falta_pecas += 1
-                for b, kg in (c.bitolas or {}).items():
-                    falta_bit[b] = falta_bit.get(b, 0) + kg
-                falta_ativo += c.aco_ativo or 0
-    linhas = [{"c": c, "t": por_cad.get(c.id)} for c in sorted(cads, key=lambda c: (c.situacao != "revisar", chave_natural(c.peca)))]
-    sem = sorted((t for t in tipos.values() if not t["cad"]), key=lambda t: (t["produto"], chave_natural(t["nome"]), chave_natural(t["item"] or "")))
-    st = cad.ANDAMENTO.get(o.id)
-    return tpl.TemplateResponse(request, "cadastro.html", {
-        "o": o, "linhas": linhas, "sem": sem, "n_tipos": len(tipos), "st": st, "flash": request.session.pop("flash", None),
-        "falta_bit": dict(sorted(falta_bit.items(), key=lambda kv: float(kv[0]))), "falta_ativo": falta_ativo, "falta_pecas": falta_pecas,
-        "base": ultima_base(db)})
+    return RedirectResponse(_pecas_url(o), status_code=303)
 
 
-@app.post("/obras/{obra_id}/pranchas")
-async def cadastro_enviar(request: Request, obra_id: int, arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
-    o = db.get(Obra, obra_id) or _404()
+async def _receber_pranchas(request: Request, o: Obra, arquivo: list[UploadFile]):
     dados = [((a.filename or "x.pdf"), await a.read()) for a in arquivo if a.filename]
     try:
         lote = cad.guardar(o, dados)
@@ -1124,15 +1109,25 @@ async def cadastro_enviar(request: Request, obra_id: int, arquivo: list[UploadFi
         lote = []
     if not lote:
         _flash(request, "Erro: nenhum PDF encontrado nos arquivos enviados.")
-        return RedirectResponse(f"/obras/{o.id}/pecas", status_code=303)
+        return RedirectResponse(_pecas_url(o) + "#enviar", status_code=303)
     st = cad.ANDAMENTO.get(o.id)
     if not st or st["feitos"] >= st["total"]:
         cad.ANDAMENTO[o.id] = st = {"total": 0, "feitos": 0, "msgs": []}
     st["total"] += len(lote)
     _ocr_fila.submit(cad.processar, o.id, lote)
-    _flash(request, f"{len(lote)} prancha(s) recebida(s). A leitura roda em segundo plano: as com texto saem na hora, "
-                    f"as desenhadas levam uns 20 segundos cada. Atualize a página para acompanhar.")
-    return RedirectResponse(f"/obras/{o.id}/pecas", status_code=303)
+    _flash(request, f"{o.nome}: {len(lote)} prancha(s) recebida(s). A leitura roda em segundo plano: as com texto saem na hora, "
+                    f"as desenhadas levam uns 20 segundos cada.")
+    return RedirectResponse(_pecas_url(o), status_code=303)
+
+
+@app.post("/pecas/pranchas")
+async def pecas_enviar(request: Request, obra_id: int = Form(...), arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    return await _receber_pranchas(request, db.get(Obra, obra_id) or _404(), arquivo)
+
+
+@app.post("/obras/{obra_id}/pranchas")
+async def cadastro_enviar(request: Request, obra_id: int, arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    return await _receber_pranchas(request, db.get(Obra, obra_id) or _404(), arquivo)
 
 
 @app.get("/cadastro/{cid}", response_class=HTMLResponse)
@@ -1187,4 +1182,4 @@ def cadastro_excluir(request: Request, cid: int, db: Session = Depends(get_db)):
     db.delete(c)
     db.commit()
     _flash(request, f"Cadastro de {c.peca} excluído.")
-    return RedirectResponse(f"/obras/{oid}/pecas", status_code=303)
+    return RedirectResponse(_pecas_url(db.get(Obra, oid)), status_code=303)

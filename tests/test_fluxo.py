@@ -425,3 +425,26 @@ def test_modulo_pecas(cliente):
     assert "tipos de peça" in h and "Sem prancha" in h and 'href="/pecas"' in h
     assert cliente.get("/pecas?situacao=com").status_code == 200
     assert "Nenhuma peça" in cliente.get("/pecas?q=NAOEXISTE").text
+
+
+def test_pranchas_pelo_modulo_pecas(cliente):
+    import time
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import CadastroPeca, Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    db.add(Peca(obra_id=o.id, codigo="7002", peca="PP1", produto="PILAR", secao="30X20", volume=0.15, item="4"))
+    db.commit()
+    r = cliente.post("/pecas/pranchas", data={"obra_id": str(o.id)},
+                     files=[("arquivo", ("24-014-X-ECC-052-PIL-R00.pdf", _prancha_pdf(), "application/pdf"))])
+    assert r.status_code == 200 and "prancha(s) recebida(s)" in r.text and "Enviar pranchas" in r.text
+    for _ in range(50):
+        if db.scalar(select(CadastroPeca)):
+            break
+        time.sleep(0.1)
+    h = cliente.get(f"/pecas?obra={o.nome}").text
+    assert "Ø12.5" in h and "/cadastro/" in h
+    assert "Cadastro de peças (pranchas)" not in cliente.get(f"/obras/{o.id}").text
+    assert cliente.get(f"/obras/{o.id}/pecas", follow_redirects=False).headers["location"].startswith("/pecas?obra=")

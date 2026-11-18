@@ -4,6 +4,24 @@
 <h1>Peças</h1>
 <p class="sub">Um tipo de peça por linha (obra + nome + etapa). Medidas e quantidades do Plannix, armadura e protensão das pranchas.{% if base %} Base: {{ base }}.{% endif %}</p>
 
+{% if flash %}<div class="aviso {{ 'erro' if flash.startswith('Erro') else 'ok' }}">{{ flash }}</div>{% endif %}
+{% for o, st in lendo %}<div class="aviso">{% if st.feitos < st.total %}<b>{{ o.nome }}:</b> lendo pranchas, {{ st.feitos }} de {{ st.total }}.{% else %}<b>{{ o.nome }}:</b> leitura concluída.{% endif %}
+  {% for m in st.msgs[-8:] %}<br>{{ m }}{% endfor %}</div>{% endfor %}
+<script>if (location.hash === "#enviar") document.addEventListener("DOMContentLoaded", () => document.getElementById("enviar").open = true)</script>
+{% if rodando %}<script>setTimeout(() => location.reload(), 8000)</script>{% endif %}
+
+<details class="cartao enviar" id="enviar" {{ 'open' if not tot.com }}>
+  <summary><b>Enviar pranchas de detalhamento</b> <span class="meta">PDF ou .zip do Autodoc, vários de uma vez</span></summary>
+  <form method="post" action="/pecas/pranchas" enctype="multipart/form-data" class="filtros" style="margin-top:10px">
+    <label for="obra_id">Obra<select id="obra_id" name="obra_id" required>
+      {% if not sel %}<option value="">Escolha a obra</option>{% endif %}
+      {% for o in obras %}<option value="{{ o.id }}" {{ 'selected' if sel and o.id == sel.id }}>{{ o.nome }}</option>{% endfor %}</select></label>
+    <label for="arquivo">Arquivos<input id="arquivo" type="file" name="arquivo" accept=".pdf,.zip" multiple required></label>
+    <button type="submit">Enviar e ler</button>
+  </form>
+  <p class="meta">A peça só é aceita se o nome existir nessa obra no Plannix. Cada prancha é ligada à etapa pelo volume, então importe o "all data" atualizado antes. Revisão nova substitui a antiga (a antiga fica no histórico).</p>
+</details>
+
 <form method="get" class="filtros">
   <label for="obra">Obra<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas</option>
     {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
@@ -28,6 +46,9 @@
   {% if tot.ativo_pend %}<div class="kpi"><b>{{ (tot.ativo_pend / 1000)|num(2) }} t</b><span>cordoalha pendente</span></div>{% endif %}
 </div>
 
+{% if bitolas %}<p class="meta" style="margin:6px 0 0">Aço passivo pendente por bitola (peças com prancha):
+  {% for b, kg in bitolas.items() %}<b>Ø{{ b }}</b> {{ kg|num(0) }} kg{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+
 {% if linhas %}
 <div class="rolagem-x"><table class="t compacta pecas-mod" style="margin-top:12px">
   <thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Produto</th><th>Seção</th><th class="n">Compr. (m)</th><th class="n">Vol. (m³)</th>
@@ -49,7 +70,7 @@
       <td class="meta">{{ c.icamento if c else '' }}</td>
       <td class="n">{{ t.fab }}/{{ t.n }}</td>
       <td style="white-space:nowrap">{% if c %}{{ c.revisao }} {% if c.situacao == 'revisar' %}<span class="tag-revisar">revisar</span>{% else %}<span class="meta">ok</span>{% endif %}
-        {% else %}<a class="meta" href="/obras/{{ t.o.id }}/pecas">enviar</a>{% endif %}</td>
+        {% else %}<a class="meta" href="/pecas?obra={{ t.o.nome|urlencode }}#enviar">enviar</a>{% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div>
 {% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros.</p>{% endif %}
