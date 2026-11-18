@@ -852,7 +852,7 @@ def armacao_tela(request: Request, dia: str | None = None, rev: int | None = Non
         pc = pecas_cod.get(i.codigo)
         c = cad.de_peca(idx, pc) if pc else None
         if c:
-            aco[i.id] = {"kg": (c.aco_passivo or 0) * i.qtd, "prot": c.protensao, "cid": c.id}
+            aco[i.id] = {"kg": (c.aco_passivo or 0) * i.qtd, "prot": c.protensao, "cid": c.id, "e2": c.segunda_etapa}
             for b, kg in (c.bitolas or {}).items():
                 bit_dia[b] = bit_dia.get(b, 0) + kg * i.qtd
         else:
@@ -1117,6 +1117,9 @@ async def cadastro_salvar(request: Request, cid: int, db: Session = Depends(get_
     c.forca = num("forca")
     c.icamento = str(fd.get("icamento", "") or "").strip()[:120]
     c.neoprene = str(fd.get("neoprene", "") or "").strip()[:120]
+    e2 = str(fd.get("etapa2", "") or "")
+    c.etapa2 = e2 if e2 in ("sim", "nao") else ""
+    c.etapa2_obs = str(fd.get("etapa2_obs", "") or "").strip()[:120]
     if fd.get("conferido"):
         c.situacao = "conferido"
     elif c.situacao == "conferido":

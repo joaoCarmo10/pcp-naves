@@ -468,3 +468,12 @@ def test_pecas_completo_e_planilha(cliente):
     lin = {row[1]: dict(zip(cab, row)) for row in wb["Peças"].iter_rows(min_row=2, values_only=True)}
     assert lin["PP1"]["Nº barras/pç"] == 24 and lin["PP1"]["Nº estribos/pç"] == 18 and lin["PP1"]["Ø12.5 (nº/pç)"] == 6
     assert wb["Armadura por posição"].max_row == 3
+
+
+def test_indicios_segunda_etapa():
+    from app.pranchas import indicios_segunda_etapa as ind
+    assert ind(["CONSOLE 0 126 25 309,5"]) == ["desenho com consolo"]
+    assert ind(["+/- 3 MM DIMENSAO DO CONSOLO / DENTE GERBER", "+/-10MM POSI¢DO DO CONSOLO"]) == []
+    assert ind(["DIMENSDO DO CONSOLO / DENTE GERBER"]) == []
+    assert ind(["CONCRETAGEM EM 2A ETAPA"]) == ['nota "2a etapa"']
+    assert ind(["VIGA L PROTENDIDA", "RECORTE 3X5CM"]) == []

@@ -53,7 +53,7 @@
         <td>{{ i.obra }}</td><td><b>{{ i.peca }}</b>{% if x.novo %} <span class="novo">após divulgação</span>{% endif %}</td><td class="meta">{{ i.codigo or '' }}</td>
         <td>{{ i.produto }}</td><td>{{ i.secao }}</td><td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
         {% set ac = aco.get(i.id) %}<td class="n">{% if ac %}<a href="/cadastro/{{ ac.cid }}" class="livre">{{ ac.kg|num(0) }}</a>{% else %}<span class="meta">-</span>{% endif %}</td>
-        <td>{% if ac and ac.prot %}<span class="cp-cad"><span class="prot">{{ ac.prot }}</span></span>{% endif %}</td>
+        <td>{% if ac and ac.prot %}<span class="cp-cad"><span class="prot">{{ ac.prot }}</span></span>{% endif %}{% if ac and ac.e2 %} <span class="tag-e2">2ª etapa</span>{% endif %}</td>
         <td class="meta reg">{% if s.armado %}{{ s.origem }}{% if s.quando %} {{ s.quando.strftime('%d/%m %H:%M') if s.quando.hour is defined else s.quando.strftime('%d/%m') }}{% endif %}{% endif %}</td>
       </tr>{% endfor %}</tbody>
   </table>

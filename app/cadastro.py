@@ -131,6 +131,7 @@ def _uma(db: Session, obra_id: int, nome: str, caminho: Path, st: dict) -> None:
     c.cordoalhas, c.cord_diam, c.forca = (r["cordoalhas"] or None), r["cord_diam"], r["forca"]
     c.icamento, c.neoprene, c.bitolas, c.itens = r["icamento"][:120], (L.neoprene or "")[:120], r["bitolas"], L.itens
     c.alertas = alertas
+    c.etapa2_indicios = list(L.etapa2)
     c.situacao = "revisar" if alertas else "ok"
     c.atualizado_em = datetime.now()
     db.commit()

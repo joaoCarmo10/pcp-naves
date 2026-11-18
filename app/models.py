@@ -242,10 +242,19 @@ class CadastroPeca(Base):
     bitolas: Mapped[dict] = mapped_column(JSON, default=dict)                 # {"12.5": kg}
     itens: Mapped[list] = mapped_column(JSON, default=list)
     alertas: Mapped[list] = mapped_column(JSON, default=list)
+    etapa2_indicios: Mapped[list] = mapped_column(JSON, default=list)       # o que a leitura achou na prancha
+    etapa2: Mapped[str] = mapped_column(String(4), default="")               # decisão manual: "" (automático) | sim | nao
+    etapa2_obs: Mapped[str] = mapped_column(String(120), default="")         # o que vai na 2ª etapa (ex.: consolo)
     situacao: Mapped[str] = mapped_column(String(12), default="ok")           # ok | revisar | conferido
     historico: Mapped[list] = mapped_column(JSON, default=list)
     atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped["Obra"] = relationship()
+
+    @property
+    def segunda_etapa(self) -> bool:
+        if self.etapa2 in ("sim", "nao"):
+            return self.etapa2 == "sim"
+        return bool(self.etapa2_indicios)
 
     @property
     def protensao(self) -> str:

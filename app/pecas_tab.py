@@ -10,7 +10,7 @@ from . import cadastro as cad
 from .models import Obra, Peca
 from .status import chave_natural
 
-FILTROS = ("obra", "produto", "situacao", "q", "pend", "prot")
+FILTROS = ("obra", "produto", "situacao", "q", "pend", "prot", "e2")
 
 
 def dim_secao(secao: str, produto: str = "") -> tuple[float | None, float | None]:
@@ -87,7 +87,7 @@ def montar(db: Session, qp) -> dict:
                     or (f["situacao"] == "sem" and c) or (f["situacao"] == "com" and not c)
                     or (f["situacao"] in ("ok", "revisar") and (not c or c.situacao != f["situacao"]))
                     or (busca and busca not in cad._canon(t["nome"])) or (f["pend"] and t["fab"] >= t["n"])
-                    or (f["prot"] and not (c and c.cordoalhas)))
+                    or (f["prot"] and not (c and c.cordoalhas)) or (f["e2"] and not (c and c.segunda_etapa)))
 
     linhas = sorted((t for t in todos if passa(t)), key=lambda t: (t["o"].nome, t["produto"], chave_natural(t["nome"]), chave_natural(t["item"])))
     diams: set[str] = set()
@@ -118,7 +118,8 @@ def montar(db: Session, qp) -> dict:
            "pend": sum(t["pend"] for t in linhas), "vol_pend": sum((t["vol"] or 0) * t["pend"] for t in linhas),
            "aco_pend": sum((t["c"].aco_passivo or 0) * t["pend"] for t in linhas if t["c"]),
            "ativo_pend": sum((t["c"].aco_ativo or 0) * t["pend"] for t in linhas if t["c"]),
-           "barras_pend": sum((t["barras"] or 0) * t["pend"] for t in linhas)}
+           "barras_pend": sum((t["barras"] or 0) * t["pend"] for t in linhas),
+           "e2": sum(1 for t in linhas if t["c"] and t["c"].segunda_etapa)}
     return {"linhas": linhas, "f": f, "opcoes": opcoes, "obras": obras, "tot": tot, "diams": sorted(diams, key=chave),
             "pend_bit": {d: pend_bit[d] for d in sorted(pend_bit, key=chave)}}
 
@@ -141,7 +142,8 @@ def planilha(dados: dict) -> bytes:
     for d in dados["diams"]:
         cab += [f"Ø{d} (kg/pç)", f"Ø{d} (nº/pç)"]
     cab += ["Cordoalhas/pç", "Protensão", "Força (kgf/cord.)", "Aço ativo (kg/pç)", "Contraflecha (cm)",
-            "Taxa aço protendido Plannix (kg/m³)", "Modelo de protensão", "Içamento", "Neoprene",
+            "Taxa aço protendido Plannix (kg/m³)", "Modelo de protensão", "2ª etapa", "O que vai na 2ª etapa", "Indícios na prancha",
+            "Içamento", "Neoprene",
             "Prancha", "Revisão", "Leitura", "Situação", "Alertas"]
     ws.append(cab)
     for t in dados["linhas"]:
@@ -155,7 +157,9 @@ def planilha(dados: dict) -> bytes:
             kg, n = t["bit"].get(d, (None, None))
             lin += [kg, n or None]
         lin += [g("cordoalhas") or None, g("protensao") or "", g("forca"), g("aco_ativo"), g("contraflecha"),
-                round(t["taxa_prot_plannix"], 2) if t["taxa_prot_plannix"] else None, t["modelo"], g("icamento") or "", g("neoprene") or "",
+                round(t["taxa_prot_plannix"], 2) if t["taxa_prot_plannix"] else None, t["modelo"],
+                ("sim" if c.segunda_etapa else "não") if c else "", g("etapa2_obs") or "", ", ".join(c.etapa2_indicios or []) if c else "",
+                g("icamento") or "", g("neoprene") or "",
                 g("prancha") or "", g("revisao") or "", g("fonte") or "", ("sem prancha" if not c else c.situacao),
                 " | ".join(c.alertas or []) if c else ""]
         ws.append(lin)

@@ -33,6 +33,7 @@
   <label for="q">Peça<input id="q" name="q" value="{{ f.q }}" placeholder="ex.: VLP1" size="10"></label>
   <label class="check"><input type="checkbox" name="pend" value="1" {{ 'checked' if f.pend }} onchange="this.form.submit()"> Só com pendentes</label>
   <label class="check"><input type="checkbox" name="prot" value="1" {{ 'checked' if f.prot }} onchange="this.form.submit()"> Só protendidas</label>
+  <label class="check"><input type="checkbox" name="e2" value="1" {{ 'checked' if f.e2 }} onchange="this.form.submit()"> Só 2ª etapa</label>
   <button type="submit" class="sec">Filtrar</button>
   {% if f.values()|select|list %}<a class="botao-sec" href="/pecas">Limpar</a>{% endif %}
 </form>
@@ -44,6 +45,7 @@
   <div class="kpi"><b>{{ tot.vol_pend|num(1) }}</b><span>m³ pendentes</span></div>
   {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço passivo pendente</span></div>
   <div class="kpi"><b>{{ tot.barras_pend|num(0) }}</b><span>barras pendentes</span></div>{% endif %}
+  {% if tot.e2 %}<div class="kpi"><b>{{ tot.e2 }}</b><span>com 2ª etapa</span></div>{% endif %}
   {% if tot.ativo_pend %}<div class="kpi"><b>{{ (tot.ativo_pend / 1000)|num(2) }} t</b><span>cordoalha pendente</span></div>{% endif %}
 </div>
 {% if pend_bit %}<p class="meta" style="margin:6px 0 0">Pendente por bitola (só peças com prancha):
@@ -51,7 +53,7 @@
 
 <div class="colunas-pecas" id="grupos">
   <span class="meta">Colunas:</span>
-  {% for g, n in [('med','Medidas'), ('conc','Concreto'), ('aco','Aço passivo'), ('bit','Por bitola'), ('prot','Protensão'), ('out','Içamento e apoio'), ('pr','Prancha')] %}
+  {% for g, n in [('med','Medidas'), ('conc','Concreto'), ('aco','Aço passivo'), ('bit','Por bitola'), ('prot','Protensão'), ('out','2ª etapa, içamento e apoio'), ('pr','Prancha')] %}
   <label><input type="checkbox" data-g="{{ g }}" checked> {{ n }}</label>{% endfor %}
   <a class="botao-sec" href="/pecas/planilha{{ '?' ~ qs if qs }}" style="margin-left:auto">Baixar Excel</a>
 </div>
@@ -67,7 +69,7 @@
     {% for d in diams %}<th class="g-bit n" title="kg por peça · nº de barras por peça">Ø{{ d }}<br><small>kg · nº</small></th>{% endfor %}
     <th class="g-prot">Protensão</th><th class="g-prot n">Força (tf)</th><th class="g-prot n">Aço ativo (kg/pç)</th><th class="g-prot n">Contraflecha (cm)</th>
     <th class="g-prot n" title="Plannix">Taxa protendido (kg/m³)</th><th class="g-prot">Modelo</th>
-    <th class="g-out">Içamento</th><th class="g-out">Neoprene</th>
+    <th class="g-out">2ª etapa</th><th class="g-out">Içamento</th><th class="g-out">Neoprene</th>
     <th class="n">Feitas / total</th><th class="g-pr">Prancha</th></tr></thead>
   <tbody>{% for t in linhas %}{% set c = t.c %}
     <tr class="{{ 'sem-cad' if not c }}">
@@ -97,6 +99,7 @@
       <td class="g-prot n">{{ c.contraflecha|num(2) if c and c.contraflecha else '' }}</td>
       <td class="g-prot n">{{ t.taxa_prot_plannix|num(2) if t.taxa_prot_plannix else '' }}</td>
       <td class="g-prot meta">{{ t.modelo }}</td>
+      <td class="g-out" style="white-space:nowrap">{% if c and c.segunda_etapa %}<span class="tag-e2" title="{{ c.etapa2_obs or (c.etapa2_indicios|join(', ')) }}{{ '' if c.etapa2 else ' (automático, confirme no cadastro)' }}">2ª etapa{{ '?' if not c.etapa2 }}</span>{% if c.etapa2_obs %} <span class="meta">{{ c.etapa2_obs }}</span>{% endif %}{% elif c %}<span class="meta">não</span>{% endif %}</td>
       <td class="g-out meta" style="white-space:nowrap">{{ c.icamento if c else '' }}</td>
       <td class="g-out meta corta" title="{{ c.neoprene if c else '' }}">{{ c.neoprene if c else '' }}</td>
       <td class="n">{{ t.fab }}/{{ t.n }}</td>

@@ -6,6 +6,8 @@
   <p class="sub" style="margin:0">Prancha {{ c.prancha }} {{ c.revisao }} · {{ c.nome_arquivo }} · lida por {{ 'OCR (texto desenhado)' if c.fonte == 'ocr' else 'texto do PDF' }} · {{ c.atualizado_em.strftime('%d/%m %H:%M') }}</p></div>
   <a class="botao-sec livre" href="/cadastro/{{ c.id }}/pdf" target="_blank">Abrir prancha</a></div>
 {% if flash %}<div class="aviso ok">{{ flash }}</div>{% endif %}
+{% if c.segunda_etapa %}<div class="aviso"><span class="tag-e2">2ª etapa</span> Esta peça leva uma segunda concretagem{% if c.etapa2_obs %}: {{ c.etapa2_obs }}{% endif %}.
+  {% if not c.etapa2 %}Marcado automaticamente ({{ c.etapa2_indicios|join(', ') }}). Confirme abaixo.{% endif %}</div>{% endif %}
 {% if c.alertas %}<div class="aviso erro"><b>Conferir:</b><br>{% for a in c.alertas %}{{ a }}<br>{% endfor %}</div>{% endif %}
 
 <div class="dois">
@@ -23,7 +25,13 @@
       <label>Aço ativo (kg/pç)<input name="aco_ativo" value="{{ '%g'|format(c.aco_ativo) if c.aco_ativo else '' }}"></label>
       <label class="largo">Içamento<input name="icamento" value="{{ c.icamento }}"></label>
       <label class="largo">Neoprene<input name="neoprene" value="{{ c.neoprene }}"></label>
+      <label>2ª etapa de concretagem<select name="etapa2">
+        <option value="" {{ 'selected' if not c.etapa2 }}>Automático ({{ 'sim' if c.etapa2_indicios else 'não' }})</option>
+        <option value="sim" {{ 'selected' if c.etapa2 == 'sim' }}>Sim</option>
+        <option value="nao" {{ 'selected' if c.etapa2 == 'nao' }}>Não</option></select></label>
+      <label>O que vai na 2ª etapa<input name="etapa2_obs" value="{{ c.etapa2_obs }}" placeholder="ex.: consolo lateral"></label>
     </div>
+    {% if c.etapa2_indicios %}<p class="meta" style="margin:4px 0 0">Na prancha: {{ c.etapa2_indicios|join(', ') }}.</p>{% endif %}
     <div class="acoes"><label class="meta" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="conferido" value="1" style="width:auto" {{ 'checked' if c.situacao == 'conferido' }}> Conferido com a prancha</label>
       <button type="submit">Salvar</button></div>
   </form>

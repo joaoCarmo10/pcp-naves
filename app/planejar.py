@@ -68,7 +68,8 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
             c = cad.de_peca(idx, p)
             g = grupos[k] = {"obra": o.nome, "prio": o.prioridade or 99, "peca": p.peca, "secao": p.secao, "comp": p.comprimento,
                              "produto": p.produto, "codigos": [], "armadas": 0,
-                             "prot": c.protensao if c else None, "aco": round(c.aco_passivo) if c and c.aco_passivo else None}
+                             "prot": c.protensao if c else None, "aco": round(c.aco_passivo) if c and c.aco_passivo else None,
+                             "e2": (c.etapa2_obs or "sim") if c and c.segunda_etapa else None}
         g["codigos"].append(p.codigo)
         if p.hora_armacao or p.codigo in armadas_app:
             g["armadas"] += 1

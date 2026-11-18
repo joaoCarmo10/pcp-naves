@@ -64,6 +64,7 @@ class Leitura:
     revisao: str = ""
     prancha: str = ""
     fonte: str = "texto"
+    etapa2: list = field(default_factory=list)   # indícios de concretagem em 2ª etapa
     alertas: list = field(default_factory=list)
 
 
@@ -151,8 +152,13 @@ def ler(caminho: Path, nomes: set[str] | None = None) -> Leitura:
             for t in (area_l[0] if area_l else []):
                 if _n(t.t).startswith("AREA"):
                     xs["area"] = t.xc + 20
+            x_peca = min((t.x0 for t in cab if _n(t.t) == "PECA"), default=None)
             for l in linhas[i + 1:i + 6]:
-                vals = [t for t in l if not re.match(r"^(FC[KJ])", _n(t.t))]
+                vals = [t for t in l if not re.match(r"^(FC[KJ])", _n(t.t)) and (x_peca is None or t.xc >= x_peca - 15)]
+                # o nome é o primeiro token com cara de peça (pode haver lixo à esquerda, ex.: "kg" de outra tabela)
+                k0 = next((k for k, t in enumerate(vals) if NOME.match(_n(t.t))), None)
+                if k0 is not None and k0 <= 2:
+                    vals = vals[k0:]
                 if vals and NOME.match(_n(vals[0].t)):
                     nome = _n(vals[0].t)
                     L.peca = canon.get(re.sub(r"(?<=[A-Z])-(?=\d)", "", nome), nome)
@@ -180,15 +186,19 @@ def ler(caminho: Path, nomes: set[str] | None = None) -> Leitura:
     m = re.search(r"COBRIMENTO:?\s*([\d.,]+)", tudo)
     L.cobrimento = _num(m.group(1)) if m else None
     m = re.search(r"PESO UNITARIO \(KG\)\s*([\d.,]+)", tudo)
-    L.peso_aco = _num(m.group(1)) if m else None
+    L.peso_aco = _num(m.group(1)) if m else _peso_aco_ao_lado(linhas)
     m = re.search(r"ARMADURA ATIVA\s*([\d.,]+)\s*KG", tudo)
     L.aco_ativo = _num(m.group(1)) if m else None
     m = re.search(r"CONTRA-?FLECHA[^:]*:\s*([\d.,]+)", tudo)
     L.contraflecha = _num(m.group(1)) if m else None
-    for i, tx in enumerate(textos):
-        if tx.startswith("NEOPRENE ") and "DESCRICAO" not in tx:
-            L.neoprene = _texto(linhas[i])[9:].strip()[:80]
+    for l, tx in zip(linhas, textos):
+        if "DESCRICAO" in tx or "LISTA" in tx:
+            continue
+        k = next((k for k, t in enumerate(l) if _n(t.t) == "NEOPRENE"), None)
+        if k is not None and len(l) > k + 2:   # pode haver textos do desenho à esquerda na mesma altura
+            L.neoprene = " ".join(t.t for t in l[k + 1:])[:80]
             break
+    L.etapa2 = indicios_segunda_etapa(textos)
 
     # ---------------- tabelas de armadura (passiva e de fios/cabos/cordoalhas)
     for i, tx in enumerate(textos):
@@ -198,11 +208,53 @@ def ler(caminho: Path, nomes: set[str] | None = None) -> Leitura:
     return L
 
 
+def _peso_aco_ao_lado(linhas) -> float | None:
+    """'Peso unitário (kg)' com o valor numa linha vizinha (layout em que rótulo e número não ficam na mesma linha)."""
+    toks = [t for l in linhas for t in l]
+    for k, t in enumerate(toks):
+        if _n(t.t) != "UNITARIO" or k == 0 or _n(toks[k - 1].t) != "PESO":
+            continue
+        fim = next((x for x in toks[k:k + 3] if _n(x.t) == "(KG)"), t)
+        tot = [x.x0 for x in toks if abs(x.yc - t.yc) < 6 and _n(x.t).startswith("TOTAL") and x.x0 > fim.x1]
+        cands = [x for x in toks if abs(x.yc - t.yc) < 6 and fim.x1 - 5 < x.x0 < fim.x1 + 90
+                 and (not tot or x.x0 < min(tot)) and re.fullmatch(r"\d+[.,]\d+", x.t)]
+        if cands:
+            return _num(min(cands, key=lambda x: x.x0 - fim.x1).t)
+    return None
+
+
+# Frases do quadro padrão de tolerâncias (aparecem em toda prancha e não indicam nada)
+_TOLERANCIAS = re.compile(r"\S*\s*DO CONSOL[EO]S?( ?/ ?DENTE GERBER)?|CONSOL[EO] ?/ ?DENTE GERBER")   # tolera OCR ("DIMENSDO DO CONSOLO")
+_ETAPA2_TEXTO = re.compile(r"\b(2 ?[AªO°º]? ?(ETAPA|FASE|CONCRETAGEM)|SEGUNDA (ETAPA|FASE|CONCRETAGEM)|CONCRETAGEM POSTERIOR|"
+                           r"CONCRETAR (APOS|DEPOIS|POSTERIORMENTE)|MOLDAD[OA] POSTERIORMENTE|CONCRETAD[OA] POSTERIORMENTE)\b")
+
+
+def indicios_segunda_etapa(textos: list[str]) -> list[str]:
+    """Sinais na prancha de que a peça leva uma segunda concretagem (ex.: consolo lateral concretado depois).
+    Devolve as frases encontradas; vazio = nenhum indício."""
+    out = []
+    for tx in textos:
+        if "+/-" in tx:   # linhas do quadro de tolerâncias
+            continue
+        limpo = _TOLERANCIAS.sub("", tx)
+        m = _ETAPA2_TEXTO.search(limpo)
+        if m:
+            out.append(f"nota \"{m.group(0).lower()}\"")
+        if re.search(r"ATENCAO PARA CONSOL[EO]", limpo):
+            out.append("nota \"atenção para consolo\"")
+        elif re.search(r"\bCONSOL[EO]S?\b", limpo):
+            out.append("desenho com consolo")
+    return list(dict.fromkeys(out))
+
+
 def _tabela(L: Leitura, linhas, textos, i_mat: int) -> None:
     y_mat = linhas[i_mat][0].yc
     dado = re.compile(r"^(CA-?\d|CORD|CP-?\d|FIO)")
-    faixa = [l for l in linhas if abs(l[0].yc - y_mat) <= 14 and not any(dado.match(_n(t.t)) for t in l)]
-    cab = [t for l in faixa for t in l]
+    # cabeçalho = palavras até 14 pt acima/abaixo da linha de "Material", só na faixa horizontal da lista
+    # (tabelas vizinhas, como o resumo de aço, ficam na mesma altura e não podem entrar)
+    perto = [t for l in linhas if abs(l[0].yc - y_mat) <= 14 for t in l if not dado.match(_n(t.t))]
+    x_pos = [t.x0 for t in perto if _n(t.t).startswith(("POSICAO", "POSIGAO", "POS.")) or _n(t.t) == "POS"]
+    cab = [t for t in perto if not x_pos or t.xc >= min(x_pos) - 30]
     ativa = any("PROTENSAO" in _n(t.t) or "FORCA" in _n(t.t) for t in cab)
     col = {}
     for t in cab:
@@ -227,15 +279,18 @@ def _tabela(L: Leitura, linhas, textos, i_mat: int) -> None:
             chave = "tot"
         elif n.startswith(("FORCA", "PROTENSAO")):
             chave = "forca"
+        elif n.startswith("DESENHO"):
+            chave = "desenho"   # cotas do desenho da barra: coluna ignorada, só para não cair no Total
         if chave and chave not in col:
             col[chave] = t.xc
     if "material" not in col or "pos" not in col:
         return
     if "unit" in col and "tot" in col and col["unit"] > col["tot"]:
         col["unit"], col["tot"] = col["tot"], col["unit"]
-    xmin = min(col.values()) - 40
+    xmin = max(min(col.values()) - 40, (min(x_pos) - 30) if x_pos else -1e9)
     xmax = max(col.values()) + 25
-    y_cab = max(t.y1 for t in cab)
+    chaves = ("POSIC", "POSIG", "POS", "DIAM", "QUANT", "MATERIAL", "COMPR", "COMP.", "UNITARIO", "PESO", "TOTAL", "FORCA", "PROTENSAO", "DESENHO")
+    y_cab = max(t.y1 for t in cab if _n(t.t).startswith(chaves))
     # fim da tabela
     fim = None
     for l, tx in zip(linhas, textos):
