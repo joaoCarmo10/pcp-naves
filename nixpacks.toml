@@ -1,0 +1,3 @@
+# tesseract: leitura (OCR) de etiquetas em plantas cujo texto veio como desenho
+[phases.setup]
+aptPkgs = ["...", "tesseract-ocr"]

@@ -1,4 +1,5 @@
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import hmac
 import io
@@ -32,7 +33,7 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 tpl = Jinja2Templates(directory=BASE / "templates")
 # versão do CSS na URL: a cada deploy com CSS novo o navegador baixa de novo (evita tela quebrada por cache)
 VERSAO_CSS = hashlib.md5((BASE / "static" / "app.css").read_bytes()).hexdigest()[:8]
-tpl.env.globals.update(CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS, VERSAO_CSS=VERSAO_CSS)
+tpl.env.globals.update(lendo_etiquetas=lambda pid: pid in _ocr_em_andamento, CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS, VERSAO_CSS=VERSAO_CSS)
 tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
@@ -108,7 +109,8 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("SECRET_KEY", secrets
 
 @app.get("/saude")
 def saude():
-    return {"ok": True}
+    from . import ocr_planta
+    return {"ok": True, "ocr": ocr_planta.disponivel()}
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -202,9 +204,37 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
     return RedirectResponse(f"/importar?msg={quote(' | '.join(msgs))}", status_code=303)
 
 
+_ocr_fila = ThreadPoolExecutor(max_workers=1)   # OCR é pesado: um por vez, fora da requisição
+_ocr_em_andamento: set[int] = set()
+
+
+def _ocr_em_segundo_plano(pid: int) -> None:
+    try:
+        with SessionLocal() as db:
+            p = db.get(Planta, pid)
+            if not p:
+                return
+            nomes = {n for (n,) in db.execute(select(Peca.peca).where(Peca.obra_id == p.obra_id))}
+            e = plantas.extrair(DATA_DIR / p.arquivo, nomes, ocr=True)
+            marcas, _ = plantas.alinhar_nomes(e["marcas"], nomes)
+            if any(m["t"] in nomes for m in marcas):
+                p.marcas = marcas
+                (DATA_DIR / "cache" / f"planta_{p.id}.png").unlink(missing_ok=True)
+                db.commit()
+        (DATA_DIR / "cache" / f"ocr_{pid}.feito").write_text("1")
+    except Exception as e:   # não derruba o app; tenta de novo só se a planta for reenviada
+        (DATA_DIR / "cache" / f"ocr_{pid}.feito").write_text(f"erro: {e}"[:300])
+    finally:
+        _ocr_em_andamento.discard(pid)
+
+
+def lendo_etiquetas(pid: int) -> bool:
+    return pid in _ocr_em_andamento
+
+
 def _garantir_marcas(db: Session, p: Planta) -> None:
-    """Confere se as etiquetas da planta batem com as peças da obra. Se nenhuma bate (ex.: PDF do AutoCAD com texto SHX,
-    lido antes de o app ler os comentários do PDF), lê de novo. Ajusta grafias diferentes (LA1 x LA-1)."""
+    """Confere se as etiquetas da planta batem com as peças da obra. Se nenhuma bate: lê de novo o texto e os
+    comentários do PDF; se ainda assim nada, agenda a leitura por OCR (uma vez por planta, em segundo plano)."""
     nomes = {n for (n,) in db.execute(select(Peca.peca).where(Peca.obra_id == p.obra_id))}
     marcas = p.marcas or []
     if not any(m["t"] in nomes for m in marcas):
@@ -217,6 +247,10 @@ def _garantir_marcas(db: Session, p: Planta) -> None:
         p.marcas = marcas
         (DATA_DIR / "cache" / f"planta_{p.id}.png").unlink(missing_ok=True)
         db.commit()
+    if (not any(m["t"] in nomes for m in p.marcas or []) and nomes and p.id not in _ocr_em_andamento
+            and not (DATA_DIR / "cache" / f"ocr_{p.id}.feito").exists()):
+        _ocr_em_andamento.add(p.id)
+        _ocr_fila.submit(_ocr_em_segundo_plano, p.id)
 
 
 def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
@@ -235,6 +269,7 @@ def _salvar_planta(db: Session, o: Obra, titulo: str, dados: bytes) -> Planta:
                rotacao=e["rotacao"], marcas=marcas)
     db.add(p)
     db.commit()
+    _garantir_marcas(db, p)
     return p
 
 
@@ -315,7 +350,7 @@ async def planta_upload(obra_id: int, titulo: str = Form(...), arquivo: UploadFi
 @app.post("/plantas/{pid}/excluir")
 def planta_excluir(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
-    _garantir_marcas(db, p)
+    (DATA_DIR / "cache" / f"ocr_{pid}.feito").unlink(missing_ok=True)
     oid = p.obra_id
     (DATA_DIR / p.arquivo).unlink(missing_ok=True)
     (DATA_DIR / "cache" / f"planta_{pid}.png").unlink(missing_ok=True)

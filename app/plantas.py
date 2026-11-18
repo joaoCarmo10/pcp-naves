@@ -37,7 +37,7 @@ def alinhar_nomes(marcas: list[dict], nomes: set[str]) -> tuple[list[dict], int]
     return out, n_troca
 
 
-def extrair(caminho: Path) -> dict:
+def extrair(caminho: Path, nomes: set[str] | None = None, ocr: bool = False) -> dict:
     doc = pymupdf.open(caminho)
     pg = doc[0]
     palavras = []
@@ -52,7 +52,14 @@ def extrair(caminho: Path) -> dict:
         if t and " " not in t and ETIQUETA.match(t):
             r = a.rect
             palavras.append({"t": t, "r": [round(v, 2) for v in (r.x0, r.y0, r.x1, r.y1)]})
-    return dict(largura=pg.rect.width, altura=pg.rect.height, rotacao=pg.rotation, marcas=palavras)
+    fonte = "texto"
+    if ocr and nomes and not any(_canon(m["t"]) in {_canon(n) for n in nomes} for m in palavras):
+        # sem texto legível: etiquetas desenhadas como linhas (AutoCAD sem PDFSHX); lê por OCR
+        from . import ocr_planta
+        lidas = ocr_planta.ler(caminho, nomes)
+        if lidas:
+            palavras, fonte = lidas, "ocr"
+    return dict(largura=pg.rect.width, altura=pg.rect.height, rotacao=pg.rotation, marcas=palavras, fonte=fonte)
 
 
 def imagem_base(caminho: Path, planta_id: int) -> tuple[Path, float]:

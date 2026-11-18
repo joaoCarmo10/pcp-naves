@@ -16,7 +16,7 @@
 <table class="t" style="max-width:980px">
   <tr><th>Planta</th><th class="n">Peças</th><th class="n">Fabricadas</th><th class="n">% peças</th><th class="n">% volume</th><th></th></tr>
   {% for x in plantas %}
-  <tr><td><a href="/plantas/{{ x.p.id }}">{{ x.p.titulo }}</a></td><td class="n">{{ x.r.pecas }}</td><td class="n">{{ x.r.fabricadas }}</td>
+  <tr><td><a href="/plantas/{{ x.p.id }}">{{ x.p.titulo }}</a>{% if lendo_etiquetas(x.p.id) %} <span class="lendo">lendo etiquetas do desenho... atualize em 1 minuto</span>{% endif %}</td><td class="n">{{ x.r.pecas }}</td><td class="n">{{ x.r.fabricadas }}</td>
       <td class="n">{{ x.r.pct|pct }}</td><td class="n">{{ x.r.pct_vol|pct }}</td>
       <td style="white-space:nowrap"><a class="botao sec" href="/plantas/{{ x.p.id }}/a2.pdf" target="_blank">PDF A2</a>
         <form method="post" action="/plantas/{{ x.p.id }}/excluir" style="display:inline" onsubmit="return confirm('Excluir esta planta?')"><button class="perigo">Excluir</button></form></td></tr>
