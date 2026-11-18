@@ -1,0 +1,15 @@
+PCP Naves - sincronização automática do Plannix
+
+O que faz: a cada 10 minutos lê o banco do Plannix (só leitura) e manda o "all data" para o app.
+Só envia quando algo mudou. Não grava nada no Plannix.
+
+1. Instalar o Python 3 (python.org, marcar "Add to PATH") e depois, no Prompt:
+       py -m pip install pyodbc
+2. Copiar plannix_sync.exemplo.ini para plannix_sync.ini e preencher servidor, banco e usuário de leitura.
+3. Mapear o banco (só nomes de tabelas e colunas, sem dados):
+       py plannix_sync.py descobrir --procurar 8239
+   Mandar o arquivo plannix_esquema.txt gerado.
+4. Com a consulta.sql pronta:  py plannix_sync.py testar
+5. No app: Importar dados > Plannix automático > Gerar token. Colar no plannix_sync.ini.
+6. py plannix_sync.py enviar   (primeiro envio manual)
+7. Dar dois cliques em agendar.bat.  Log em plannix_sync.log.

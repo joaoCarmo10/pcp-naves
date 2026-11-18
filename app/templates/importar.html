@@ -9,6 +9,26 @@
   <label for="arquivo">Arquivos<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv,.zip" multiple required></label>
   <button type="submit">Importar</button>
 </form>
+<h2>Plannix automático</h2>
+<div class="sync{% if sync.atrasado or sync.erro %} sync-alerta{% endif %}">
+  {% if token_novo %}
+  <p><b>Token gerado. Copie agora, ele não aparece de novo:</b></p>
+  <p><input class="token" readonly value="{{ token_novo }}" onclick="this.select()"></p>
+  <p>Cole no campo <code>token</code> do arquivo <code>plannix_sync.ini</code> no PC da fábrica. O token anterior parou de valer.</p>
+  {% elif not sync.ativo %}
+  <p>Desligado. O script <code>plannix_sync</code>, rodando num PC da fábrica, lê o banco do Plannix e manda o "all data" para cá sozinho.</p>
+  {% else %}
+  <p>Último contato do PC da fábrica: <b>{{ sync.contato.strftime('%d/%m %H:%M') if sync.contato else 'nenhum ainda' }}</b>
+     {% if sync.mudanca %} · última mudança nos dados: {{ sync.mudanca.strftime('%d/%m %H:%M') }}{% endif %}</p>
+  {% if sync.atrasado %}<p><b>Mais de 3 horas sem contato.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
+  {% if sync.erro %}<p><b>Último envio recusado:</b> {{ sync.erro }}</p>{% endif %}
+  {% endif %}
+  {% if admin and not token_novo %}
+  <form method="post" action="/importar/token" onsubmit="return confirm('{{ 'Gerar um novo token? O PC da fábrica para de enviar até receber o novo.' if sync.ativo else 'Gerar o token da sincronização?' }}')">
+    <button type="submit" class="sec">{{ 'Gerar novo token' if sync.ativo else 'Gerar token' }}</button>
+  </form>
+  {% endif %}
+</div>
 <h2>Como cada arquivo é lido</h2>
 <table class="t" style="max-width:980px">
   <tr><th>Arquivo</th><th>O que o sistema faz</th></tr>

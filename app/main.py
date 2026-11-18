@@ -23,7 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import acesso, armacao as arm, cadastro as cad, formas as fm, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Auditoria, CadastroPeca, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Auditoria, CadastroPeca, Config, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -65,7 +65,7 @@ async def exige_login(request: Request, call_next):
     request.state.usuario = None
     request.state.niveis = {m: 2 for m in acesso.MODULOS}
     request.state.nivel_pagina = 2
-    if not SENHA or caminho.startswith(("/static", "/login", "/saude", "/armador/")):
+    if not SENHA or caminho.startswith(("/static", "/login", "/saude", "/armador/", "/api/plannix")):
         return await call_next(request)
     quer_json = "application/json" in request.headers.get("content-type", "") or request.headers.get("accept", "").startswith("application/json")
     with SessionLocal() as db:
@@ -154,10 +154,86 @@ def painel(request: Request, db: Session = Depends(get_db)):
     return tpl.TemplateResponse(request, "painel.html", {"linhas": linhas, "ocultas": ocultas, "base": ultima_base(db)})
 
 
+def _cfg(db: Session, chave: str) -> str:
+    c = db.get(Config, chave)
+    return c.valor if c else ""
+
+
+def _cfg_grava(db: Session, chave: str, valor: str) -> None:
+    c = db.get(Config, chave) or Config(chave=chave)
+    c.valor = valor
+    db.add(c)
+
+
+def _sync_status(db: Session) -> dict:
+    def dt(v):
+        try:
+            return datetime.fromisoformat(v)
+        except ValueError:
+            return None
+    contato = dt(_cfg(db, "sync_contato"))
+    agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
+    return {"ativo": bool(_cfg(db, "sync_token")), "contato": contato, "mudanca": dt(_cfg(db, "sync_mudanca")),
+            "atrasado": bool(contato and (agora - contato).total_seconds() > 3 * 3600), "erro": _cfg(db, "sync_erro")}
+
+
 @app.get("/importar", response_class=HTMLResponse)
 def importar_form(request: Request, db: Session = Depends(get_db)):
     imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
-    return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "msg": request.query_params.get("msg"), "erro": request.query_params.get("erro")})
+    u = request.state.usuario
+    return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "msg": request.query_params.get("msg"), "erro": request.query_params.get("erro"),
+                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin})
+
+
+@app.post("/importar/token", response_class=HTMLResponse)
+def importar_token(request: Request, db: Session = Depends(get_db)):
+    """Gera o token do script de sincronização (mostrado uma vez só; o banco guarda apenas o hash)."""
+    u = request.state.usuario
+    if u is not None and not u.admin:
+        return RedirectResponse(f"/importar?erro={quote('Só o administrador gera o token.')}", status_code=303)
+    token = secrets.token_urlsafe(32)
+    _cfg_grava(db, "sync_token", hashlib.sha256(token.encode()).hexdigest())
+    db.commit()
+    imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
+    return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "token_novo": token, "sync": _sync_status(db), "admin": True})
+
+
+@app.post("/api/plannix")
+async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
+    """Recebe o 'all data' enviado pelo script que roda no PC da fábrica (lê o SQL Server do Plannix).
+    Autenticação por token; envio igual ao anterior só registra o contato, sem reprocessar."""
+    import gzip
+    tok = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    guardado = _cfg(db, "sync_token")
+    if not tok or not guardado or not hmac.compare_digest(hashlib.sha256(tok.encode()).hexdigest(), guardado):
+        return JSONResponse({"ok": False, "erro": "Token inválido. Gere um novo em Importar dados."}, status_code=401)
+    conteudo = await request.body()
+    if request.headers.get("content-encoding", "") == "gzip":
+        conteudo = gzip.decompress(conteudo)
+    agora = datetime.now(plannix.BAHIA).replace(tzinfo=None).isoformat(timespec="seconds")
+    _cfg_grava(db, "sync_contato", agora)
+    if not conteudo:
+        db.commit()
+        return {"ok": True, "sem_mudanca": True}
+    h = hashlib.sha256(conteudo).hexdigest()
+    if h == _cfg(db, "sync_hash"):
+        _cfg_grava(db, "sync_erro", "")
+        db.commit()
+        return {"ok": True, "sem_mudanca": True}
+    try:
+        (DATA_DIR / "importacoes" / "plannix_automatico_ultimo.tsv").write_bytes(conteudo)
+        imp = plannix.importar_exportacao(db, conteudo, "Plannix (automático)")
+    except ValueError as e:
+        db.rollback()
+        _cfg_grava(db, "sync_contato", agora)
+        _cfg_grava(db, "sync_erro", str(e)[:480])
+        db.commit()
+        return JSONResponse({"ok": False, "erro": str(e)}, status_code=422)
+    _cfg_grava(db, "sync_hash", h)
+    _cfg_grava(db, "sync_mudanca", agora)
+    _cfg_grava(db, "sync_erro", "")
+    db.commit()
+    return {"ok": True, "tipo": imp.tipo, "resumo": imp.resumo}
 
 
 @app.post("/importar")

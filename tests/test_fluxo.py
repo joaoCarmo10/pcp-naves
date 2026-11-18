@@ -401,3 +401,19 @@ def test_cadastro_pecas(cliente, tmp_path):
     h = cliente.get(f"/obras/{o.id}/pecas").text
     assert "PP1" in h and "Sem prancha" in h
     assert cliente.get(f"/cadastro/{c.id}").status_code == 200 and cliente.get(f"/cadastro/{c.id}/pdf").status_code == 200
+
+
+def test_plannix_automatico(cliente):
+    import gzip, re
+    assert cliente.post("/api/plannix", content=COMPLETA).status_code == 401
+    h = cliente.post("/importar/token").text
+    token = re.search(r'class="token" readonly value="([^"]+)"', h)[1]
+    cab = {"Authorization": f"Bearer {token}", "Content-Encoding": "gzip"}
+    r = cliente.post("/api/plannix", content=gzip.compress(COMPLETA), headers=cab).json()
+    assert r["ok"] and r["resumo"]["linhas"] > 0
+    assert cliente.post("/api/plannix", content=gzip.compress(COMPLETA), headers=cab).json()["sem_mudanca"]
+    r = cliente.post("/api/plannix", content=b"x\ty\n1\t2\n", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 422
+    pg = cliente.get("/importar").text
+    assert "Último envio recusado" in pg and "Plannix (automático)" in pg
+    assert cliente.post("/api/plannix", content=COMPLETA, headers={"Authorization": "Bearer errado"}).status_code == 401

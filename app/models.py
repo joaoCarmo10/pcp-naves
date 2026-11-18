@@ -246,3 +246,10 @@ class CadastroPeca(Base):
     @property
     def protensao(self) -> str:
         return f"{self.cordoalhas}×Ø{self.cord_diam}" if self.cordoalhas else ""
+
+
+class Config(Base):
+    """Valores soltos do sistema (ex.: hash do token da sincronização do Plannix, último contato)."""
+    __tablename__ = "config"
+    chave: Mapped[str] = mapped_column(String(60), primary_key=True)
+    valor: Mapped[str] = mapped_column(String(500), default="")
