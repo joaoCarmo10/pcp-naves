@@ -454,7 +454,8 @@ def test_pecas_completo_e_planilha(cliente):
     import io
     import openpyxl
     from app.pecas_tab import dim_secao
-    assert dim_secao("h20") == (None, 20) and dim_secao("20x70") == (20, 70) and dim_secao("VARIAVEL") == (None, None)
+    assert dim_secao("h20") == (None, 20) and dim_secao("20x70", "VIGA") == (20, 70) and dim_secao("VARIAVEL") == (None, None)
+    assert dim_secao("16X125", "LAJE") == (125, 16) and dim_secao("115x16", "LAJE") == (115, 16) and dim_secao("76,5X16", "LAJE") == (76.5, 16)
     test_pranchas_pelo_modulo_pecas(cliente)
     h = cliente.get("/pecas").text
     assert "Alt. (cm)" in h and "Barras/pç" in h and "Baixar Excel" in h

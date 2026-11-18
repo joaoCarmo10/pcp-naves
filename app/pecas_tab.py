@@ -13,16 +13,24 @@ from .status import chave_natural
 FILTROS = ("obra", "produto", "situacao", "q", "pend", "prot")
 
 
-def dim_secao(secao: str) -> tuple[float | None, float | None]:
-    """(largura, altura) em cm a partir da seção do Plannix: 'h20' -> (None, 20); '20x70' -> (20, 70)."""
+def dim_secao(secao: str, produto: str = "") -> tuple[float | None, float | None]:
+    """(largura, altura) em cm a partir da seção do Plannix. 'h20' -> (None, 20).
+    Laje, placa e painel: a menor medida é a espessura ('16X125' -> (125, 16)). Viga: a maior é a altura.
+    Demais (pilar etc.): como vem escrito."""
     s = (secao or "").strip().upper().replace(",", ".")
     m = re.fullmatch(r"H\s*(\d+(?:\.\d+)?)", s)
     if m:
         return None, float(m[1])
     m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)", s)
-    if m:
-        return float(m[1]), float(m[2])
-    return None, None
+    if not m:
+        return None, None
+    a, b = float(m[1]), float(m[2])
+    prod = (produto or "").upper()
+    if any(x in prod for x in ("LAJE", "PLACA", "PAINEL")):
+        return max(a, b), min(a, b)
+    if "VIGA" in prod:
+        return min(a, b), max(a, b)
+    return a, b
 
 
 def _estribo(pos: str) -> bool:
@@ -57,7 +65,7 @@ def montar(db: Session, qp) -> dict:
         k = (p.obra_id, cad._canon(p.peca), p.item or "")
         t = tipos.get(k)
         if not t:
-            larg, alt = dim_secao(p.secao)
+            larg, alt = dim_secao(p.secao, p.produto)
             t = tipos[k] = {"o": obras[p.obra_id], "nome": p.peca, "item": p.item or "", "produto": p.produto, "secao": p.secao,
                             "larg": larg, "alt": alt, "comp": p.comprimento, "vol": p.vol_projeto or p.volume,
                             "n": 0, "fab": 0, "c": cad.de_peca(idx, p), "_traco": Counter(), "_taxa": [], "_modelo": Counter()}
