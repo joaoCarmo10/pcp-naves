@@ -542,3 +542,28 @@ def test_modelo_tabela_de_aco_elite(tmp_path):
     assert L.alertas == [] and L.revisao == "R01" and len(L.itens) == 25
     r = pranchas.resumo(L.itens)
     assert r["aco_passivo"] == 613.62 and r["bitolas"]["20"] == 376.96
+
+
+def test_elite_girada_e_pecas_iguais(tmp_path):
+    import pymupdf
+    from app import pranchas
+    test_modelo_tabela_de_aco_elite(tmp_path)
+    src = pymupdf.open(tmp_path / "301-CIV-CFAP-P01-R01.pdf")
+    doc = pymupdf.open()
+    pg = doc.new_page(width=1684, height=2384)
+    pg.show_pdf_page(pg.rect, src, 0, rotate=-90)
+    pg.set_rotation(270)
+    f = tmp_path / "301-CIV-CFAP-P03-R00.pdf"
+    doc.save(f)
+    L = pranchas.ler(f, {"P01"})
+    assert L.peca == "P01" and pranchas.resumo(L.itens)["aco_passivo"] == 613.62
+    # título com peças iguais: "P09=P19 (2x)"
+    d2 = pymupdf.open()
+    p2 = d2.new_page(width=600, height=300)
+    p2.insert_text((50, 50), "P09=P19", fontsize=7)
+    p2.insert_text((90, 50), "(2x)", fontsize=7)
+    for k in range(40):
+        p2.insert_text((50 + (k % 10) * 30, 100 + (k // 10) * 10), f"c{k}", fontsize=5)
+    L2 = pranchas.Leitura()
+    pranchas._modelo_tabela_de_aco(L2, pranchas._palavras(p2), {})
+    assert (L2.peca, L2.iguais, L2.quantidade) == ("P09", ["P19"], 2)

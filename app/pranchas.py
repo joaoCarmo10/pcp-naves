@@ -65,13 +65,26 @@ class Leitura:
     prancha: str = ""
     fonte: str = "texto"
     taxa_passiva: float | None = None              # kg/m³ declarado na prancha (modelo "Tabela de Aço")
+    iguais: list = field(default_factory=list)   # outras peças da mesma prancha ("P09=P19")
     etapa2: list = field(default_factory=list)   # indícios de concretagem em 2ª etapa
     alertas: list = field(default_factory=list)
 
 
-def _tokens(pg) -> tuple[list[Tok], str]:
+def _palavras(pg) -> list[Tok]:
+    """Palavras do PDF na posição em que aparecem na tela (folha girada vira 'em pé')."""
     ws = pg.get_text("words")
-    toks = [Tok(w[4], *w[:4]) for w in ws]
+    if not pg.rotation:
+        return [Tok(w[4], *w[:4]) for w in ws]
+    m = pg.rotation_matrix
+    out = []
+    for w in ws:
+        r = pymupdf.Rect(w[:4]) * m
+        out.append(Tok(w[4], r.x0, r.y0, r.x1, r.y1))
+    return out
+
+
+def _tokens(pg) -> tuple[list[Tok], str]:
+    toks = _palavras(pg)
     legiveis = sum(1 for t in toks if re.search(r"[A-Za-z0-9]", t.t))
     if len(toks) > 30 and legiveis > 0.8 * len(toks) and (any("MATERIAL" in _n(t.t) for t in toks) or legiveis > 150):
         return toks, "texto"
@@ -232,9 +245,10 @@ def _modelo_tabela_de_aco(L: Leitura, toks: list[Tok], canon: dict) -> None:
         s = seguinte(t)
         q = re.fullmatch(r"\((\d+)X\)", N(s)) if s else None
         a = anterior(t)
-        if q and NOME.match(N(t)) and not (a and N(a).startswith("CONSOL")):
-            nome = N(t)
-            L.peca = canon.get(re.sub(r"(?<=[A-Z])-(?=\d)", "", nome), nome)
+        partes = N(t).split("=")
+        if q and all(NOME.match(x) for x in partes) and not (a and N(a).startswith("CONSOL")):
+            cn = lambda x: canon.get(re.sub(r"(?<=[A-Z])-(?=\d)", "", x), x)
+            L.peca, L.iguais = cn(partes[0]), [cn(x) for x in partes[1:]]
             L.quantidade = float(q.group(1))
             break
     for t in ordem:

@@ -1180,7 +1180,7 @@ def cadastro_texto(request: Request, cid: int, db: Session = Depends(get_db)):
     with pymupdf.open(DATA_DIR / c.arquivo) as doc:
         pg = doc[0]
         if qp.get("modo") == "texto":
-            toks, fonte = [pr.Tok(w[4], *w[:4]) for w in pg.get_text("words")], "texto (forçado)"
+            toks, fonte = pr._palavras(pg), "texto (forçado)"
         else:
             toks, fonte = pr._tokens(pg)
         cab = f"{c.nome_arquivo} | página {pg.rect.width:.0f}x{pg.rect.height:.0f} rot {pg.rotation} | {len(toks)} palavras | leitura: {fonte}"

@@ -1,4 +1,5 @@
 """Cadastro de peças: pranchas enviadas por obra, lidas em segundo plano e conferidas com o Plannix."""
+import dataclasses
 import io
 import re
 import secrets
@@ -104,7 +105,16 @@ def etapas_da_prancha(pecas: list[Peca], nome: str, volume_un: float | None) -> 
 def _uma(db: Session, obra_id: int, nome: str, caminho: Path, st: dict) -> None:
     pecas = list(db.scalars(select(Peca).where(Peca.obra_id == obra_id)))
     nomes = {p.peca for p in pecas}
-    L = pranchas.ler(caminho, nomes)
+    L0 = pranchas.ler(caminho, nomes)
+    todas = [L0.peca, *L0.iguais] if L0.peca else [""]
+    for p in todas:   # prancha de peças iguais ("P09=P19"): o mesmo cadastro para cada nome
+        L = L0 if p == L0.peca else dataclasses.replace(
+            L0, peca=p, alertas=[a for a in L0.alertas if "não existe nesta obra" not in a]
+            + ([f"{p} não existe nesta obra no Plannix."] if p not in nomes else []))
+        _gravar(db, obra_id, nome, caminho, st, L, pecas, nomes)
+
+
+def _gravar(db: Session, obra_id: int, nome: str, caminho: Path, st: dict, L, pecas: list, nomes: set) -> None:
     chave = L.peca or f"?{Path(nome).stem[:36]}"
     etapas, alertas_et = etapas_da_prancha(pecas, L.peca, L.volume_un) if L.peca else ("", [])
     c = db.scalar(select(CadastroPeca).where(CadastroPeca.obra_id == obra_id, CadastroPeca.peca == chave, CadastroPeca.etapas == etapas))
