@@ -64,6 +64,7 @@ class Leitura:
     revisao: str = ""
     prancha: str = ""
     fonte: str = "texto"
+    taxa_passiva: float | None = None              # kg/m³ declarado na prancha (modelo "Tabela de Aço")
     etapa2: list = field(default_factory=list)   # indícios de concretagem em 2ª etapa
     alertas: list = field(default_factory=list)
 
@@ -180,11 +181,11 @@ def ler(caminho: Path, nomes: set[str] | None = None) -> Leitura:
                     break
             break
     tudo = " ".join(textos)
-    m = re.search(r"FCK\s*-?\s*(\d+)", tudo)
+    m = re.search(r"FCK\s*[-=]?\s*(\d+)", tudo)
     L.fck = float(m.group(1)) if m else None
-    m = re.search(r"FCJ\s*-?\s*(\d+)", tudo)
+    m = re.search(r"FCJ\s*[-=]?\s*(\d+)", tudo)
     L.fcj = float(m.group(1)) if m else None
-    m = re.search(r"COBRIMENTO:?\s*([\d.,]+)", tudo)
+    m = re.search(r"COBRIMENTO\s*[:=]?\s*([\d.,]+)", tudo)
     L.cobrimento = _num(m.group(1)) if m else None
     m = re.search(r"PESO UNITARIO \(KG\)\s*([\d.,]+)", tudo)
     L.peso_aco = _num(m.group(1)) if m else _peso_aco_ao_lado(linhas)
@@ -205,8 +206,121 @@ def ler(caminho: Path, nomes: set[str] | None = None) -> Leitura:
     for i, tx in enumerate(textos):
         if "MATERIAL" in tx and ("QUANT" in tx or "QUANT" in " ".join(textos[max(0, i - 2):i + 3])) and "LISTA DE MATERIAL" not in tx:
             _tabela(L, linhas, textos, i)
+    if not L.itens and any("POSICAO" in tx and "QUANTIDADE" in tx and "DIAMETRO" in tx for tx in textos):
+        _modelo_tabela_de_aco(L, toks, canon)
     _conferir(L, nomes)
     return L
+
+
+def _modelo_tabela_de_aco(L: Leitura, toks: list[Tok], canon: dict) -> None:
+    """Modelo 'Tabela de Aço' (ex.: pilares da Elite): dados da peça em texto solto ('P01 (1x)', 'Fck=50 MPa',
+    'Vol.= 2,835 m³', 'Peso= 7.088 Kg') e uma tabela de aço para a peça e outra para cada consolo
+    ('CONSOLO C03 (4x)'). O aço dos consolos faz parte da peça: entra multiplicado pela quantidade."""
+    N = lambda t: _n(t.t)
+    ordem = sorted(toks, key=lambda t: (t.yc, t.x0))
+
+    def seguinte(t, dx=70):
+        cands = [x for x in toks if abs(x.yc - t.yc) < 4 and 0 <= x.x0 - t.x1 < dx]
+        return min(cands, key=lambda x: x.x0) if cands else None
+
+    def anterior(t, dx=70):
+        cands = [x for x in toks if abs(x.yc - t.yc) < 4 and 0 <= t.x0 - x.x1 < dx]
+        return max(cands, key=lambda x: x.x1) if cands else None
+
+    # nome e quantidade: "P01 (1x)" (o primeiro nome seguido de "(nx)" que não seja título de consolo)
+    for t in ordem:
+        s = seguinte(t)
+        q = re.fullmatch(r"\((\d+)X\)", N(s)) if s else None
+        a = anterior(t)
+        if q and NOME.match(N(t)) and not (a and N(a).startswith("CONSOL")):
+            nome = N(t)
+            L.peca = canon.get(re.sub(r"(?<=[A-Z])-(?=\d)", "", nome), nome)
+            L.quantidade = float(q.group(1))
+            break
+    for t in ordem:
+        n = N(t)
+        prox = sorted((x for x in toks if abs(x.yc - t.yc) < 4 and 0 <= x.x0 - t.x1 < 90), key=lambda x: x.x0)[:3]
+        valor = next((x for x in prox if re.fullmatch(r"\d+(?:[.,]\d+)?", x.t)), None)
+        if not valor:
+            continue
+        if n.startswith("VOL") and L.volume_un is None:
+            L.volume_un = _num(valor.t)
+        elif n.startswith("PESO=") or (n == "PESO" and prox and N(prox[0]) == "="):
+            v = _num(valor.t)
+            if re.fullmatch(r"\d{1,3}\.\d{3}", valor.t):   # "7.088" kg
+                v = _milhar(valor.t)
+            L.peso = v
+        elif n.startswith("PASSIVA") and L.peso_aco is None:
+            L.taxa_passiva = _num(valor.t)
+
+    # títulos de consolo e suas quantidades
+    titulos = []
+    for t in ordem:
+        s = seguinte(t, 120) if N(t).startswith("CONSOL") else None
+        if s and NOME.match(N(s)):
+            s2 = seguinte(s)
+            q = re.fullmatch(r"\((\d+)X\)", N(s2)) if s2 else None
+            titulos.append((t, N(s), int(q.group(1)) if q else 1))
+
+    # tabelas: cabeçalho "Posição Aço Diâmetro Quantidade L Unit(cm) Peso Unit(kg) Peso Total(kg)"
+    for p in (t for t in ordem if N(t).startswith(("POSICAO", "POSIGAO"))):
+        cab = sorted((t for t in toks if abs(t.yc - p.yc) < 4 and p.x0 - 5 <= t.x0 <= p.x0 + 450), key=lambda t: t.x0)
+        col, tot = {"pos": p.xc}, None
+        for k, t in enumerate(cab):
+            n = N(t)
+            # rótulo de duas palavras ("Peso Total(kg)", "L Unit(cm)"): o valor fica centrado no rótulo inteiro
+            if k and n.startswith(("UNIT(", "TOTAL(")) and N(cab[k - 1]) in ("PESO", "L") and t.x0 - cab[k - 1].x1 < 12:
+                t = Tok(t.t, cab[k - 1].x0, t.y0, t.x1, t.y1)
+            if n.startswith("ACO") and "aco" not in col:
+                col["aco"] = t.xc
+            elif n.startswith("DIAMETRO") and "diam" not in col:
+                col["diam"] = t.xc
+            elif n.startswith("QUANTIDADE") and "quant" not in col:
+                col["quant"] = t.xc
+            elif n.startswith("UNIT(CM)") and "comp" not in col:
+                col["comp"] = t.xc
+            elif n.startswith("UNIT(KG)") and "unit" not in col:
+                col["unit"] = t.xc
+            elif n.startswith("TOTAL(KG)"):
+                col["tot"], tot = t.xc, t
+                break
+        if len(col) < 6 or not tot:
+            continue
+        x0, x1 = p.x0 - 20, tot.x1 + 15
+        # dono da tabela: título de consolo logo acima, na mesma faixa horizontal; senão, a própria peça
+        dono = max((tt for tt in titulos if tt[0].yc < p.yc and p.x0 - 250 < tt[0].x0 < p.x0 + 80),
+                   key=lambda tt: tt[0].yc, default=None)
+        grupo, mult = (dono[1], dono[2]) if dono else ("", 1)
+        ancoras = sorted((t for t in toks if t.yc > p.yc + 3 and abs(t.xc - col["aco"]) < 18
+                          and re.match(r"^(CA-?\d|CP-?\d|CORD)", N(t))), key=lambda t: t.yc)
+        ult = p.yc
+        for a in ancoras:
+            if a.yc - ult > 30:   # fim da tabela
+                break
+            ult = a.yc
+            cel = {}
+            for t in toks:
+                if abs(t.yc - a.yc) < 4 and x0 <= t.xc <= x1:
+                    c = min(col, key=lambda kk: abs(col[kk] - t.xc))
+                    if abs(col[c] - t.xc) < 40:
+                        cel.setdefault(c, t.t)
+            mat = N(a).replace(" ", "")
+            q, un, tt = _num(cel.get("quant", "")), _num(cel.get("unit", "")), _num(cel.get("tot", ""))
+            cord = mat.startswith(("CP", "CORD"))
+            L.itens.append({
+                "pos": f"{grupo}-{cel.get('pos', '?')}" if grupo else cel.get("pos", "?"),
+                "diam": _num(cel.get("diam", "")), "quant": q * mult if q is not None else None, "material": mat,
+                "comp": _num(cel.get("comp", "")), "peso_un": un, "peso_tot": round(tt * mult, 2) if tt is not None else None,
+                "forca": None, "tipo": "ativa" if cord else "passiva",
+                **({"grupo": f"{grupo} ({mult}x)"} if grupo else {})})
+    # elastômeros (neoprene): "1 ELASTÔMEROS SIMPLES" + "330x260x10mm", por consolo
+    neo = []
+    for t in toks:
+        if re.fullmatch(r"\d+(?:[.,]\d+)?X\d+(?:[.,]\d+)?X\d+(?:[.,]\d+)?MM", N(t)):
+            dono = max((tt for tt in titulos if tt[0].yc < t.yc and t.x0 - 250 < tt[0].x0 < t.x0 + 250), key=lambda tt: tt[0].yc, default=None)
+            neo.append(f"{dono[2] if dono else 1}× {t.t}" + (f" ({dono[1]})" if dono else ""))
+    if neo and not L.neoprene:
+        L.neoprene = ", ".join(neo)[:80]
 
 
 def _peso_aco_ao_lado(linhas) -> float | None:
@@ -373,6 +487,11 @@ def _conferir(L: Leitura, nomes: set[str] | None) -> None:
         soma = sum(it["peso_tot"] or 0 for it in ativas)
         if abs(soma - L.aco_ativo) > 0.01 * L.aco_ativo + 0.2:
             a.append(f"Soma das cordoalhas ({soma:.1f} kg) não bate com a armadura ativa ({L.aco_ativo:.1f} kg).")
+    if L.taxa_passiva and L.volume_un and L.itens:
+        proprio = sum(it["peso_tot"] or 0 for it in L.itens if it["tipo"] == "passiva" and not it.get("grupo"))
+        esperado = L.taxa_passiva * L.volume_un
+        if abs(proprio - esperado) > 0.02 * esperado + 0.5:
+            a.append(f"Aço da peça ({proprio:.1f} kg, sem consolos) não bate com taxa x volume da prancha ({esperado:.1f} kg).")
     if not L.itens:
         a.append("Não achei a tabela de armadura.")
 

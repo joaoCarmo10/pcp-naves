@@ -518,3 +518,27 @@ def test_reler_orfaos(cliente):
     time.sleep(0.1)
     db.expire_all()
     assert [c.peca for c in db.scalars(select(CadastroPeca))] == ["ZZ9"]
+
+
+def test_modelo_tabela_de_aco_elite(tmp_path):
+    """Pilar da Elite: dados em texto solto, tabela do pilar e de cada consolo (aço do consolo x quantidade)."""
+    from pathlib import Path
+    import pymupdf
+    from app import pranchas
+    doc = pymupdf.open()
+    pg = doc.new_page(width=2384, height=1684)
+    for l in open(Path(__file__).with_name("elite_p01.txt"), encoding="utf-8"):
+        y, r = l.rstrip("\n").split("|", 1)
+        for tok in r.split(" "):
+            t, x = tok.rsplit("@", 1)
+            w = pymupdf.get_text_length(t, fontname="helv", fontsize=7)
+            pg.insert_text((float(x) - w / 2, float(y) + 2.5), t, fontsize=7, fontname="helv")
+    for k in range(160):
+        pg.insert_text((900 + (k % 20) * 20, 1000 + (k // 20) * 10), f"c{k}", fontsize=5)
+    f = tmp_path / "301-CIV-CFAP-P01-R01.pdf"
+    doc.save(f)
+    L = pranchas.ler(f, {"P01"})
+    assert (L.peca, L.quantidade, L.volume_un, L.peso, L.fck, L.fcj, L.cobrimento) == ("P01", 1, 2.835, 7088, 50, 30, 3.5)
+    assert L.alertas == [] and L.revisao == "R01" and len(L.itens) == 25
+    r = pranchas.resumo(L.itens)
+    assert r["aco_passivo"] == 613.62 and r["bitolas"]["20"] == 376.96
