@@ -211,7 +211,8 @@ def linhas(db: Session, rev: RevisaoProg, inicio: date | None = None, fim: date 
 
 def substitutas(db: Session, rev: RevisaoProg) -> dict[int, Peca | None]:
     """Peças com o mesmo nome na mesma obra são iguais: a produção pode concretar qualquer uma delas. Para cada grupo,
-    as concretagens (por data) atendem os itens programados na ordem das datas, sem olhar o código. Devolve, por item,
+    as concretagens (por data) atendem os itens programados na ordem das datas, sem olhar o código: o que ficou
+    atrasado é atendido primeiro. Devolve, por item,
     a peça que o atendeu (None = ainda não atendido). Calculado sobre a revisão inteira."""
     itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None))
                             .options(selectinload(ItemProg.apontamento)).order_by(ItemProg.data, ItemProg.id)))
@@ -239,16 +240,9 @@ def substitutas(db: Session, rev: RevisaoProg) -> dict[int, Peca | None]:
         fila = sorted(fabs.get(k, []), key=lambda p: (p.data_fabricacao, p.codigo))
         if not fila and all(not pecas[i.codigo].data_fabricacao for i in its):
             continue
-        # 1º: concretagem no próprio dia programado; 2º: o que sobrou atende os itens em aberto por ordem de data
-        livres = list(fila)
-        for i in its:
-            mesma = next((p for p in livres if p.data_fabricacao == i.data), None)
-            if mesma:
-                out[i.id] = mesma
-                livres.remove(mesma)
-        for i in its:
-            if i.id not in out:
-                out[i.id] = livres.pop(0) if livres else None
+        # fila: a concretagem mais antiga atende o item programado mais antigo (o atrasado é feito primeiro)
+        for n, i in enumerate(its):
+            out[i.id] = fila[n] if n < len(fila) else None
     return out
 
 

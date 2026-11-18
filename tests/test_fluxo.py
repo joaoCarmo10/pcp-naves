@@ -283,7 +283,7 @@ def test_planta_com_comentarios_shx(tmp_path):
 
 
 def test_pecas_identicas(cliente):
-    """LE1 programada com um código e concretada com outro de mesmo nome: conta no dia em que foi feita."""
+    """LE1 programada com um código e concretada com outro de mesmo nome: atende a programada mais antiga em aberto."""
     from datetime import date
     from sqlalchemy import select
     from openpyxl import Workbook
@@ -306,5 +306,5 @@ def test_pecas_identicas(cliente):
     db = SessionLocal()
     rev = db.scalars(select(RevisaoProg).order_by(RevisaoProg.id.desc())).first()
     st = {l.item.codigo: l for l in pg.linhas(db, rev, hoje=date(2026, 11, 18))}
-    assert st["2002"].status == "NO PRAZO" and st["2002"].troca == "2009"      # a feita em 17/11 atende o dia 17
-    assert st["2001"].status == "NÃO REALIZADA"
+    assert st["2001"].status == "COM ATRASO" and st["2001"].troca == "2009"    # a feita em 17/11 atende a de segunda (atrasada)
+    assert st["2002"].status == "NÃO REALIZADA"
