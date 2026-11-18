@@ -143,7 +143,7 @@ def planilha(dados: dict) -> bytes:
     cab = ["Obra", "Peça", "Etapa", "Produto", "Seção", "Largura (cm)", "Altura (cm)", "Comprimento (m)", "Volume (m³)",
            "Área (m²)", "Peso (t)", "Peso estimado?", "Unidades", "Feitas", "Pendentes",
            "fck (MPa)", "fcj (MPa)", "Cobrimento (cm)", "Traço (Plannix)",
-           "Aço passivo (kg/pç)", "Taxa passiva (kg/m³)", "Nº barras/pç", "Nº estribos/pç"]
+           "Aço frouxo (kg/pç)", "Taxa aço frouxo (kg/m³)", "Nº barras/pç", "Nº estribos/pç"]
     for d in dados["diams"]:
         cab += [f"Ø{d} (kg/pç)", f"Ø{d} (nº/pç)"]
     cab += ["Cordoalhas/pç", "Protensão", "Força (kgf/cord.)", "Aço ativo (kg/pç)", "Contraflecha (cm)",
@@ -185,7 +185,7 @@ def planilha(dados: dict) -> bytes:
                         f"{i['deduzido']} calculada" if i.get("deduzido") else ""])
 
     ws3 = wb.create_sheet("Aço pendente por bitola")
-    ws3.append(["Bitola (mm)", "Aço passivo pendente (kg)", "Nº de barras pendentes"])
+    ws3.append(["Bitola (mm)", "Aço frouxo pendente (kg)", "Nº de barras pendentes"])
     for d, (kg, n) in dados["pend_bit"].items():
         ws3.append([float(d), round(kg, 1), int(n)])
     ws3.append(["Cordoalha (aço ativo)", round(dados["tot"]["ativo_pend"], 1), None])

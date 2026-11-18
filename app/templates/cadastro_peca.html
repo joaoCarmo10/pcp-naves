@@ -18,7 +18,7 @@
       <label>Quantidade (prancha)<input name="quantidade" value="{{ '%g'|format(c.quantidade) if c.quantidade else '' }}"></label>
       <label>Volume unitário (m³)<input name="volume_un" value="{{ '%g'|format(c.volume_un) if c.volume_un else '' }}"></label>
       <label>fck (MPa)<input name="fck" value="{{ '%g'|format(c.fck) if c.fck else '' }}"></label>
-      <label>Aço passivo (kg/pç)<input name="aco_passivo" value="{{ '%g'|format(c.aco_passivo) if c.aco_passivo else '' }}"></label>
+      <label>Aço frouxo (kg/pç)<input name="aco_passivo" value="{{ '%g'|format(c.aco_passivo) if c.aco_passivo else '' }}"></label>
       <label>Cordoalhas de protensão (nº)<input name="cordoalhas" value="{{ c.cordoalhas or '' }}"></label>
       <label>Ø cordoalha (mm)<input name="cord_diam" value="{{ c.cord_diam }}"></label>
       <label>Força por cordoalha (kgf)<input name="forca" value="{{ '%g'|format(c.forca) if c.forca else '' }}"></label>

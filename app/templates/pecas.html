@@ -46,7 +46,7 @@
   <div class="kpi"><b>{{ tot.com }}</b><span>com prancha lida{% if tot.rev %} ({{ tot.rev }} a revisar){% endif %}</span></div>
   <div class="kpi"><b>{{ tot.pend }}</b><span>unidades pendentes</span></div>
   <div class="kpi"><b>{{ tot.vol_pend|num(1) }}</b><span>m³ pendentes</span></div>
-  {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço passivo pendente</span></div>
+  {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço frouxo pendente</span></div>
   <div class="kpi"><b>{{ tot.barras_pend|num(0) }}</b><span>barras pendentes</span></div>{% endif %}
   {% if tot.e2 %}<div class="kpi"><b>{{ tot.e2 }}</b><span>com 2ª etapa</span></div>{% endif %}
   {% if tot.ativo_pend %}<div class="kpi"><b>{{ (tot.ativo_pend / 1000)|num(2) }} t</b><span>cordoalha pendente</span></div>{% endif %}
@@ -56,7 +56,7 @@
 
 <div class="colunas-pecas" id="grupos">
   <span class="meta">Colunas:</span>
-  {% for g, n in [('med','Medidas'), ('conc','Concreto'), ('aco','Aço passivo'), ('bit','Por bitola'), ('prot','Protensão'), ('out','2ª etapa, içamento e apoio'), ('pr','Prancha')] %}
+  {% for g, n in [('med','Medidas'), ('conc','Concreto'), ('aco','Aço frouxo'), ('bit','Por bitola'), ('prot','Protensão'), ('out','2ª etapa, içamento e apoio'), ('pr','Prancha')] %}
   <label><input type="checkbox" data-g="{{ g }}" checked> {{ n }}</label>{% endfor %}
   <a class="botao-sec" href="/pecas/planilha{{ '?' ~ qs if qs }}" style="margin-left:auto">Baixar Excel</a>
 </div>
@@ -68,7 +68,7 @@
     <th class="g-med n">Compr. (m)</th><th class="g-med n">Vol. (m³)</th><th class="g-med n" title="Da prancha">Área (m²)</th>
     <th class="g-med n" title="Da prancha; com ~ é estimado por 2,5 t/m³">Peso (t)</th>
     <th class="g-conc">fck</th><th class="g-conc">fcj</th><th class="g-conc n">Cobrim. (cm)</th><th class="g-conc" title="Traço real mais usado nas peças já feitas (Plannix)">Traço</th>
-    <th class="g-aco n">Aço passivo (kg/pç)</th><th class="g-aco n">Taxa (kg/m³)</th><th class="g-aco n">Barras/pç</th><th class="g-aco n" title="Posições com nome ES/E + número">Estribos/pç</th>
+    <th class="g-aco n" title="Armadura passiva CA-50/CA-60, consolos incluídos">Aço frouxo (kg/pç)</th><th class="g-aco n">Taxa frouxo (kg/m³)</th><th class="g-aco n">Barras/pç</th><th class="g-aco n" title="Posições com nome ES/E + número">Estribos/pç</th>
     {% for d in diams %}<th class="g-bit n" title="kg por peça · nº de barras por peça">Ø{{ d }}<br><small>kg · nº</small></th>{% endfor %}
     <th class="g-prot">Protensão</th><th class="g-prot n">Força (tf)</th><th class="g-prot n">Aço ativo (kg/pç)</th><th class="g-prot n">Contraflecha (cm)</th>
     <th class="g-prot n" title="Plannix">Taxa protendido (kg/m³)</th><th class="g-prot">Modelo</th>
