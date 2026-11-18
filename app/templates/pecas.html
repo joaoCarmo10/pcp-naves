@@ -19,6 +19,9 @@
     <label for="arquivo">Arquivos<input id="arquivo" type="file" name="arquivo" accept=".pdf,.zip" multiple required></label>
     <button type="submit">Enviar e ler</button>
   </form>
+  {% if sel and tot.com %}<form method="post" action="/pecas/reler" style="margin:6px 0" onsubmit="return confirm('Ler de novo todas as pranchas de {{ sel.nome }}? Correções feitas à mão nos cadastros desta obra serão perdidas.')">
+    <input type="hidden" name="obra_id" value="{{ sel.id }}"><input type="hidden" name="todas" value="1">
+    <button type="submit" class="sec">Ler de novo todas as pranchas de {{ sel.nome }}</button></form>{% endif %}
   <p class="meta">A peça só é aceita se o nome existir nessa obra no Plannix. Cada prancha é ligada à etapa pelo volume, então importe o "all data" atualizado antes. Revisão nova substitui a antiga (a antiga fica no histórico).</p>
 </details>
 

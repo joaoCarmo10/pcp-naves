@@ -277,7 +277,8 @@ def _modelo_tabela_de_aco(L: Leitura, toks: list[Tok], canon: dict) -> None:
             titulos.append((t, N(s), int(q.group(1)) if q else 1))
 
     # tabelas: cabeçalho "Posição Aço Diâmetro Quantidade L Unit(cm) Peso Unit(kg) Peso Total(kg)"
-    for p in (t for t in ordem if N(t).startswith(("POSICAO", "POSIGAO"))):
+    cabecalhos = [t for t in ordem if N(t).startswith(("POSICAO", "POSIGAO"))]
+    for p in cabecalhos:
         cab = sorted((t for t in toks if abs(t.yc - p.yc) < 4 and p.x0 - 5 <= t.x0 <= p.x0 + 450), key=lambda t: t.x0)
         col, tot = {"pos": p.xc}, None
         for k, t in enumerate(cab):
@@ -302,8 +303,11 @@ def _modelo_tabela_de_aco(L: Leitura, toks: list[Tok], canon: dict) -> None:
             continue
         x0, x1 = p.x0 - 20, tot.x1 + 15
         # dono da tabela: título de consolo logo acima, na mesma faixa horizontal; senão, a própria peça
-        dono = max((tt for tt in titulos if tt[0].yc < p.yc and p.x0 - 250 < tt[0].x0 < p.x0 + 80),
+        dono = max((tt for tt in titulos if tt[0].yc < p.yc < tt[0].yc + 450 and p.x0 - 250 < tt[0].x0 < p.x0 + 80),
                    key=lambda tt: tt[0].yc, default=None)
+        # cada consolo tem uma tabela: se já existe outra tabela entre o título e esta, esta é da peça
+        if dono and any(o is not p and dono[0].yc < o.yc < p.yc - 3 and abs(o.x0 - p.x0) < 300 for o in cabecalhos):
+            dono = None
         grupo, mult = (dono[1], dono[2]) if dono else ("", 1)
         ancoras = sorted((t for t in toks if t.yc > p.yc + 3 and abs(t.xc - col["aco"]) < 18
                           and re.match(r"^(CA-?\d|CP-?\d|CORD)", N(t))), key=lambda t: t.yc)
@@ -320,12 +324,12 @@ def _modelo_tabela_de_aco(L: Leitura, toks: list[Tok], canon: dict) -> None:
                         cel.setdefault(c, t.t)
             mat = N(a).replace(" ", "")
             q, un, tt = _num(cel.get("quant", "")), _num(cel.get("unit", "")), _num(cel.get("tot", ""))
-            cord = mat.startswith(("CP", "CORD"))
+            cord = mat.startswith(("CP", "CORD"))   # neste modelo (pilares) cordoalha é alça de içamento
             L.itens.append({
                 "pos": f"{grupo}-{cel.get('pos', '?')}" if grupo else cel.get("pos", "?"),
                 "diam": _num(cel.get("diam", "")), "quant": q * mult if q is not None else None, "material": mat,
                 "comp": _num(cel.get("comp", "")), "peso_un": un, "peso_tot": round(tt * mult, 2) if tt is not None else None,
-                "forca": None, "tipo": "ativa" if cord else "passiva",
+                "forca": None, "tipo": "icamento" if cord else "passiva",
                 **({"grupo": f"{grupo} ({mult}x)"} if grupo else {})})
     # elastômeros (neoprene): "1 ELASTÔMEROS SIMPLES" + "330x260x10mm", por consolo
     neo = []
@@ -502,7 +506,7 @@ def _conferir(L: Leitura, nomes: set[str] | None) -> None:
         if abs(soma - L.aco_ativo) > 0.01 * L.aco_ativo + 0.2:
             a.append(f"Soma das cordoalhas ({soma:.1f} kg) não bate com a armadura ativa ({L.aco_ativo:.1f} kg).")
     if L.taxa_passiva and L.volume_un and L.itens:
-        proprio = sum(it["peso_tot"] or 0 for it in L.itens if it["tipo"] == "passiva" and not it.get("grupo"))
+        proprio = sum(it["peso_tot"] or 0 for it in L.itens if it["tipo"] != "ativa" and not it.get("grupo"))
         esperado = L.taxa_passiva * L.volume_un
         if abs(proprio - esperado) > 0.02 * esperado + 0.5:
             a.append(f"Aço da peça ({proprio:.1f} kg, sem consolos) não bate com taxa x volume da prancha ({esperado:.1f} kg).")

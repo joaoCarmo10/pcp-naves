@@ -1087,15 +1087,21 @@ async def _receber_pranchas(request: Request, o: Obra, arquivo: list[UploadFile]
 
 
 @app.post("/pecas/reler")
-def pecas_reler(request: Request, obra_id: int = Form(0), db: Session = Depends(get_db)):
+def pecas_reler(request: Request, obra_id: int = Form(0), todas: str = Form(""), db: Session = Depends(get_db)):
     """Lê de novo as pranchas que não se ligaram a nenhuma peça (útil depois de melhorar o leitor ou de importar
-    um 'all data' novo). Não mexe nos cadastros já ligados, que podem ter correções feitas à mão."""
-    d = ptab.montar(db, {"obra": db.get(Obra, obra_id).nome} if obra_id else {})
+    um 'all data' novo). Com 'todas', relê também as já cadastradas da obra (perde correções feitas à mão)."""
+    if todas and obra_id:
+        alvo = list(db.scalars(select(CadastroPeca).where(CadastroPeca.obra_id == obra_id)))
+    else:
+        alvo = ptab.montar(db, {"obra": db.get(Obra, obra_id).nome} if obra_id else {})["orfaos"]
     por_obra: dict[int, list] = {}
-    for c in d["orfaos"]:
+    vistos = set()
+    for c in alvo:
         caminho = DATA_DIR / c.arquivo if c.arquivo else None
         if caminho and caminho.exists():
-            por_obra.setdefault(c.obra_id, []).append((c.nome_arquivo or caminho.name, caminho))
+            if c.arquivo not in vistos:   # prancha de peças iguais: um arquivo, vários cadastros
+                vistos.add(c.arquivo)
+                por_obra.setdefault(c.obra_id, []).append((c.nome_arquivo or caminho.name, caminho))
             db.delete(c)
     db.commit()
     for oid, lote in por_obra.items():

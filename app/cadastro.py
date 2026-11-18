@@ -82,6 +82,8 @@ def etapas_da_prancha(pecas: list[Peca], nome: str, volume_un: float | None) -> 
             grupos.setdefault(p.item or "", []).append(p)
     if not grupos:
         return "", alertas
+    if len(grupos) == 1:   # uma etapa só: não há o que escolher (volume do Plannix nem sempre é o da peça)
+        return next(iter(grupos)), alertas
     if volume_un:
         dif = {k: min((abs(v - volume_un) / v for v in _vols(ps) if v), default=None) for k, ps in grupos.items()}
         dif = {k: d for k, d in dif.items() if d is not None}
