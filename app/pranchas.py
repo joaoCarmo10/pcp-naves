@@ -71,7 +71,8 @@ class Leitura:
 def _tokens(pg) -> tuple[list[Tok], str]:
     ws = pg.get_text("words")
     toks = [Tok(w[4], *w[:4]) for w in ws]
-    if sum(1 for t in toks if "MATERIAL" in _n(t.t)) and len(toks) > 30:
+    legiveis = sum(1 for t in toks if re.search(r"[A-Za-z0-9]", t.t))
+    if len(toks) > 30 and legiveis > 0.8 * len(toks) and (any("MATERIAL" in _n(t.t) for t in toks) or legiveis > 150):
         return toks, "texto"
     from . import ocr_planta
     out = []
