@@ -17,7 +17,7 @@ NIVEIS = {"nenhum": 0, "ver": 1, "editar": 2}
 
 # módulo: (nome na tela, prefixos de endereço)
 MODULOS = {
-    "obras": ("Avanço das obras e plantas", ("/obras", "/plantas")),
+    "obras": ("Avanço das obras, plantas e cadastro de peças", ("/obras", "/plantas", "/cadastro")),
     "realizado": ("Realizado do dia", ("/programacao", "/apontamentos")),
     "pxr": ("Programado x realizado", ("/pxr",)),
     "planejar": ("Planejar", ("/planejar",)),

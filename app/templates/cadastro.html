@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}Cadastro de peças · {{ o.nome }} | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin:0"><a href="/">Avanço das obras</a> › <a href="/obras/{{ o.id }}">{{ o.nome }}</a> ›</p>
+<h1>Cadastro de peças</h1>
+<p class="sub">Características de cada tipo de peça desta obra, lidas das pranchas de detalhamento. Todas as unidades do Plannix com o mesmo nome herdam o cadastro.</p>
+{% if flash %}<div class="aviso {{ 'erro' if flash.startswith('Erro') else 'ok' }}">{{ flash }}</div>{% endif %}
+{% if st and st.feitos < st.total %}<div class="aviso">Lendo pranchas: {{ st.feitos }} de {{ st.total }}. <a href="">Atualizar</a></div>
+<script>setTimeout(() => location.reload(), 8000)</script>{% endif %}
+{% if st and st.msgs %}<div class="aviso">{% for m in st.msgs[-8:] %}{{ m }}<br>{% endfor %}</div>{% endif %}
+
+{% set n_cad = linhas|length %}{% set n_rev = linhas|selectattr('c.situacao', 'equalto', 'revisar')|list|length %}
+<div class="kpis">
+  <div class="kpi"><b>{{ n_tipos }}</b><span>tipos de peça no Plannix (nome + etapa)</span></div>
+  <div class="kpi"><b>{{ n_cad }}</b><span>com cadastro</span></div>
+  <div class="kpi"><b>{{ n_rev }}</b><span>a revisar</span></div>
+  <div class="kpi"><b>{{ sem|length }}</b><span>sem prancha</span></div>
+</div>
+
+<section class="cartao">
+  <form method="post" action="/obras/{{ o.id }}/pranchas" enctype="multipart/form-data" class="filtros">
+    <label>Pranchas (PDF ou .zip do Autodoc, várias de uma vez)<input type="file" name="arquivo" accept=".pdf,.zip" multiple required></label>
+    <button type="submit">Enviar e ler</button>
+  </form>
+  <p class="meta">Envie dentro da obra certa: o nome da peça só é aceito se existir nesta obra no Plannix. Revisão mais nova substitui a antiga (fica no histórico).</p>
+</section>
+
+{% if linhas %}
+<div class="rolagem-x"><table class="t compacta" style="margin-top:12px">
+  <thead><tr><th>Peça</th><th>Etapa</th><th>Produto</th><th class="n">Unid. Plannix</th><th>Prancha</th><th>Protensão</th><th>Içamento</th>
+    <th class="n">Aço passivo (kg/pç)</th><th>Bitolas (kg)</th><th class="n">Vol. (m³)</th><th>fck</th><th>Neoprene</th><th>Situação</th></tr></thead>
+  <tbody>{% for x in linhas %}{% set c = x.c %}{% set t = x.t %}
+    <tr>
+      <td><a href="/cadastro/{{ c.id }}"><b>{{ c.peca }}</b></a></td>
+      <td class="meta">{{ c.etapas or '-' }}</td>
+      <td>{{ t.produto if t else '' }}</td>
+      <td class="n">{% if t %}{{ t.fab }}/{{ t.n }}{% else %}<span class="meta">nenhuma unidade ligada</span>{% endif %}</td>
+      <td class="meta" style="white-space:nowrap">{{ c.prancha }} {{ c.revisao }}{% if c.fonte == 'ocr' %} · OCR{% endif %}</td>
+      <td style="white-space:nowrap">{% if c.cordoalhas %}<b>{{ c.protensao }}</b>{% if c.forca %} · {{ (c.forca / 1000)|num(1) }} tf{% endif %}{% else %}<span class="meta">-</span>{% endif %}</td>
+      <td class="meta">{{ c.icamento }}</td>
+      <td class="n">{{ c.aco_passivo|num(1) if c.aco_passivo else '-' }}</td>
+      <td class="meta">{% for b, kg in (c.bitolas or {}).items() %}Ø{{ b }}: {{ kg|num(1) }}{{ ' · ' if not loop.last }}{% endfor %}</td>
+      <td class="n">{{ c.volume_un|num(2) if c.volume_un else '' }}</td>
+      <td>{{ c.fck|int if c.fck else '' }}</td>
+      <td class="meta">{{ c.neoprene[:24] }}</td>
+      <td>{% if c.situacao == 'revisar' %}<span class="st" style="background:#f6d48a" title="{{ c.alertas|join(' | ') }}">a revisar ({{ c.alertas|length }})</span>
+          {% elif c.situacao == 'conferido' %}<span class="st" style="background:#9fd2ab">conferido</span>{% else %}<span class="st" style="background:#cfe6d5">ok</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+
+{% if falta_pecas %}
+<section class="cartao" style="margin-top:12px">
+  <h2 style="margin-top:0">Aço a produzir nesta obra</h2>
+  <p class="meta">{{ falta_pecas }} unidades pendentes no Plannix que já têm cadastro.</p>
+  <div class="kpis">
+    {% for b, kg in falta_bit.items() %}<div class="kpi"><b>{{ kg|num(0) }} kg</b><span>Ø{{ b }} mm</span></div>{% endfor %}
+    {% if falta_ativo %}<div class="kpi destaque"><b>{{ falta_ativo|num(0) }} kg</b><span>cordoalha de protensão</span></div>{% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if sem %}
+<section class="cartao" style="margin-top:12px">
+  <h2 style="margin-top:0">Sem prancha ({{ sem|length }})</h2>
+  <p class="meta">Tipos de peça do Plannix desta obra (nome + etapa) que ainda não têm cadastro.</p>
+  <details><summary class="meta">Ver a lista</summary><div class="meta">{% for t in sem %}<b>{{ t.nome }}</b> <span>(etapa {{ t.item or '-' }}, {{ t.produto }} {{ t.secao }}, {{ t.n }} un)</span>{{ ' · ' if not loop.last }}{% endfor %}</div></details>
+</section>
+{% endif %}
+{% endblock %}

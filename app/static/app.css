@@ -220,3 +220,4 @@ body.somente-leitura .card-peca{cursor:default}
 select.nv-editar{background:#e3f1e6}select.nv-ver{background:#eef3fb}select.nv-nenhum{background:#f6f6f6;color:#888}
 .aviso.ok{background:#e3f1e6;border:1px solid #b8dcc1;color:#1f5a2e;padding:8px 12px;border-radius:8px;margin-bottom:10px}
 .lendo{font-size:11px;color:#8a5a00;background:#fff4d6;border-radius:4px;padding:1px 6px;margin-left:6px}
+.cp-cad{margin-top:2px;font-size:11px}.cp-cad .prot{background:#ede4f7;color:#4b2f7a;border-radius:4px;padding:0 5px;font-weight:600}

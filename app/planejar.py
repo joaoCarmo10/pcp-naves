@@ -55,16 +55,20 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
     if rev:
         ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
     armadas_app = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
+    from . import cadastro as cad
+    idx = cad.indice(db)
     grupos: dict[tuple, dict] = {}
     q = select(Peca, Obra).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))
     for p, o in db.execute(q):
         if p.codigo in ja:
             continue
-        k = (o.id, p.peca, p.secao, p.comprimento, p.produto)
+        k = (o.id, p.peca, p.item, p.secao, p.comprimento, p.produto)
         g = grupos.get(k)
         if not g:
+            c = cad.de_peca(idx, p)
             g = grupos[k] = {"obra": o.nome, "prio": o.prioridade or 99, "peca": p.peca, "secao": p.secao, "comp": p.comprimento,
-                             "produto": p.produto, "codigos": [], "armadas": 0}
+                             "produto": p.produto, "codigos": [], "armadas": 0,
+                             "prot": c.protensao if c else None, "aco": round(c.aco_passivo) if c and c.aco_passivo else None}
         g["codigos"].append(p.codigo)
         if p.hora_armacao or p.codigo in armadas_app:
             g["armadas"] += 1
@@ -111,6 +115,7 @@ def alocar(db: Session, rev: RevisaoProg, f: Forma, d: date, codigos: list[str],
     vig = [x for x in db.scalars(select(Forma)) if x.vigente(d)]
     por, _ = itens_por_forma(db, rev, d, vig)
     probs = validar(f, d, pecas, uso(f, por.get(f.id, [])))
+    probs += conflito_protensao(db, f, pecas, por.get(f.id, []))
     if probs and not forcar:
         return {"ok": False, "problemas": probs, "pode_forcar": True}
     for p in pecas:
@@ -132,3 +137,25 @@ def copiar_revisao(db: Session, rev: RevisaoProg, nome: str) -> RevisaoProg:
     db.add(nova)
     db.commit()
     return nova
+
+
+def conflito_protensao(db: Session, f: Forma, novas: list[Peca], ja: list[ItemProg]) -> list[str]:
+    """Na mesma pista (ou fôrma com peça protendida) no mesmo dia, as cordoalhas correm de ponta a ponta: as peças
+    precisam ter o mesmo arranjo (nº e Ø). Vale para peças com cadastro de prancha."""
+    from . import cadastro as cad
+    idx = cad.indice(db)
+    cods = [i.codigo for i in ja if i.codigo]
+    existentes = list(db.scalars(select(Peca).where(Peca.codigo.in_(cods)))) if cods else []
+    def arranjo(p):
+        c = cad.de_peca(idx, p)
+        return (c.protensao if c else None)
+    lado_a = {(p.peca, arranjo(p)) for p in existentes if arranjo(p) is not None}
+    lado_b = {(p.peca, arranjo(p)) for p in novas if arranjo(p) is not None}
+    if not lado_a or not lado_b:
+        return []
+    protendida = f.tipo == "pista" or any(a for _, a in lado_a | lado_b)
+    arr_a, arr_b = {a for _, a in lado_a}, {a for _, a in lado_b}
+    if protendida and len(arr_a | arr_b) > 1:
+        fmt = lambda s: ", ".join(f"{n} ({a or 'sem protensão'})" for n, a in sorted(s))
+        return [f"Protensão diferente na {f.nome}: {fmt(lado_b)} x já programadas {fmt(lado_a)}."]
+    return []

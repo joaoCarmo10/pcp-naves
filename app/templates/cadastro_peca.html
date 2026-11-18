@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block titulo %}{{ c.peca }} · cadastro | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin:0"><a href="/obras/{{ c.obra_id }}">{{ c.obra.nome }}</a> › <a href="/obras/{{ c.obra_id }}/pecas">Cadastro de peças</a> ›</p>
+<div class="filtros"><div style="flex:1"><h1>{{ c.peca }}</h1>
+  <p class="sub" style="margin:0">Prancha {{ c.prancha }} {{ c.revisao }} · {{ c.nome_arquivo }} · lida por {{ 'OCR (texto desenhado)' if c.fonte == 'ocr' else 'texto do PDF' }} · {{ c.atualizado_em.strftime('%d/%m %H:%M') }}</p></div>
+  <a class="botao-sec livre" href="/cadastro/{{ c.id }}/pdf" target="_blank">Abrir prancha</a></div>
+{% if flash %}<div class="aviso ok">{{ flash }}</div>{% endif %}
+{% if c.alertas %}<div class="aviso erro"><b>Conferir:</b><br>{% for a in c.alertas %}{{ a }}<br>{% endfor %}</div>{% endif %}
+
+<div class="dois">
+<section class="cartao">
+  <h2 style="margin-top:0">Dados do tipo</h2>
+  <form method="post" action="/cadastro/{{ c.id }}">
+    <div class="grade-campos">
+      <label>Quantidade (prancha)<input name="quantidade" value="{{ '%g'|format(c.quantidade) if c.quantidade else '' }}"></label>
+      <label>Volume unitário (m³)<input name="volume_un" value="{{ '%g'|format(c.volume_un) if c.volume_un else '' }}"></label>
+      <label>fck (MPa)<input name="fck" value="{{ '%g'|format(c.fck) if c.fck else '' }}"></label>
+      <label>Aço passivo (kg/pç)<input name="aco_passivo" value="{{ '%g'|format(c.aco_passivo) if c.aco_passivo else '' }}"></label>
+      <label>Cordoalhas de protensão (nº)<input name="cordoalhas" value="{{ c.cordoalhas or '' }}"></label>
+      <label>Ø cordoalha (mm)<input name="cord_diam" value="{{ c.cord_diam }}"></label>
+      <label>Força por cordoalha (kgf)<input name="forca" value="{{ '%g'|format(c.forca) if c.forca else '' }}"></label>
+      <label>Aço ativo (kg/pç)<input name="aco_ativo" value="{{ '%g'|format(c.aco_ativo) if c.aco_ativo else '' }}"></label>
+      <label class="largo">Içamento<input name="icamento" value="{{ c.icamento }}"></label>
+      <label class="largo">Neoprene<input name="neoprene" value="{{ c.neoprene }}"></label>
+    </div>
+    <div class="acoes"><label class="meta" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="conferido" value="1" style="width:auto" {{ 'checked' if c.situacao == 'conferido' }}> Conferido com a prancha</label>
+      <button type="submit">Salvar</button></div>
+  </form>
+  <p class="meta">Peso {{ c.peso|num(0) if c.peso else '-' }} kg · fcj {{ c.fcj|int if c.fcj else '-' }} · cobrimento {{ c.cobrimento|num(1) if c.cobrimento else '-' }} cm{% if c.contraflecha %} · contra-flecha {{ c.contraflecha|num(2) }} cm{% endif %}{% if c.area %} · área {{ c.area|num(2) }} m²{% endif %}</p>
+</section>
+<section class="cartao">
+  <h2 style="margin-top:0">Unidades no Plannix ({{ unidades|length }}){% if c.etapas %} <span class="meta">· etapa {{ c.etapas }}</span>{% endif %}</h2>
+  <div class="rolagem" style="max-height:330px"><table class="t compacta"><tbody>
+    {% for p in unidades %}<tr><td class="meta">{{ p.codigo }}</td><td class="meta">et. {{ p.item or "-" }}</td><td>{{ p.secao }}</td><td class="n">{{ p.comprimento|num(2) if p.comprimento else '' }} m</td>
+      <td>{% if p.fabricada %}<span class="st" style="background:{{ CORES['FAB'] }}">{{ p.data_fabricacao.strftime('%d/%m/%y') if p.data_fabricacao else 'fabricada' }}</span>{% else %}<span class="meta">a fazer</span>{% endif %}</td></tr>
+    {% else %}<tr><td class="meta">Nenhuma unidade com este nome nesta obra no Plannix.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+</div>
+
+<section class="cartao" style="margin-top:12px">
+  <h2 style="margin-top:0">Armadura ({{ c.itens|length }} posições)</h2>
+  <table class="t compacta">
+    <thead><tr><th>Posição</th><th>Tipo</th><th class="n">Ø (mm)</th><th class="n">Quant.</th><th>Material</th><th class="n">Comp. (cm)</th><th class="n">Peso un. (kg)</th><th class="n">Peso total (kg)</th><th class="n">Força (kgf)</th><th></th></tr></thead>
+    <tbody>{% for i in c.itens %}<tr>
+      <td><b>{{ i.pos }}</b></td><td>{{ {'ativa': 'protensão', 'icamento': 'içamento', 'passiva': 'passiva'}[i.tipo] }}</td>
+      <td class="n">{{ '%g'|format(i.diam) if i.diam else '?' }}</td><td class="n">{{ '%g'|format(i.quant) if i.quant else '?' }}</td><td>{{ i.material }}</td>
+      <td class="n">{{ '%g'|format(i.comp) if i.comp else '' }}</td><td class="n">{{ i.peso_un|num(2) if i.peso_un else '' }}</td><td class="n">{{ i.peso_tot|num(2) if i.peso_tot else '' }}</td>
+      <td class="n">{{ '%g'|format(i.forca) if i.forca else '' }}</td>
+      <td class="meta">{% if i.deduzido %}{{ i.deduzido }} pela conta{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% if c.bitolas %}<p class="meta">Resumo passivo: {% for b, kg in c.bitolas.items() %}Ø{{ b }} = {{ kg|num(2) }} kg{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+</section>
+{% if c.historico %}<section class="cartao" style="margin-top:12px"><h2 style="margin-top:0">Revisões anteriores</h2>
+  {% for h in c.historico|reverse %}<div class="meta">{{ h.revisao }} · {{ h.arquivo }} · protensão {{ h.protensao or '-' }} · aço {{ h.aco_passivo or '-' }} kg · trocada em {{ h.em }}</div>{% endfor %}</section>{% endif %}
+<form method="post" action="/cadastro/{{ c.id }}/excluir" onsubmit="return confirm('Excluir o cadastro de {{ c.peca }}?')" style="margin-top:14px"><button class="perigo">Excluir cadastro</button></form>
+{% endblock %}

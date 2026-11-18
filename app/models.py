@@ -28,6 +28,8 @@ class Peca(Base):
     secao: Mapped[str] = mapped_column(String(40), default="")
     comprimento: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    item: Mapped[str] = mapped_column(String(20), default="")                # "Item" do Plannix: etapa/bloco da obra
+    vol_projeto: Mapped[float | None] = mapped_column(Float, nullable=True)  # volume teórico de projeto (m³)
     fabricada: Mapped[bool] = mapped_column(Boolean, default=False)
     data_fabricacao: Mapped[date | None] = mapped_column(Date, nullable=True)
     origem_fabricacao: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'plannix' (com data) ou 'saiu_lista'
@@ -202,3 +204,45 @@ class Auditoria(Base):
     quando: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     login: Mapped[str] = mapped_column(String(60), default="")
     acao: Mapped[str] = mapped_column(String(300), default="")
+
+
+class CadastroPeca(Base):
+    """Características do tipo de peça (obra + nome), lidas da prancha de detalhamento. Todas as unidades do
+    Plannix com esse nome na obra herdam este cadastro."""
+    __tablename__ = "cadastro_pecas"
+    __table_args__ = (UniqueConstraint("obra_id", "peca", "etapas"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    obra_id: Mapped[int] = mapped_column(ForeignKey("obras.id"), index=True)
+    peca: Mapped[str] = mapped_column(String(40))
+    etapas: Mapped[str] = mapped_column(String(120), default="")     # itens (etapas/blocos) do Plannix a que a prancha se aplica
+    prancha: Mapped[str] = mapped_column(String(20), default="")
+    revisao: Mapped[str] = mapped_column(String(10), default="")
+    arquivo: Mapped[str] = mapped_column(String(300), default="")      # caminho relativo do PDF
+    nome_arquivo: Mapped[str] = mapped_column(String(200), default="")
+    fonte: Mapped[str] = mapped_column(String(10), default="texto")    # texto | ocr
+    quantidade: Mapped[float | None] = mapped_column(Float, nullable=True)
+    volume_un: Mapped[float | None] = mapped_column(Float, nullable=True)
+    peso: Mapped[float | None] = mapped_column(Float, nullable=True)
+    area: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fck: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fcj: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cobrimento: Mapped[float | None] = mapped_column(Float, nullable=True)
+    aco_passivo: Mapped[float | None] = mapped_column(Float, nullable=True)   # kg por peça
+    aco_ativo: Mapped[float | None] = mapped_column(Float, nullable=True)     # kg por peça
+    cordoalhas: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cord_diam: Mapped[str] = mapped_column(String(20), default="")
+    forca: Mapped[float | None] = mapped_column(Float, nullable=True)         # kgf por cordoalha
+    contraflecha: Mapped[float | None] = mapped_column(Float, nullable=True)
+    icamento: Mapped[str] = mapped_column(String(120), default="")
+    neoprene: Mapped[str] = mapped_column(String(120), default="")
+    bitolas: Mapped[dict] = mapped_column(JSON, default=dict)                 # {"12.5": kg}
+    itens: Mapped[list] = mapped_column(JSON, default=list)
+    alertas: Mapped[list] = mapped_column(JSON, default=list)
+    situacao: Mapped[str] = mapped_column(String(12), default="ok")           # ok | revisar | conferido
+    historico: Mapped[list] = mapped_column(JSON, default=list)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    obra: Mapped["Obra"] = relationship()
+
+    @property
+    def protensao(self) -> str:
+        return f"{self.cordoalhas}×Ø{self.cord_diam}" if self.cordoalhas else ""

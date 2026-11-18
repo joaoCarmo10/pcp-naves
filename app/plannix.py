@@ -116,6 +116,9 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         p.secao = str(r.get("Seção", "")).strip()
         p.comprimento = _num(r.get("Comprimento (m)")) or p.comprimento
         p.volume = _num(r.get("Volume (m³) Total de Peças (Lanç. Final)")) or p.volume
+        if str(r.get("Item", "") or "").strip() not in ("", "nan"):
+            p.item = str(r.get("Item")).strip()[:20]
+        p.vol_projeto = _num(r.get("Volume Teórico de Projeto")) or p.vol_projeto
         p.hora_armacao = _data_hora(r.get("Hora da Armação", "")) or p.hora_armacao
         df_ = _data(r.get("Data Fabricação", ""))
         if df_:

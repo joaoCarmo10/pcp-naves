@@ -21,9 +21,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import acesso, armacao as arm, formas as fm, planejar as pl, plannix, plantas, programacao as pg
+from . import acesso, armacao as arm, cadastro as cad, formas as fm, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Auditoria, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Auditoria, CadastroPeca, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -767,12 +767,27 @@ def armacao_tela(request: Request, dia: str | None = None, rev: int | None = Non
         x[1] += i.qtd if sit[i.id]["armado"] else 0
     dias = sorted({date.today() + timedelta(days=k) for k in range(-2, 8)} | {d})
     dias = [x for x in dias if x.weekday() != 6]
+    # aço por item (cadastro de peças): kg passivo e protensão
+    idx = cad.indice(db)
+    cods = [i.codigo for i in itens if i.codigo]
+    pecas_cod = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_(cods)))} if cods else {}
+    aco, bit_dia, sem_cad = {}, {}, 0
+    for i in itens:
+        pc = pecas_cod.get(i.codigo)
+        c = cad.de_peca(idx, pc) if pc else None
+        if c:
+            aco[i.id] = {"kg": (c.aco_passivo or 0) * i.qtd, "prot": c.protensao, "cid": c.id}
+            for b, kg in (c.bitolas or {}).items():
+                bit_dia[b] = bit_dia.get(b, 0) + kg * i.qtd
+        else:
+            sem_cad += i.qtd
     esquema = request.headers.get("x-forwarded-proto", request.url.scheme)   # Railway entrega HTTPS pelo proxy
     link = f"{esquema}://{request.url.netloc}/armador/{arm.token_armador()}"
     return tpl.TemplateResponse(request, "armacao.html", {
         "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "grupos": _grupos_armacao(itens, sit, incluidos), "pecas": pecas,
         "armadas": armadas, "por_nave": dict(sorted(por_nave.items())), "dv": dv, "incluidos": incluidos, "retirados": retirados,
-        "link": link, "hoje": date.today(), "base": ultima_base(db)})
+        "link": link, "hoje": date.today(), "aco": aco, "bit_dia": dict(sorted(bit_dia.items(), key=lambda kv: float(kv[0]))),
+        "sem_cad": sem_cad, "base": ultima_base(db)})
 
 
 @app.post("/armacao/marcar")
@@ -935,3 +950,114 @@ def perfil_excluir(request: Request, pid: int, db: Session = Depends(get_db)):
         db.commit()
         _flash(request, f"Perfil {p.nome} excluído.")
     return RedirectResponse("/usuarios#perfis", status_code=303)
+
+
+# ---------------------------------------------------------------- cadastro de peças (pranchas de detalhamento)
+@app.get("/obras/{obra_id}/pecas", response_class=HTMLResponse)
+def cadastro_tela(request: Request, obra_id: int, db: Session = Depends(get_db)):
+    o = db.get(Obra, obra_id) or _404()
+    pecas = list(db.scalars(select(Peca).where(Peca.obra_id == o.id)))
+    idx = cad.indice(db, [o.id])
+    cads = [c for cs in idx.values() for c in cs]
+    # tipos do Plannix: nome + etapa (o mesmo nome pode mudar de medida entre etapas/blocos)
+    tipos, por_cad = {}, {}
+    falta_bit, falta_ativo, falta_pecas = {}, 0.0, 0
+    for p in pecas:
+        t = tipos.setdefault((cad._canon(p.peca), p.item), {"nome": p.peca, "item": p.item, "produto": p.produto, "secao": p.secao,
+                                                           "comp": p.comprimento, "n": 0, "fab": 0, "cad": None})
+        t["n"] += 1
+        t["fab"] += 1 if p.fabricada else 0
+        c = cad.de_peca(idx, p)
+        if c:
+            t["cad"] = c
+            x = por_cad.setdefault(c.id, {"n": 0, "fab": 0, "produto": p.produto})
+            x["n"] += 1
+            x["fab"] += 1 if p.fabricada else 0
+            if not p.fabricada:
+                falta_pecas += 1
+                for b, kg in (c.bitolas or {}).items():
+                    falta_bit[b] = falta_bit.get(b, 0) + kg
+                falta_ativo += c.aco_ativo or 0
+    linhas = [{"c": c, "t": por_cad.get(c.id)} for c in sorted(cads, key=lambda c: (c.situacao != "revisar", chave_natural(c.peca)))]
+    sem = sorted((t for t in tipos.values() if not t["cad"]), key=lambda t: (t["produto"], chave_natural(t["nome"]), chave_natural(t["item"] or "")))
+    st = cad.ANDAMENTO.get(o.id)
+    return tpl.TemplateResponse(request, "cadastro.html", {
+        "o": o, "linhas": linhas, "sem": sem, "n_tipos": len(tipos), "st": st, "flash": request.session.pop("flash", None),
+        "falta_bit": dict(sorted(falta_bit.items(), key=lambda kv: float(kv[0]))), "falta_ativo": falta_ativo, "falta_pecas": falta_pecas,
+        "base": ultima_base(db)})
+
+
+@app.post("/obras/{obra_id}/pranchas")
+async def cadastro_enviar(request: Request, obra_id: int, arquivo: list[UploadFile] = File(...), db: Session = Depends(get_db)):
+    o = db.get(Obra, obra_id) or _404()
+    dados = [((a.filename or "x.pdf"), await a.read()) for a in arquivo if a.filename]
+    try:
+        lote = cad.guardar(o, dados)
+    except zipfile.BadZipFile:
+        lote = []
+    if not lote:
+        _flash(request, "Erro: nenhum PDF encontrado nos arquivos enviados.")
+        return RedirectResponse(f"/obras/{o.id}/pecas", status_code=303)
+    st = cad.ANDAMENTO.get(o.id)
+    if not st or st["feitos"] >= st["total"]:
+        cad.ANDAMENTO[o.id] = st = {"total": 0, "feitos": 0, "msgs": []}
+    st["total"] += len(lote)
+    _ocr_fila.submit(cad.processar, o.id, lote)
+    _flash(request, f"{len(lote)} prancha(s) recebida(s). A leitura roda em segundo plano: as com texto saem na hora, "
+                    f"as desenhadas levam uns 20 segundos cada. Atualize a página para acompanhar.")
+    return RedirectResponse(f"/obras/{o.id}/pecas", status_code=303)
+
+
+@app.get("/cadastro/{cid}", response_class=HTMLResponse)
+def cadastro_detalhe(request: Request, cid: int, db: Session = Depends(get_db)):
+    c = db.get(CadastroPeca, cid) or _404()
+    idx = cad.indice(db, [c.obra_id])
+    unidades = sorted((p for p in db.scalars(select(Peca).where(Peca.obra_id == c.obra_id)) if cad.de_peca(idx, p) is c),
+                      key=lambda p: (p.item, p.codigo))
+    return tpl.TemplateResponse(request, "cadastro_peca.html", {"c": c, "unidades": unidades, "flash": request.session.pop("flash", None),
+                                                                 "base": ultima_base(db)})
+
+
+@app.post("/cadastro/{cid}")
+async def cadastro_salvar(request: Request, cid: int, db: Session = Depends(get_db)):
+    c = db.get(CadastroPeca, cid) or _404()
+    fd = await request.form()
+    num = lambda k: _num(str(fd.get(k, "") or ""))
+    c.quantidade, c.volume_un, c.fck = num("quantidade"), num("volume_un"), num("fck")
+    c.aco_passivo, c.aco_ativo = num("aco_passivo"), num("aco_ativo")
+    n = num("cordoalhas")
+    c.cordoalhas = int(n) if n else None
+    c.cord_diam = str(fd.get("cord_diam", "") or "").strip()[:20]
+    c.forca = num("forca")
+    c.icamento = str(fd.get("icamento", "") or "").strip()[:120]
+    c.neoprene = str(fd.get("neoprene", "") or "").strip()[:120]
+    if fd.get("conferido"):
+        c.situacao = "conferido"
+    elif c.situacao == "conferido":
+        c.situacao = "revisar" if c.alertas else "ok"
+    c.atualizado_em = datetime.now()
+    db.commit()
+    _flash(request, f"{c.peca} salva.")
+    return RedirectResponse(f"/cadastro/{c.id}", status_code=303)
+
+
+@app.get("/cadastro/{cid}/pdf")
+def cadastro_pdf(cid: int, db: Session = Depends(get_db)):
+    c = db.get(CadastroPeca, cid) or _404()
+    caminho = DATA_DIR / c.arquivo
+    if not c.arquivo or not caminho.exists():
+        raise HTTPException(404, "Prancha não encontrada.")
+    return Response(caminho.read_bytes(), media_type="application/pdf",
+                    headers={"Content-Disposition": f"inline; filename=prancha_{c.id}.pdf"})
+
+
+@app.post("/cadastro/{cid}/excluir")
+def cadastro_excluir(request: Request, cid: int, db: Session = Depends(get_db)):
+    c = db.get(CadastroPeca, cid) or _404()
+    oid = c.obra_id
+    if c.arquivo:
+        (DATA_DIR / c.arquivo).unlink(missing_ok=True)
+    db.delete(c)
+    db.commit()
+    _flash(request, f"Cadastro de {c.peca} excluído.")
+    return RedirectResponse(f"/obras/{oid}/pecas", status_code=303)

@@ -55,7 +55,7 @@ def _candidatos(t: str) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def _ocr(imagens, pasta: Path, n: int) -> list[str]:
+def _ocr(imagens, pasta: Path, n: int, lista: str | None = LISTA) -> list[str]:
     from PIL import Image
     larg = max(i.width for i in imagens) + 40
     alt = sum(i.height + 30 for i in imagens) + 30
@@ -67,8 +67,8 @@ def _ocr(imagens, pasta: Path, n: int) -> list[str]:
         y += im.height + 30
     arq = pasta / f"pilha_{n}.png"
     pilha.save(arq)
-    tsv = subprocess.run(["tesseract", str(arq), "-", "--psm", "6", "-c", f"tessedit_char_whitelist={LISTA}", "tsv"],
-                         capture_output=True, text=True, timeout=180).stdout
+    cmd = ["tesseract", str(arq), "-", "--psm", "6"] + (["-c", f"tessedit_char_whitelist={lista}"] if lista else []) + ["tsv"]
+    tsv = subprocess.run(cmd, capture_output=True, text=True, timeout=180).stdout
     res = [""] * len(imagens)
     for linha in tsv.splitlines()[1:]:
         c = linha.split("\t")
@@ -77,9 +77,87 @@ def _ocr(imagens, pasta: Path, n: int) -> list[str]:
         yc = int(c[7]) + int(c[9]) / 2
         for k, (a, b) in enumerate(pos):
             if a - 15 <= yc <= b + 15:
-                res[k] += c[11]
+                res[k] += (" " if res[k] and not lista else "") + c[11]
                 break
     return res
+
+
+def palavras_vetoriais(pg, regiao=None) -> dict[int, list]:
+    """Caminhos pretos do tamanho de texto (cada um é uma palavra desenhada), agrupados por desenho idêntico."""
+    grupos: dict[int, list] = collections.defaultdict(list)
+    for x in pg.get_drawings():
+        r = x["rect"]
+        if "f" in x["type"] and _preto(x.get("fill")) and 1.0 <= min(r.width, r.height) <= 14 and max(r.width, r.height) <= 200:
+            if regiao is None or r.intersects(regiao):
+                grupos[_assinatura(x)].append(x)
+    return grupos
+
+
+def _pagina_limpa(pg, reps):
+    limpo = pymupdf.open()
+    q = limpo.new_page(width=pg.rect.width, height=pg.rect.height)
+    sh = q.new_shape()
+    for x in reps:
+        for it in x["items"]:
+            if it[0] == "l":
+                sh.draw_line(it[1], it[2])
+            elif it[0] == "c":
+                sh.draw_bezier(it[1], it[2], it[3], it[4])
+            elif it[0] == "re":
+                sh.draw_rect(it[1])
+            elif it[0] == "qu":
+                sh.draw_quad(it[1])
+        sh.finish(color=None, fill=(0, 0, 0), even_odd=True, closePath=True)
+    sh.commit()
+    return limpo, q
+
+
+def ler_tudo(pg, regiao=None) -> list[tuple[str, "pymupdf.Rect"]]:
+    """OCR de todas as palavras desenhadas (texto livre, com minúsculas e números): [(texto, retângulo)]."""
+    if not disponivel():
+        return []
+    from PIL import Image
+    grupos = palavras_vetoriais(pg, regiao)
+    chaves = list(grupos)
+    reps = [grupos[k][0] for k in chaves]
+    if not reps:
+        return []
+    limpo, q = _pagina_limpa(pg, reps)
+
+    def recorte(x, alt=40):
+        r = x["rect"] + (-1.2, -1.2, 1.2, 1.2)
+        vertical = r.height > r.width * 1.3 and r.height > 9
+        z = min(alt / (r.width if vertical else r.height), 40)
+        pm = q.get_pixmap(matrix=pymupdf.Matrix(z, z), clip=r, colorspace=pymupdf.csGRAY)
+        im = Image.frombytes("L", (pm.width, pm.height), pm.samples)
+        return im.rotate(-90, expand=True) if vertical else im
+
+    textos = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i in range(0, len(reps), 120):
+            textos += _ocr([recorte(x) for x in reps[i:i + 120]], Path(tmp), i, lista=None)
+        # palavras de um caractere só (quantidades nas tabelas): o OCR em bloco erra muito; relê como dígito isolado
+        unicos = [i for i, x in enumerate(reps) if x["rect"].width < x["rect"].height * 0.85 and x["rect"].height >= 2]
+        for i in unicos:
+            d = _digito(recorte(reps[i], 60), Path(tmp), i)
+            if d:
+                textos[i] = d
+    out = []
+    for k, t in zip(chaves, textos):
+        if t.strip():
+            for x in grupos[k]:
+                out.append((t.strip(), x["rect"]))
+    return out
+
+
+def _digito(im, pasta: Path, n: int) -> str:
+    from PIL import Image, ImageOps
+    im = ImageOps.expand(im, border=30, fill=255)
+    arq = pasta / f"dig_{n}.png"
+    im.save(arq)
+    t = subprocess.run(["tesseract", str(arq), "-", "--psm", "10", "-c", "tessedit_char_whitelist=0123456789"],
+                       capture_output=True, text=True, timeout=30).stdout.strip()
+    return t if re.fullmatch(r"\d", t) else ""
 
 
 def ler(caminho: Path, nomes: set[str]) -> list[dict]:

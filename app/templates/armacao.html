@@ -22,6 +22,8 @@
   <div class="kpi destaque"><b>{{ (armadas / pecas)|pct if pecas else '-' }}</b><span>prontidão da armação</span></div>
   {% for n, x in por_nave.items() %}<div class="kpi"><b>{{ (x[1] / x[0])|pct if x[0] else '-' }}</b><span>{{ n }}: {{ x[1] }} de {{ x[0] }}</span></div>{% endfor %}
 </div>
+{% if bit_dia %}<p class="meta" style="margin:-2px 0 10px">Aço do dia (peças com cadastro): {% for b, kg in bit_dia.items() %}<b>Ø{{ b }}</b> {{ kg|num(0) }} kg{{ ' · ' if not loop.last }}{% endfor %}
+  · total <b>{{ bit_dia.values()|sum|num(0) }} kg</b>{% if sem_cad %} · {{ sem_cad }} peça(s) sem cadastro{% endif %}</p>{% endif %}
 <section class="cartao nao-imprime divulga">
   <div>
     {% if dv %}<b>Divulgada em {{ dv.criada_em.strftime('%d/%m às %H:%M') }}</b> com {{ dv.itens|length }} linhas.
@@ -41,15 +43,17 @@
 {% for (nave, forma), ls in grupos.items() %}
 <section class="arm-forma">
   <div class="arm-cab"><b>{{ forma or nave }}</b>
-    <span class="meta">{{ ls|selectattr('s.armado')|map(attribute='i.qtd')|sum }} de {{ ls|map(attribute='i.qtd')|sum }} armadas</span>
+    <span class="meta">{{ ls|selectattr('s.armado')|map(attribute='i.qtd')|sum }} de {{ ls|map(attribute='i.qtd')|sum }} armadas{% set kgf = namespace(v=0) %}{% for x in ls %}{% if aco.get(x.i.id) %}{% set kgf.v = kgf.v + aco[x.i.id].kg %}{% endif %}{% endfor %}{% if kgf.v %} · {{ kgf.v|num(0) }} kg de aço{% endif %}</span>
     <button type="button" class="botao-sec nao-imprime" onclick="marcarForma(this, true)">Marcar fôrma toda</button></div>
   <table class="t compacta">
-    <thead><tr><th style="width:70px">Armada</th><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th>Registro</th></tr></thead>
+    <thead><tr><th style="width:70px">Armada</th><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th class="n">Aço (kg)</th><th>Protensão</th><th>Registro</th></tr></thead>
     <tbody>{% for x in ls %}{% set i = x.i %}{% set s = x.s %}
       <tr class="{{ 'armada' if s.armado }}" data-cod="{{ i.codigo or '' }}" data-id="{{ i.id }}">
         <td class="c"><input type="checkbox" class="chk-arm" {{ 'checked' if s.armado }} {{ 'disabled' if s.origem in ('Plannix', 'Fabricada') }} aria-label="Armada {{ i.peca }}"></td>
         <td>{{ i.obra }}</td><td><b>{{ i.peca }}</b>{% if x.novo %} <span class="novo">após divulgação</span>{% endif %}</td><td class="meta">{{ i.codigo or '' }}</td>
         <td>{{ i.produto }}</td><td>{{ i.secao }}</td><td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ i.qtd }}</td>
+        {% set ac = aco.get(i.id) %}<td class="n">{% if ac %}<a href="/cadastro/{{ ac.cid }}" class="livre">{{ ac.kg|num(0) }}</a>{% else %}<span class="meta">-</span>{% endif %}</td>
+        <td>{% if ac and ac.prot %}<span class="cp-cad"><span class="prot">{{ ac.prot }}</span></span>{% endif %}</td>
         <td class="meta reg">{% if s.armado %}{{ s.origem }}{% if s.quando %} {{ s.quando.strftime('%d/%m %H:%M') if s.quando.hour is defined else s.quando.strftime('%d/%m') }}{% endif %}{% endif %}</td>
       </tr>{% endfor %}</tbody>
   </table>

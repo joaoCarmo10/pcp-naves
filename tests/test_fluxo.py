@@ -348,3 +348,56 @@ def test_usuarios_e_perfis(cliente):
     r = cliente.post(f"/usuarios/{adm.id}", data={"perfil_id": ger.id, "ativo": "1", "nome": "x"}, follow_redirects=True)
     assert "pelo menos um administrador" in r.text
     assert "POST /usuarios/novo" in cliente.get("/usuarios").text           # auditoria
+
+
+def _prancha_pdf(nome="PP1", cord=False):
+    import pymupdf
+    doc = pymupdf.open()
+    pg = doc.new_page(width=1200, height=800)
+    t = lambda x, y, s: pg.insert_text((x, y), s, fontsize=7)
+    t(700, 40, "LISTA DE MATERIAL POR PEÇA")
+    for x, s in [(700, "Peça"), (740, "Quantidade"), (790, "(Un)"), (820, "Volume"), (850, "unitário"), (900, "Volume"), (930, "total"), (980, "Peso"), (1000, "da"), (1010, "peça")]:
+        t(x, 60, s)
+    for x, s in [(700, nome), (760, "4"), (850, "0.15"), (930, "0.61"), (1005, "362.2")]:
+        t(x, 72, s)
+    t(1080, 72, "Fck-40")
+    for x, s in [(700, "Posição"), (745, "Diâmetro"), (800, "Quant."), (850, "Material"), (920, "Compr."), (980, "Unitário"), (1030, "Total")]:
+        t(x, 100, s)
+    linhas = [("N183", "12.5", "6", "CA-50A", "245", "2.40", "14.42"), ("ES34", "6.3", "18", "CA-50A", "82", "0.20", "3.68")]
+    for k, (p, d, q, m, c, u, tt) in enumerate(linhas):
+        y = 115 + k * 14
+        for x, s in [(700, p), (745, "Ø"), (752, d), (768, "mm"), (805, q), (850, m), (922, c), (982, u), (1032, tt)]:
+            t(x, y, s)
+    t(700, 160, "Cobrimento:"); t(745, 160, "3.00"); t(800, 160, "Peso"); t(820, 160, "unitário"); t(855, 160, "(kg)"); t(880, 160, "18.10")
+    return doc.tobytes()
+
+
+def test_cadastro_pecas(cliente, tmp_path):
+    import time
+    from sqlalchemy import select
+    from app import pranchas
+    from app.db import SessionLocal
+    from app.models import CadastroPeca, Obra, Peca
+    f = tmp_path / "24-014-X-ECC-052-PIL-R00.pdf"
+    f.write_bytes(_prancha_pdf())
+    L = pranchas.ler(f, {"PP1"})
+    assert L.peca == "PP1" and L.quantidade == 4 and L.volume_un == 0.15 and L.fck == 40 and L.revisao == "R00"
+    assert [(i["pos"], i["diam"], i["quant"], i["peso_tot"]) for i in L.itens] == [("N183", 12.5, 6, 14.42), ("ES34", 6.3, 18, 3.68)]
+    assert L.alertas == []
+    # pela tela: prancha enviada dentro da obra vira cadastro ligado às unidades do Plannix
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    db.add(Peca(obra_id=o.id, codigo="7001", peca="PP1", produto="PILAR", secao="30X20", volume=0.15, item="4"))
+    db.commit()
+    cliente.post(f"/obras/{o.id}/pranchas", files=[("arquivo", ("24-014-X-ECC-052-PIL-R00.pdf", _prancha_pdf(), "application/pdf"))])
+    for _ in range(50):
+        c = db.scalar(select(CadastroPeca))
+        if c:
+            break
+        time.sleep(0.1)
+        db.expire_all()
+    assert c.peca == "PP1" and c.etapas == "4" and c.aco_passivo == 18.1 and c.bitolas == {"6.3": 3.68, "12.5": 14.42}
+    h = cliente.get(f"/obras/{o.id}/pecas").text
+    assert "PP1" in h and "Sem prancha" in h
+    assert cliente.get(f"/cadastro/{c.id}").status_code == 200 and cliente.get(f"/cadastro/{c.id}/pdf").status_code == 200
