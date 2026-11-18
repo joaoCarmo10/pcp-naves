@@ -23,6 +23,11 @@ def _num(v):
         return None
 
 
+def _texto(v) -> str:
+    t = str(v if v is not None else "").strip()
+    return "" if t in ("", "-", "nan") else t[:60]
+
+
 def _data(v) -> date | None:
     m = re.match(r"(\d{2})/(\d{2})/(\d{4})", str(v).strip())
     return date(int(m[3]), int(m[2]), int(m[1])) if m else None
@@ -120,6 +125,11 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
             p.item = str(r.get("Item")).strip()[:20]
         p.vol_projeto = _num(r.get("Volume Teórico de Projeto")) or p.vol_projeto
         p.hora_armacao = _data_hora(r.get("Hora da Armação", "")) or p.hora_armacao
+        p.hora_corte_dobra = _data_hora(r.get("Hora do Corte e Dobra", "")) or p.hora_corte_dobra
+        p.traco = _texto(r.get("Traço Real")) or p.traco or ""
+        p.modelo_protensao = _texto(r.get("Modelo de Protensão")) or p.modelo_protensao or ""
+        taxa = next((r[c] for c in r if str(c).startswith("Taxa Aço Protendido")), "")
+        p.taxa_aco_prot = _num(taxa) if _num(taxa) else p.taxa_aco_prot
         df_ = _data(r.get("Data Fabricação", ""))
         if df_:
             p.fabricada, p.data_fabricacao, p.origem_fabricacao = True, df_, "plannix"

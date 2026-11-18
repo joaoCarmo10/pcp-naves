@@ -42,37 +42,84 @@
   <div class="kpi"><b>{{ tot.com }}</b><span>com prancha lida{% if tot.rev %} ({{ tot.rev }} a revisar){% endif %}</span></div>
   <div class="kpi"><b>{{ tot.pend }}</b><span>unidades pendentes</span></div>
   <div class="kpi"><b>{{ tot.vol_pend|num(1) }}</b><span>m³ pendentes</span></div>
-  {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço passivo pendente (só peças com prancha)</span></div>{% endif %}
+  {% if tot.aco_pend %}<div class="kpi"><b>{{ (tot.aco_pend / 1000)|num(1) }} t</b><span>aço passivo pendente</span></div>
+  <div class="kpi"><b>{{ tot.barras_pend|num(0) }}</b><span>barras pendentes</span></div>{% endif %}
   {% if tot.ativo_pend %}<div class="kpi"><b>{{ (tot.ativo_pend / 1000)|num(2) }} t</b><span>cordoalha pendente</span></div>{% endif %}
 </div>
+{% if pend_bit %}<p class="meta" style="margin:6px 0 0">Pendente por bitola (só peças com prancha):
+  {% for b, v in pend_bit.items() %}<b>Ø{{ b }}</b> {{ v[0]|num(0) }} kg, {{ v[1]|num(0) }} barras{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
 
-{% if bitolas %}<p class="meta" style="margin:6px 0 0">Aço passivo pendente por bitola (peças com prancha):
-  {% for b, kg in bitolas.items() %}<b>Ø{{ b }}</b> {{ kg|num(0) }} kg{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+<div class="colunas-pecas" id="grupos">
+  <span class="meta">Colunas:</span>
+  {% for g, n in [('med','Medidas'), ('conc','Concreto'), ('aco','Aço passivo'), ('bit','Por bitola'), ('prot','Protensão'), ('out','Içamento e apoio'), ('pr','Prancha')] %}
+  <label><input type="checkbox" data-g="{{ g }}" checked> {{ n }}</label>{% endfor %}
+  <a class="botao-sec" href="/pecas/planilha{{ '?' ~ qs if qs }}" style="margin-left:auto">Baixar Excel</a>
+</div>
 
 {% if linhas %}
-<div class="rolagem-x"><table class="t compacta pecas-mod" style="margin-top:12px">
-  <thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Produto</th><th>Seção</th><th class="n">Compr. (m)</th><th class="n">Vol. (m³)</th>
-    <th class="n" title="Da prancha; com ~ é estimado por 2,5 t/m³">Peso (t)</th><th>fck</th><th class="n">Aço passivo (kg)</th><th>Protensão</th><th>Içamento</th>
-    <th class="n">Feitas / total</th><th>Prancha</th></tr></thead>
+<div class="rolagem-x"><table class="t compacta pecas-mod" id="tab-pecas">
+  <thead><tr><th>Obra</th><th>Peça</th><th>Etapa</th><th>Produto</th>
+    <th class="g-med">Seção</th><th class="g-med n" title="Da seção do Plannix">Larg. (cm)</th><th class="g-med n" title="Da seção do Plannix (h20 = 20 cm)">Alt. (cm)</th>
+    <th class="g-med n">Compr. (m)</th><th class="g-med n">Vol. (m³)</th><th class="g-med n" title="Da prancha">Área (m²)</th>
+    <th class="g-med n" title="Da prancha; com ~ é estimado por 2,5 t/m³">Peso (t)</th>
+    <th class="g-conc">fck</th><th class="g-conc">fcj</th><th class="g-conc n">Cobrim. (cm)</th><th class="g-conc" title="Traço real mais usado nas peças já feitas (Plannix)">Traço</th>
+    <th class="g-aco n">Aço passivo (kg/pç)</th><th class="g-aco n">Taxa (kg/m³)</th><th class="g-aco n">Barras/pç</th><th class="g-aco n" title="Posições com nome ES/E + número">Estribos/pç</th>
+    {% for d in diams %}<th class="g-bit n" title="kg por peça · nº de barras por peça">Ø{{ d }}<br><small>kg · nº</small></th>{% endfor %}
+    <th class="g-prot">Protensão</th><th class="g-prot n">Força (tf)</th><th class="g-prot n">Aço ativo (kg/pç)</th><th class="g-prot n">Contraflecha (cm)</th>
+    <th class="g-prot n" title="Plannix">Taxa protendido (kg/m³)</th><th class="g-prot">Modelo</th>
+    <th class="g-out">Içamento</th><th class="g-out">Neoprene</th>
+    <th class="n">Feitas / total</th><th class="g-pr">Prancha</th></tr></thead>
   <tbody>{% for t in linhas %}{% set c = t.c %}
     <tr class="{{ 'sem-cad' if not c }}">
-      <td class="meta">{{ t.o.nome }}</td>
+      <td class="meta" style="white-space:nowrap">{{ t.o.nome }}</td>
       <td style="white-space:nowrap">{% if c %}<a href="/cadastro/{{ c.id }}"><b>{{ t.nome }}</b></a>{% else %}<b>{{ t.nome }}</b>{% endif %}</td>
       <td class="meta">{{ t.item or '-' }}</td>
       <td>{{ t.produto }}</td>
-      <td class="meta">{{ t.secao }}</td>
-      <td class="n">{{ t.comp|num(2) if t.comp else '' }}</td>
-      <td class="n">{{ t.vol|num(3) if t.vol else '' }}</td>
-      <td class="n">{% if c and c.peso %}{{ (c.peso / 1000)|num(2) }}{% elif t.vol %}<span class="meta">~{{ (t.vol * 2.5)|num(2) }}</span>{% endif %}</td>
-      <td>{{ ('%g' % c.fck) if c and c.fck else '' }}</td>
-      <td class="n">{{ c.aco_passivo|num(1) if c and c.aco_passivo else '' }}</td>
-      <td style="white-space:nowrap">{% if c and c.cordoalhas %}<span class="prot">{{ c.protensao }}</span>{% if c.forca %} <span class="meta">{{ (c.forca / 1000)|num(1) }} tf</span>{% endif %}{% elif c %}<span class="meta">não</span>{% endif %}</td>
-      <td class="meta">{{ c.icamento if c else '' }}</td>
+      <td class="g-med meta">{{ t.secao }}</td>
+      <td class="g-med n">{{ '%g' % t.larg if t.larg else '' }}</td>
+      <td class="g-med n">{{ '%g' % t.alt if t.alt else '' }}</td>
+      <td class="g-med n">{{ t.comp|num(2) if t.comp else '' }}</td>
+      <td class="g-med n">{{ t.vol|num(3) if t.vol else '' }}</td>
+      <td class="g-med n">{{ c.area|num(2) if c and c.area else '' }}</td>
+      <td class="g-med n">{% if t.peso_t %}{% if t.peso_est %}<span class="meta">~{{ t.peso_t|num(2) }}</span>{% else %}{{ t.peso_t|num(2) }}{% endif %}{% endif %}</td>
+      <td class="g-conc">{{ '%g' % c.fck if c and c.fck else '' }}</td>
+      <td class="g-conc">{{ '%g' % c.fcj if c and c.fcj else '' }}</td>
+      <td class="g-conc n">{{ c.cobrimento|num(1) if c and c.cobrimento else '' }}</td>
+      <td class="g-conc meta" style="white-space:nowrap">{{ t.traco }}</td>
+      <td class="g-aco n">{{ c.aco_passivo|num(1) if c and c.aco_passivo else '' }}</td>
+      <td class="g-aco n">{{ t.taxa|num(0) if t.taxa else '' }}</td>
+      <td class="g-aco n">{{ t.barras if t.barras else '' }}</td>
+      <td class="g-aco n">{{ t.estribos if t.estribos else '' }}</td>
+      {% for d in diams %}{% set b = t.bit.get(d) %}<td class="g-bit n" style="white-space:nowrap">{% if b %}{{ b[0]|num(1) }}{% if b[1] %} <span class="meta">· {{ b[1] }}</span>{% endif %}{% endif %}</td>{% endfor %}
+      <td class="g-prot" style="white-space:nowrap">{% if c and c.cordoalhas %}<span class="prot">{{ c.protensao }}</span>{% elif c %}<span class="meta">não</span>{% endif %}</td>
+      <td class="g-prot n">{{ (c.forca / 1000)|num(1) if c and c.forca else '' }}</td>
+      <td class="g-prot n">{{ c.aco_ativo|num(1) if c and c.aco_ativo else '' }}</td>
+      <td class="g-prot n">{{ c.contraflecha|num(2) if c and c.contraflecha else '' }}</td>
+      <td class="g-prot n">{{ t.taxa_prot_plannix|num(2) if t.taxa_prot_plannix else '' }}</td>
+      <td class="g-prot meta">{{ t.modelo }}</td>
+      <td class="g-out meta" style="white-space:nowrap">{{ c.icamento if c else '' }}</td>
+      <td class="g-out meta corta" title="{{ c.neoprene if c else '' }}">{{ c.neoprene if c else '' }}</td>
       <td class="n">{{ t.fab }}/{{ t.n }}</td>
-      <td style="white-space:nowrap">{% if c %}{{ c.revisao }} {% if c.situacao == 'revisar' %}<span class="tag-revisar">revisar</span>{% else %}<span class="meta">ok</span>{% endif %}
+      <td class="g-pr" style="white-space:nowrap">{% if c %}{{ c.prancha }} {{ c.revisao }}{% if c.fonte == 'ocr' %} <span class="meta">OCR</span>{% endif %} {% if c.situacao == 'revisar' %}<span class="tag-revisar" title="{{ (c.alertas or [])|join(' | ') }}">revisar</span>{% else %}<span class="meta">ok</span>{% endif %}
         {% else %}<a class="meta" href="/pecas?obra={{ t.o.nome|urlencode }}#enviar">enviar</a>{% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div>
-{% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros.</p>{% endif %}
+{% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros ou baixe o Excel.</p>{% endif %}
 {% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
+<script>
+(() => {
+  const tab = document.getElementById("tab-pecas"), caixas = document.querySelectorAll("#grupos input[data-g]");
+  let ocultos = [];
+  try { ocultos = JSON.parse(localStorage.getItem("pecas-ocultos") || "[]"); } catch (e) {}
+  const aplica = () => caixas.forEach(cx => tab && tab.classList.toggle("sem-" + cx.dataset.g, !cx.checked));
+  caixas.forEach(cx => {
+    cx.checked = !ocultos.includes(cx.dataset.g);
+    cx.addEventListener("change", () => {
+      aplica();
+      try { localStorage.setItem("pecas-ocultos", JSON.stringify([...caixas].filter(x => !x.checked).map(x => x.dataset.g))); } catch (e) {}
+    });
+  });
+  aplica();
+})();
+</script>
 {% endblock %}

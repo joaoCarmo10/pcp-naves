@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import acesso, armacao as arm, cadastro as cad, formas as fm, planejar as pl, plannix, plantas, programacao as pg
+from . import acesso, armacao as arm, cadastro as cad, formas as fm, pecas_tab as ptab, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
@@ -1033,61 +1033,25 @@ def perfil_excluir(request: Request, pid: int, db: Session = Depends(get_db)):
 def pecas_modulo(request: Request, db: Session = Depends(get_db)):
     """Características de todas as peças: um tipo por linha (obra + nome + etapa), dados do Plannix
     completados pelo cadastro lido das pranchas."""
-    qp = request.query_params
-    f = {k: qp.get(k, "") for k in ("obra", "produto", "situacao", "q", "pend", "prot")}
-    obras = {o.id: o for o in db.scalars(select(Obra))}
-    idx = cad.indice(db)
-    tipos: dict = {}
-    for p in db.scalars(select(Peca)):
-        k = (p.obra_id, cad._canon(p.peca), p.item or "")
-        t = tipos.get(k)
-        if not t:
-            t = tipos[k] = {"o": obras[p.obra_id], "nome": p.peca, "item": p.item or "", "produto": p.produto, "secao": p.secao,
-                            "comp": p.comprimento, "vol": p.vol_projeto or p.volume, "n": 0, "fab": 0, "c": cad.de_peca(idx, p)}
-        t["n"] += 1
-        t["fab"] += 1 if p.fabricada else 0
-    todos = list(tipos.values())
-    opcoes = {"obra": sorted({t["o"].nome for t in todos}), "produto": sorted({t["produto"] for t in todos if t["produto"]})}
-    busca = cad._canon(f["q"].strip())
-
-    def passa(t):
-        c = t["c"]
-        if f["obra"] and t["o"].nome != f["obra"]:
-            return False
-        if f["produto"] and t["produto"] != f["produto"]:
-            return False
-        if f["situacao"] == "sem" and c:
-            return False
-        if f["situacao"] in ("ok", "revisar") and (not c or c.situacao != f["situacao"]):
-            return False
-        if f["situacao"] == "com" and not c:
-            return False
-        if busca and busca not in cad._canon(t["nome"]):
-            return False
-        if f["pend"] and t["fab"] >= t["n"]:
-            return False
-        if f["prot"] and not (c and c.cordoalhas):
-            return False
-        return True
-    linhas = sorted((t for t in todos if passa(t)), key=lambda t: (t["o"].nome, t["produto"], chave_natural(t["nome"]), chave_natural(t["item"])))
-    tot = {"tipos": len(linhas), "com": sum(1 for t in linhas if t["c"]), "rev": sum(1 for t in linhas if t["c"] and t["c"].situacao == "revisar"),
-           "pend": sum(t["n"] - t["fab"] for t in linhas),
-           "vol_pend": sum((t["vol"] or 0) * (t["n"] - t["fab"]) for t in linhas),
-           "aco_pend": sum((t["c"].aco_passivo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"]),
-           "ativo_pend": sum((t["c"].aco_ativo or 0) * (t["n"] - t["fab"]) for t in linhas if t["c"])}
-    bit: dict[str, float] = {}
-    for t in linhas:
-        if t["c"] and t["n"] > t["fab"]:
-            for b, kg in (t["c"].bitolas or {}).items():
-                bit[b] = bit.get(b, 0) + kg * (t["n"] - t["fab"])
-    sel = next((o for o in obras.values() if o.nome == f["obra"]), None)
+    d = ptab.montar(db, request.query_params)
+    obras = d["obras"]
+    sel = next((o for o in obras.values() if o.nome == d["f"]["obra"]), None)
     lendo = [(obras[oid], st) for oid, st in cad.ANDAMENTO.items() if oid in obras and (st["feitos"] < st["total"] or (sel and oid == sel.id))]
     LIMITE = 800
     return tpl.TemplateResponse(request, "pecas.html", {
-        "linhas": linhas[:LIMITE], "cortadas": max(0, len(linhas) - LIMITE), "f": f, "opcoes": opcoes, "tot": tot, "base": ultima_base(db),
-        "bitolas": dict(sorted(bit.items(), key=lambda kv: float(kv[0]))), "obras": sorted(obras.values(), key=lambda o: o.nome),
-        "sel": sel, "lendo": lendo, "rodando": any(st["feitos"] < st["total"] for _, st in lendo),
+        **d, "linhas": d["linhas"][:LIMITE], "cortadas": max(0, len(d["linhas"]) - LIMITE), "base": ultima_base(db),
+        "obras": sorted(obras.values(), key=lambda o: o.nome), "sel": sel, "lendo": lendo,
+        "rodando": any(st["feitos"] < st["total"] for _, st in lendo), "qs": request.url.query,
         "flash": request.session.pop("flash", None)})
+
+
+@app.get("/pecas/planilha")
+def pecas_planilha(request: Request, db: Session = Depends(get_db)):
+    d = ptab.montar(db, request.query_params)
+    nome = "pecas" + (f"_{d['f']['obra']}" if d["f"]["obra"] else "") + f"_{date.today():%d-%m-%Y}.xlsx"
+    nome = re.sub(r"[^\w.\-]+", "_", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode())
+    return Response(ptab.planilha(d), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 def _pecas_url(o: Obra) -> str:

@@ -231,3 +231,12 @@ select.nv-editar{background:#e3f1e6}select.nv-ver{background:#eef3fb}select.nv-n
 .tag-revisar{display:inline-block;padding:0 6px;border-radius:9px;background:#fde7cf;color:#8a4b0f;font-size:11px;font-weight:600}
 details.enviar{margin-bottom:14px}
 details.enviar summary{cursor:pointer}
+.colunas-pecas{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:12px 0 6px;font-size:13px}
+.colunas-pecas label{display:flex;gap:4px;align-items:center;cursor:pointer}
+.pecas-mod th small{font-weight:400;opacity:.8}
+.pecas-mod th.g-med,.pecas-mod th.g-conc,.pecas-mod th.g-aco,.pecas-mod th.g-bit,.pecas-mod th.g-prot,.pecas-mod th.g-out,.pecas-mod th.g-pr{border-top:3px solid transparent}
+.pecas-mod th.g-med{border-top-color:#7aa7d9}.pecas-mod th.g-conc{border-top-color:#9b9b9b}.pecas-mod th.g-aco,.pecas-mod th.g-bit{border-top-color:#d9822b}
+.pecas-mod th.g-prot{border-top-color:#2e9e6a}.pecas-mod th.g-out{border-top-color:#8e6bbf}.pecas-mod th.g-pr{border-top-color:#5b6b80}
+.sem-med .g-med,.sem-conc .g-conc,.sem-aco .g-aco,.sem-bit .g-bit,.sem-prot .g-prot,.sem-out .g-out,.sem-pr .g-pr{display:none}
+.colunas-pecas label{flex-direction:row}
+.pecas-mod td.corta{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -448,3 +448,22 @@ def test_pranchas_pelo_modulo_pecas(cliente):
     assert "Ø12.5" in h and "/cadastro/" in h
     assert "Cadastro de peças (pranchas)" not in cliente.get(f"/obras/{o.id}").text
     assert cliente.get(f"/obras/{o.id}/pecas", follow_redirects=False).headers["location"].startswith("/pecas?obra=")
+
+
+def test_pecas_completo_e_planilha(cliente):
+    import io
+    import openpyxl
+    from app.pecas_tab import dim_secao
+    assert dim_secao("h20") == (None, 20) and dim_secao("20x70") == (20, 70) and dim_secao("VARIAVEL") == (None, None)
+    test_pranchas_pelo_modulo_pecas(cliente)
+    h = cliente.get("/pecas").text
+    assert "Alt. (cm)" in h and "Barras/pç" in h and "Baixar Excel" in h
+    r = cliente.get("/pecas/planilha")
+    assert r.status_code == 200
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["Peças", "Armadura por posição", "Aço pendente por bitola"]
+    cab = [c.value for c in wb["Peças"][1]]
+    assert "Nº barras/pç" in cab and "Ø12.5 (nº/pç)" in cab and "Altura (cm)" in cab
+    lin = {row[1]: dict(zip(cab, row)) for row in wb["Peças"].iter_rows(min_row=2, values_only=True)}
+    assert lin["PP1"]["Nº barras/pç"] == 24 and lin["PP1"]["Nº estribos/pç"] == 18 and lin["PP1"]["Ø12.5 (nº/pç)"] == 6
+    assert wb["Armadura por posição"].max_row == 3

@@ -35,6 +35,10 @@ class Peca(Base):
     origem_fabricacao: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'plannix' (com data) ou 'saiu_lista'
     data_baixa: Mapped[date | None] = mapped_column(Date, nullable=True)                # dia em que saiu da lista "a realizar"
     hora_armacao: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    hora_corte_dobra: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    traco: Mapped[str] = mapped_column(String(40), default="")                 # traço real do concreto (Plannix)
+    taxa_aco_prot: Mapped[float | None] = mapped_column(Float, nullable=True)  # kg/m³ (Plannix)
+    modelo_protensao: Mapped[str] = mapped_column(String(60), default="")
     atualizada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="pecas")
 
