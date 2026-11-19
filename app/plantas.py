@@ -56,7 +56,7 @@ def extrair(caminho: Path, nomes: set[str] | None = None, ocr: bool = False) -> 
     if ocr and nomes and not any(_canon(m["t"]) in {_canon(n) for n in nomes} for m in palavras):
         # sem texto legível: etiquetas desenhadas como linhas (AutoCAD sem PDFSHX); lê por OCR
         from . import ocr_planta
-        lidas = ocr_planta.ler(caminho, nomes)
+        lidas = ocr_planta.ler(caminho, nomes) or ocr_planta.ler_traco(caminho, nomes)   # letra preenchida ou de traço
         if lidas:
             palavras, fonte = lidas, "ocr"
     return dict(largura=pg.rect.width, altura=pg.rect.height, rotacao=pg.rotation, marcas=palavras, fonte=fonte)

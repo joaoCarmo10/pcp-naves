@@ -18,6 +18,7 @@ import pymupdf
 
 LISTA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-.()*,"
 PARA_DIGITO = str.maketrans({"S": "5", "O": "0", "Q": "0", "D": "0", "I": "1", "L": "1", "B": "8", "Z": "2", "G": "6", "T": "7"})
+PARA_DIGITO_2 = str.maketrans({"S": "5", "O": "0", "Q": "9", "D": "0", "I": "1", "L": "1", "B": "8", "Z": "2", "G": "9", "T": "7"})
 PARA_LETRA = str.maketrans({"5": "S", "0": "O", "1": "I", "8": "B", "2": "Z", "6": "G"})
 
 
@@ -52,6 +53,7 @@ def _candidatos(t: str) -> list[str]:
         pre, resto = t[:k].translate(PARA_LETRA), t[k:]
         if resto:
             out.append(pre + re.sub(r"[A-Z]", lambda g: g.group(0).translate(PARA_DIGITO), resto))
+            out.append(pre + re.sub(r"[A-Z]", lambda g: g.group(0).translate(PARA_DIGITO_2), resto))
     return list(dict.fromkeys(out))
 
 
@@ -220,5 +222,160 @@ def ler(caminho: Path, nomes: set[str]) -> list[dict]:
         if k in rotulo:
             for x in g:
                 r = x["rect"]
+                marcas.append({"t": rotulo[k], "r": [round(v, 2) for v in (r.x0, r.y0, r.x1, r.y1)]})
+    return marcas
+
+
+# ------------------------------------------------------------------ texto desenhado com traço (fonte de linha)
+
+def _pontos(x) -> list:
+    ps = []
+    for it in x["items"]:
+        for pt in it[1:]:
+            if isinstance(pt, pymupdf.Point):
+                ps.append(pt)
+            elif isinstance(pt, pymupdf.Rect):
+                ps += [pt.tl, pt.br]
+            elif isinstance(pt, pymupdf.Quad):
+                ps += [pt.ul, pt.lr]
+    return ps
+
+
+def palavras_traco(pg, so_preto: bool = True) -> list[dict]:
+    """Palavras de texto desenhado só com traços curtos (cada caractere vira uma ou mais linhas soltas, sem
+    preenchimento). Junta os traços vizinhos na mesma linha de texto: [{rect, paths, sig}]."""
+    tracos = []
+    for x in pg.get_drawings():
+        if x["type"] != "s" or not x.get("color"):
+            continue
+        if so_preto and not _preto(x["color"]):
+            continue
+        ps = _pontos(x)
+        if not ps:
+            continue
+        r = pymupdf.Rect(min(p.x for p in ps), min(p.y for p in ps), max(p.x for p in ps), max(p.y for p in ps))
+        if r.width > 12 or r.height > 12 or (r.width < 0.3 and r.height < 0.3):
+            continue
+        tracos.append((r, x))
+    if not tracos:
+        return []
+    # caracteres: traços que se tocam/sobrepõem; palavras: caracteres próximos na mesma linha
+    pai = list(range(len(tracos)))
+
+    def raiz(i):
+        while pai[i] != i:
+            pai[i] = pai[pai[i]]
+            i = pai[i]
+        return i
+
+    grade = collections.defaultdict(list)
+    for i, (r, _) in enumerate(tracos):
+        grade[(int(r.x0 // 8), int(r.y0 // 8))].append(i)
+    for i, (r, _) in enumerate(tracos):
+        gx, gy = int(r.x0 // 8), int(r.y0 // 8)
+        for dx in (-2, -1, 0, 1, 2):
+            for dy in (-1, 0, 1):
+                for j in grade.get((gx + dx, gy + dy), ()):
+                    if j <= i:
+                        continue
+                    s = tracos[j][0]
+                    h = max(r.height, s.height, 2)
+                    sobrepoe_v = min(r.y1, s.y1) - max(r.y0, s.y0) > -0.6
+                    gap = max(s.x0 - r.x1, r.x0 - s.x1)
+                    if sobrepoe_v and gap < 0.8 * h + 0.6:   # o "1" de fonte de traço tem muito espaço dos lados
+                        pai[raiz(i)] = raiz(j)
+    grupos = collections.defaultdict(list)
+    for i in range(len(tracos)):
+        grupos[raiz(i)].append(i)
+    out = []
+    for idx in grupos.values():
+        # soma "na mão": um traço vertical tem largura zero e o operador de união do pymupdf o ignoraria
+        rs = [tracos[k][0] for k in idx]
+        r = pymupdf.Rect(min(q.x0 for q in rs), min(q.y0 for q in rs), max(q.x1 for q in rs), max(q.y1 for q in rs))
+        if not (2.5 <= r.height <= 14) or r.width > 120:
+            continue
+        paths = [tracos[k][1] for k in idx]
+        sig = hash(tuple(sorted((round(p.x - r.x0, 1), round(p.y - r.y0, 1)) for x in paths for p in _pontos(x))))
+        out.append({"rect": r, "paths": paths, "sig": sig, "n": _n_caracteres([tracos[k][0] for k in idx])})
+    return out
+
+
+def _n_caracteres(rects: list) -> int:
+    """Quantos caracteres tem a palavra: traços que se tocam formam um caractere (P = haste + barriga)."""
+    rs = sorted(rects, key=lambda r: r.x0)
+    n, fim = 0, -1e9
+    for r in rs:
+        if r.x0 > fim + 0.35:
+            n += 1
+            fim = r.x1
+        else:
+            fim = max(fim, r.x1)
+    return n
+
+
+def ler_traco(caminho: Path, nomes: set[str]) -> list[dict]:
+    """Marcas [{t, r}] de plantas com etiquetas em fonte de traço (ex.: AutoCAD com txt.shx/romans.shx)."""
+    if not nomes or not disponivel():
+        return []
+    from PIL import Image
+    canon = {re.sub(r"(?<=[A-Z])-(?=\d)", "", n.upper()): n for n in nomes}
+    pg = pymupdf.open(caminho)[0]
+    palavras = palavras_traco(pg) or palavras_traco(pg, so_preto=False)
+    if not palavras:
+        return []
+    # nomes de peça têm letra e número: descarta de cara palavras muito curtas ou muito longas
+    grupos = collections.defaultdict(list)
+    for w in palavras:
+        grupos[w["sig"]].append(w)
+    reps = [g[0] for g in grupos.values()]
+    limpo = pymupdf.open()
+    q = limpo.new_page(width=pg.rect.width, height=pg.rect.height)
+    sh = q.new_shape()
+    for w in reps:
+        for x in w["paths"]:
+            for it in x["items"]:
+                if it[0] == "l":
+                    sh.draw_line(it[1], it[2])
+                elif it[0] == "c":
+                    sh.draw_bezier(it[1], it[2], it[3], it[4])
+                elif it[0] == "re":
+                    sh.draw_rect(it[1])
+                elif it[0] == "qu":
+                    sh.draw_quad(it[1])
+    sh.finish(color=(0, 0, 0), width=0.7, closePath=False)
+    sh.commit()
+
+    def recorte(w, alt):
+        r = w["rect"] + (-1.5, -1.5, 1.5, 1.5)
+        z = min(alt / r.height, 30)
+        pm = q.get_pixmap(matrix=pymupdf.Matrix(z, z), clip=r, colorspace=pymupdf.csGRAY)
+        return Image.frombytes("L", (pm.width, pm.height), pm.samples)
+
+    rotulo: dict[int, str] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        pasta = Path(tmp)
+        for n, alt in enumerate((40, 56, 32, 70)):
+            falta = [k for k in range(len(reps)) if k not in rotulo]
+            if not falta:
+                break
+            textos = []
+            for i in range(0, len(falta), 150):
+                textos += _ocr([recorte(reps[k], alt) for k in falta[i:i + 150]], pasta, n * 10000 + i)
+            for k, t in zip(falta, textos):
+                for c in _candidatos(t):
+                    # o OCR às vezes some com um "1" fino (P11 -> P4): exige o mesmo número de caracteres do desenho
+                    if c in canon and len(c) == reps[k]["n"]:
+                        rotulo[k] = canon[c]
+                        break
+    # etiquetas de peça têm todas o mesmo tamanho de letra: descarta acertos em textos de outro tamanho
+    alturas = sorted(reps[k]["rect"].height for k in rotulo)
+    if alturas:
+        med = alturas[len(alturas) // 2]
+        rotulo = {k: v for k, v in rotulo.items() if abs(reps[k]["rect"].height - med) <= 0.2 * med}
+    marcas = []
+    for k, g in enumerate(grupos.values()):
+        if k in rotulo:
+            for w in g:
+                r = w["rect"]
                 marcas.append({"t": rotulo[k], "r": [round(v, 2) for v in (r.x0, r.y0, r.x1, r.y1)]})
     return marcas

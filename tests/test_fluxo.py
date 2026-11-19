@@ -567,3 +567,22 @@ def test_elite_girada_e_pecas_iguais(tmp_path):
     L2 = pranchas.Leitura()
     pranchas._modelo_tabela_de_aco(L2, pranchas._palavras(p2), {})
     assert (L2.peca, L2.iguais, L2.quantidade) == ("P09", ["P19"], 2)
+
+
+def test_planta_texto_de_traco():
+    """Etiqueta desenhada com traços soltos (fonte de linha): 'P11' vira uma palavra de 3 caracteres."""
+    import pymupdf
+    from app import ocr_planta
+    doc = pymupdf.open()
+    pg = doc.new_page(width=200, height=100)
+    x0, y0, h = 20, 20, 9.6
+    sh = pg.new_shape()
+    sh.draw_line((x0, y0), (x0, y0 + h))                     # haste do P
+    sh.draw_polyline([(x0, y0), (x0 + 4, y0), (x0 + 5, y0 + 2.5), (x0 + 4, y0 + 5), (x0, y0 + 5)])  # barriga
+    sh.finish(color=(0, 0, 0), width=0.48)
+    for x in (x0 + 9, x0 + 15):                              # dois "1" com espaço largo
+        sh.draw_line((x, y0), (x, y0 + h))
+        sh.finish(color=(0, 0, 0), width=0.48)
+    sh.commit()
+    ws = ocr_planta.palavras_traco(pg)
+    assert len(ws) == 1 and ws[0]["n"] == 3 and ws[0]["rect"].height >= 9.5
