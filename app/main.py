@@ -6,6 +6,7 @@ import io
 import os
 import re
 import secrets
+import threading
 import unicodedata
 import zipfile
 from collections import Counter
@@ -23,7 +24,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Auditoria, CadastroPeca, Config, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
 
 BASE = Path(__file__).parent
@@ -39,6 +40,8 @@ tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
 Base.metadata.create_all(engine)
 migrar()
+from . import autodoc_robo   # noqa: E402  (robô do Autodoc: agenda própria, 2x por dia)
+autodoc_robo.iniciar_agenda()
 with SessionLocal() as _db:
     fm.carga_inicial(_db)
     fm.completar(_db)
@@ -182,7 +185,33 @@ def importar_form(request: Request, db: Session = Depends(get_db)):
     imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
     u = request.state.usuario
     return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "msg": request.query_params.get("msg"), "erro": request.query_params.get("erro"),
-                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin})
+                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin, "ad": _autodoc_status(db)})
+
+
+def _autodoc_status(db: Session) -> dict:
+    def dt(v):
+        try:
+            return datetime.fromisoformat(v)
+        except ValueError:
+            return None
+    n = db.scalar(select(func.count(DesenhoAutodoc.id))) or 0
+    nb = sum(1 for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.obsoleto.is_(False))) if x.bloqueado and x.pecas)
+    return {"configurado": autodoc_robo.configurado(), "rodando": autodoc_robo.ESTADO["rodando"],
+            "agora": autodoc_robo.ESTADO["msg"] if autodoc_robo.ESTADO["rodando"] else "",
+            "ultima": dt(_cfg(db, "autodoc_ultima")), "msg": _cfg(db, "autodoc_msg"), "erro": _cfg(db, "autodoc_erro"),
+            "tentativa": dt(_cfg(db, "autodoc_tentativa")), "desenhos": n, "bloqueados": nb,
+            "horarios": " e ".join(f"{h:02d}:{m:02d}" for h, m in autodoc_robo.HORARIOS)}
+
+
+@app.post("/autodoc/atualizar")
+def autodoc_atualizar(request: Request):
+    u = request.state.usuario
+    if u is not None and not u.admin:
+        return RedirectResponse(f"/importar?erro={quote('Só o administrador dispara o robô do Autodoc.')}", status_code=303)
+    if not autodoc_robo.configurado():
+        return RedirectResponse(f"/importar?erro={quote('Configure AUTODOC_EMAIL e AUTODOC_SENHA nas variáveis do Railway.')}", status_code=303)
+    threading.Thread(target=autodoc_robo.rodar, daemon=True).start()
+    return RedirectResponse("/importar#autodoc", status_code=303)
 
 
 @app.post("/importar/token", response_class=HTMLResponse)
@@ -195,7 +224,8 @@ def importar_token(request: Request, db: Session = Depends(get_db)):
     _cfg_grava(db, "sync_token", hashlib.sha256(token.encode()).hexdigest())
     db.commit()
     imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
-    return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "token_novo": token, "sync": _sync_status(db), "admin": True})
+    return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "token_novo": token, "sync": _sync_status(db), "admin": True,
+                                                           "ad": _autodoc_status(db)})
 
 
 @app.post("/api/autodoc")

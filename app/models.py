@@ -286,6 +286,9 @@ class DesenhoAutodoc(Base):
     pasta: Mapped[str] = mapped_column(String(300), default="")
     link: Mapped[str] = mapped_column(String(300), default="")
     observacoes: Mapped[str] = mapped_column(String(500), default="")
+    url: Mapped[str] = mapped_column(String(500), default="")             # link do arquivo (só o robô preenche)
+    hash: Mapped[str] = mapped_column(String(64), default="")              # muda quando o arquivo muda
+    hash_baixado: Mapped[str] = mapped_column(String(64), default="")      # versão já enviada ao leitor de pranchas
     atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     @property

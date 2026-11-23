@@ -9,6 +9,22 @@
   <label for="arquivo">Arquivos<input id="arquivo" type="file" name="arquivo" accept=".xls,.xlsx,.txt,.csv,.zip" multiple required></label>
   <button type="submit">Importar</button>
 </form>
+<h2 id="autodoc">Autodoc automático</h2>
+<div class="sync{% if ad.erro and not ad.rodando %} sync-alerta{% endif %}">
+  {% if not ad.configurado %}
+  <p>Desligado. Para ligar, crie no Railway (serviço do app, aba <b>Variables</b>) as variáveis <code>AUTODOC_EMAIL</code> e
+     <code>AUTODOC_SENHA</code> com um usuário do Autodoc que enxergue a pasta "1-OBRAS ATIVAS". De preferência um usuário só para o robô, sem verificação em duas etapas.</p>
+  {% else %}
+  {% if ad.rodando %}<p><b>Atualizando agora:</b> {{ ad.agora }}</p><script>setTimeout(() => location.reload(), 10000)</script>{% endif %}
+  <p>Atualiza sozinho todo dia às {{ ad.horarios }}. Última atualização: <b>{{ ad.ultima.strftime('%d/%m %H:%M') if ad.ultima else 'nenhuma ainda' }}</b>
+     · {{ ad.desenhos }} desenhos no app, {{ ad.bloqueados }} não aprovados.</p>
+  {% if ad.msg %}<p class="meta">{{ ad.msg }}</p>{% endif %}
+  {% if ad.erro %}<p><b>Problema{% if ad.tentativa %} em {{ ad.tentativa.strftime('%d/%m %H:%M') }}{% endif %}:</b> {{ ad.erro }}</p>{% endif %}
+  {% endif %}
+  {% if admin and ad.configurado and not ad.rodando %}
+  <form method="post" action="/autodoc/atualizar"><button type="submit" class="sec">Atualizar agora</button></form>
+  {% endif %}
+</div>
 <h2>Plannix automático</h2>
 <div class="sync{% if sync.atrasado or sync.erro %} sync-alerta{% endif %}">
   {% if token_novo %}

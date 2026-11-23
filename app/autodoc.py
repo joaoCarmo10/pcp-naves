@@ -84,6 +84,11 @@ def importar(db: Session, conteudo: bytes) -> dict:
     linhas = ler(conteudo)
     if not linhas:
         raise ValueError("Relatório do Autodoc sem arquivos.")
+    return importar_linhas(db, linhas)
+
+
+def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> dict:
+    """completo=True (robô, árvore inteira de obras ativas): desenho que não apareceu sai do app."""
     obras = {o.sigla: o for o in db.scalars(select(Obra))}
     vistos: dict[tuple, set] = {}
     novos = atualizados = 0
@@ -116,10 +121,21 @@ def importar(db: Session, conteudo: bytes) -> dict:
         x.pasta = _txt(d.get("Pasta"))[:300]
         x.link = _txt(d.get("Link da Pasta"))[:300]
         x.observacoes = _txt(d.get("Observações"))[:500]
+        if d.get("_url"):
+            x.url = _txt(d.get("_url"))[:500]
+        if d.get("_hash"):
+            x.hash = _txt(d.get("_hash"))[:64]
         x.atualizado_em = datetime.utcnow()
         vistos.setdefault((x.projeto, x.pasta), set()).add(codigo)
     db.flush()
     removidos = 0
+    if completo:
+        todos = {(p, c) for (p, _), cs in vistos.items() for c in cs}
+        for x in db.scalars(select(DesenhoAutodoc)):
+            if (x.projeto, x.codigo) not in todos:
+                db.delete(x)
+                removidos += 1
+        vistos = {}
     for (projeto, pasta), cods in vistos.items():
         for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.projeto == projeto, DesenhoAutodoc.pasta == pasta)):
             if x.codigo not in cods:
@@ -156,3 +172,28 @@ def resumo(x) -> dict | None:
         return None
     return {"status": x.status, "bloqueado": x.bloqueado, "rev": x.revisao, "data": x.data.strftime("%d/%m/%Y") if x.data else "",
             "obs": x.observacoes, "titulo": x.titulo, "arquivo": x.codigo, "link": x.link}
+
+
+def pranchas_para_baixar(db: Session, linhas: list[dict]) -> list[dict]:
+    """PDFs de detalhamento vigentes, novos ou alterados, de peças com unidades ainda não fabricadas em obras ativas."""
+    from .models import Peca
+    pend: dict = {}
+    for oid, nome in db.execute(select(Peca.obra_id, Peca.peca).where(Peca.fabricada.is_(False))):
+        pend.setdefault(oid, set()).add(_canon(nome))
+    obras = {o.id: o for o in db.scalars(select(Obra).where(Obra.ativa.is_(True)))}
+    out = []
+    for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.obsoleto.is_(False), DesenhoAutodoc.obra_id.is_not(None))):
+        if x.extensao != "pdf" or not x.url or not x.hash or x.hash == x.hash_baixado or x.obra_id not in obras:
+            continue
+        if not x.pecas or not any(_canon(p) in pend.get(x.obra_id, set()) for p in x.pecas):
+            continue
+        out.append({"id": x.id, "obra": obras[x.obra_id], "codigo": x.codigo, "url": x.url, "hash": x.hash,
+                    "data": x.data or datetime.min})
+    out.sort(key=lambda d: d["data"], reverse=True)   # as mais recentes primeiro
+    return out
+
+
+def marcar_baixada(db: Session, desenho_id: int, h: str) -> None:
+    x = db.get(DesenhoAutodoc, desenho_id)
+    if x:
+        x.hash_baixado = h

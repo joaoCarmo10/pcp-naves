@@ -675,3 +675,44 @@ def test_autodoc_status_na_peca(cliente):
     p = db.scalar(select(Peca).where(Peca.obra_id == o.id, Peca.peca == nome))
     assert planejar.desenho_bloqueado(db, [p])
     assert "Bloqueado R01" in cliente.get(f"/pecas?obra={o.nome}").text
+
+
+def test_robo_autodoc_sem_rede(cliente, monkeypatch):
+    """Varredura com o serviço do Autodoc simulado: status nas peças e escolha das pranchas a baixar."""
+    from sqlalchemy import select
+    from app import autodoc, autodoc_robo as R
+    from app.db import SessionLocal
+    from app.models import Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    db.commit()
+    pend = db.scalar(select(Peca.peca).where(Peca.obra_id == o.id, Peca.fabricada.is_(False)))
+    arvore = {
+        "raiz": {"currentFolder": {"type": "OTHER"}, "subFolders": [{"id": "obra"}], "documents": []},
+        "obra": {"currentFolder": {"type": "PROJECT", "name": f"{o.sigla}-TESTE"}, "subFolders": [{"id": "pil"}], "documents": []},
+        "pil": {"currentFolder": {"type": "OTHER"}, "subFolders": [], "documents": [
+            {"name": "01-PIL-R01.pdf", "description": f"Detalhamento de Pilar {pend}", "revision": "01", "status": "8799",
+             "obsolete": "false", "status_updated_at": "2026-11-17 20:46:42", "path": "OBRAS/X/02-PILARES/01-PIL-R01.pdf",
+             "folder_id": "pil", "fileUrl": "https://storage/x.pdf", "hash": "abc", "observations": "em conferência"},
+            {"name": "00-geral.dwg", "description": "Dwg geral", "revision": "", "status": "8800", "obsolete": "false",
+             "path": "OBRAS/X/02-PILARES/00-geral.dwg", "folder_id": "pil", "fileUrl": "u", "hash": "h"}]},
+    }
+
+    class S:
+        def get(self, caminho):
+            if caminho == "status":
+                return {"data": [{"id": 8799, "name": "Bloqueado"}, {"id": 8800, "name": "Aprovado"}]}
+            return arvore[caminho.split("/")[1]]
+    monkeypatch.setattr(R.time, "sleep", lambda s: None)
+    docs, st, pastas = R.varrer(S(), "raiz")
+    linhas = R.para_linhas(docs, st)
+    r = autodoc.importar_linhas(db, linhas, completo=True)
+    assert pastas == 3 and r["bloqueadas"] == [pend.upper()] or r["bloqueadas"] == [pend]
+    baixar = autodoc.pranchas_para_baixar(db, linhas)
+    assert [x["codigo"] for x in baixar] == ["01-PIL-R01.pdf"]
+    autodoc.marcar_baixada(db, baixar[0]["id"], "abc")
+    db.commit()
+    assert autodoc.pranchas_para_baixar(db, linhas) == []
+    assert "Autodoc automático" in cliente.get("/importar").text

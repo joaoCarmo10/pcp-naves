@@ -60,6 +60,12 @@ def migrar():
                 cx.execute(text("ALTER TABLE apontamentos ADD COLUMN data_execucao DATE"))
             if "comentario" not in cols:
                 cx.execute(text("ALTER TABLE apontamentos ADD COLUMN comentario VARCHAR(500) DEFAULT ''"))
+    if "desenhos_autodoc" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("desenhos_autodoc")}
+        with engine.begin() as cx:
+            for col, tipo in (("url", "VARCHAR(500) DEFAULT ''"), ("hash", "VARCHAR(64) DEFAULT ''"), ("hash_baixado", "VARCHAR(64) DEFAULT ''")):
+                if col not in cols:
+                    cx.execute(text(f"ALTER TABLE desenhos_autodoc ADD COLUMN {col} {tipo}"))
     if "cadastro_pecas" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("cadastro_pecas")}
         with engine.begin() as cx:
