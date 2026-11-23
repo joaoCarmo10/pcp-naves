@@ -729,3 +729,18 @@ def test_area_de_atuacao_planta():
     assert [m["t"] for m in plantas.dentro(marcas, area)] == ["A"]
     assert plantas.dentro(marcas, None) == marcas
     assert len(plantas.sombras(400, 100, area)) == 1
+
+
+def test_etiqueta_unidade_unica_entre_folhas():
+    from app.status import StatusPeca, atribuir_obra, desenhadas, status_folha
+    un = {"V1": [{"cod": f"C{i}", "st": s, "data": None, "vol": 1.0} for i, s in enumerate(["FAB", "FAB", "PROG", "FALTA"])]}
+    mk = lambda x, y: {"t": "V1", "r": [x, y, x + 10, y + 5]}
+    ao = atribuir_obra([(1, [mk(0, 0), mk(50, 0), mk(0, 100)]), (2, [mk(0, 0), mk(20, 0)])], un)
+    cods = [m["cod"] for ms in ao.values() for m in ms if m["cod"]]
+    assert len(cods) == len(set(cods)) == 4          # nenhum código repetido, nem entre folhas
+    assert [m["st"] for m in ao[2]] == ["FALTA", "SEM"]  # sobra vira cinza
+    st = {"V1": StatusPeca(peca="V1", produto="VIGA", secao="", total=4)}
+    f1 = status_folha(ao[1], st, desenhadas(ao))["V1"]
+    assert (f1.total, f1.fabricadas, f1.programadas, f1.nao_desenhadas) == (3, 2, 1, 0)
+    f2 = status_folha(ao[2], st, desenhadas(ao))["V1"]
+    assert (f2.total, f2.sem) == (1, 1)

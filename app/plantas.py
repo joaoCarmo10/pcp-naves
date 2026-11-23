@@ -84,7 +84,11 @@ def marcas_tela(caminho: Path, marcas: list, status: dict[str, StatusPeca], zoom
         if not s:
             continue
         r = (pymupdf.Rect(mk["r"]) + (-2, -2, 2, 2)) * m
-        out.append(dict(p=mk["t"], s=s.status, x=round(r.x0), y=round(r.y0), w=round(r.width), h=round(r.height)))
+        st = mk.get("st") or s.status
+        dica = mk["t"] + (f" · código {mk['cod']}" if mk.get("cod") else (" · sem peça no Plannix" if st == "SEM" else ""))
+        if mk.get("data"):
+            dica += f" · {'fabricada' if st == 'FAB' else 'programada'} {mk['data']:%d/%m}"
+        out.append(dict(p=mk["t"], s=st, x=round(r.x0), y=round(r.y0), w=round(r.width), h=round(r.height), dica=dica))
     return out
 
 
@@ -102,7 +106,7 @@ def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: s
         if not s:
             continue
         nomes.add(mk["t"])
-        cor = CORES[s.status][0]
+        cor = CORES[mk.get("st") or s.status][0]
         pg0.draw_rect(pymupdf.Rect(mk["r"]) + (-1.5, -1.5, 1.5, 1.5), color=cor, fill=cor, fill_opacity=0.35, width=1.2, overlay=True)
     if pg0.rotation:
         # folha girada no CAD: desfaz a rotação (marcas incluídas) para a folha caber inteira no A2
@@ -137,11 +141,12 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
     pg.draw_rect(caixa, color=(0.75, 0.75, 0.75), width=0.6)
     y += 14
     por_linha = max(1, int((x1 - x0 - 16) // 200))
-    for k, (s, lab) in enumerate(LEGENDA):
+    legenda = LEGENDA + [("SEM", "Sem peça no Plannix")]
+    for k, (s, lab) in enumerate(legenda):
         xx, yy = x0 + 8 + (k % por_linha) * 200, y + (k // por_linha) * 14
         pg.draw_rect(pymupdf.Rect(xx, yy - 8, xx + 10, yy + 1), color=CORES[s][0], fill=CORES[s][0], fill_opacity=0.6)
         pg.insert_text((xx + 14, yy), lab, fontsize=8, fontname="helv")
-    y += 14 * (-(-len(LEGENDA) // por_linha)) + 8
+    y += 14 * (-(-len(legenda) // por_linha)) + 8
     cols = [("PEÇA", 0), ("QTD", 70), ("FAB.", 98), ("PROG.", 126), ("FALTA", 158), ("DATAS PROG.", 192)]
     ordem = sorted(nomes, key=lambda k: (status[k].produto, chave_natural(k)))
     rowh = 9.2
@@ -167,7 +172,9 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
             pg.insert_text((cx + dx * sc, yy), v, fontsize=fs, fontname="helv")
     if len(ordem) > maxrows * ncol:
         pg.insert_text((x0 + 8, y1 - 16), f"+ {len(ordem) - maxrows * ncol} peças (lista completa no sistema)", fontsize=7, fontname="helv")
-    pg.insert_text((x0 + 8, y1 - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2", fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))
+    pg.insert_text((x0 + 8, y1 - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2 | Cada etiqueta pintada é uma peça (código) "
+                   "diferente do Plannix; a quantidade é exata, a posição de cada código na planta é indicativa.",
+                   fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))
 
 
 

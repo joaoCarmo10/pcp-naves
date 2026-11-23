@@ -26,7 +26,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
-from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
+from .status import (CORES, LEGENDA, LEGENDA_UNID, atribuir_obra, chave_natural, desenhadas, por_produto, resumo,
+                     status_da_obra, status_folha, unidades_da_obra)
 
 BASE = Path(__file__).parent
 SENHA = os.getenv("APP_PASSWORD", "")
@@ -439,15 +440,21 @@ def importar_pacote(db: Session, conteudo: bytes) -> str:
     return f"Pacote importado: {len(completas)} exportações completas, {len(listas)} listas a realizar, {len(progs)} programações e {np_} plantas."
 
 
+def _atrib_obra(db: Session, obra: Obra) -> dict[int, list[dict]]:
+    """Etiquetas de todas as folhas da obra, cada uma com um código único do Plannix (sem repetir entre folhas)."""
+    fs = sorted(obra.plantas, key=lambda p: (chave_natural(p.titulo or ""), p.id))
+    for p in fs:
+        _garantir_marcas(db, p)
+    return atribuir_obra([(p.id, plantas.dentro(p.marcas, p.area)) for p in fs], unidades_da_obra(db, obra.id))
+
+
 @app.get("/obras/{obra_id}", response_class=HTMLResponse)
 def obra(request: Request, obra_id: int, db: Session = Depends(get_db)):
     o = db.get(Obra, obra_id) or _404()
     st = status_da_obra(db, o.id)
-    pl = []
-    for p in o.plantas:
-        _garantir_marcas(db, p)
-        nomes = {m["t"] for m in plantas.dentro(p.marcas, p.area)} & set(st)
-        pl.append(dict(p=p, r=resumo(st, nomes)))
+    ao = _atrib_obra(db, o)
+    dz = desenhadas(ao)
+    pl = [dict(p=p, r=resumo(status_folha(ao[p.id], st, dz))) for p in o.plantas]
     return tpl.TemplateResponse(request, "obra.html", {"o": o, "r": resumo(st), "prod": por_produto(st), "plantas": pl, "base": ultima_base(db)})
 
 
@@ -492,16 +499,20 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
     st = status_da_obra(db, p.obra_id)
     caminho = DATA_DIR / p.arquivo
     png, zoom = plantas.imagem_base(caminho, p.id)
-    marcas = plantas.marcas_tela(caminho, plantas.dentro(p.marcas, p.area), st, zoom)
-    nomes = sorted({m["p"] for m in marcas}, key=lambda k: (st[k].produto, chave_natural(k)))
+    ao = _atrib_obra(db, p.obra)
+    atrib = ao[p.id]
+    stf = status_folha(atrib, st, desenhadas(ao))
+    marcas = plantas.marcas_tela(caminho, atrib, st, zoom)
+    nomes = sorted(stf, key=lambda k: (stf[k].produto, chave_natural(k)))
     with pymupdf.open(caminho) as doc:
         pg0 = doc[0]
         mtx = pg0.rotation_matrix * pymupdf.Matrix(zoom, zoom)
         fora = [r * mtx for r in plantas.sombras(pg0.mediabox.width, pg0.mediabox.height, p.area)]
     fora = [dict(x=round(r.x0), y=round(r.y0), w=round(r.width), h=round(r.height)) for r in fora]
     return tpl.TemplateResponse(request, "planta.html", {
-        "p": p, "o": p.obra, "marcas": marcas, "w": round(p.largura * zoom), "h": round(p.altura * zoom), "linhas": [st[k] for k in nomes],
-        "r": resumo(st, set(nomes)), "base": ultima_base(db), "fora": fora, "flash": request.session.pop("flash", None)})
+        "p": p, "o": p.obra, "marcas": marcas, "w": round(p.largura * zoom), "h": round(p.altura * zoom), "linhas": [stf[k] for k in nomes],
+        "r": resumo(stf), "base": ultima_base(db), "fora": fora, "flash": request.session.pop("flash", None),
+        "sem": sum(s.sem for s in stf.values()), "nao_desenhadas": sum(s.nao_desenhadas for s in stf.values()), "LEGENDA": LEGENDA_UNID})
 
 
 @app.post("/plantas/{pid}/area")
@@ -548,7 +559,10 @@ def planta_a2(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
     _garantir_marcas(db, p)
     st = status_da_obra(db, p.obra_id)
-    pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, p.marcas, st, f"{p.obra.nome.upper()} - {p.titulo.upper()}", ultima_base(db), p.area)
+    ao = _atrib_obra(db, p.obra)
+    atrib = ao[p.id]
+    pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, atrib, status_folha(atrib, st, desenhadas(ao)), f"{p.obra.nome.upper()} - {p.titulo.upper()}",
+                         ultima_base(db), p.area)
     nome = f"Avanco_{p.obra.nome}_{p.titulo}_{date.today():%d-%m}.pdf".replace(" ", "_")
     ascii_ = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
     return Response(pdf, media_type="application/pdf",

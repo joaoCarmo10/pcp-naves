@@ -251,3 +251,4 @@ table.ordenavel th.ord-desc::after{content:" ▼";font-size:10px}
 .area-atuacao{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px;font-size:13px}
 .area-atuacao details{flex-basis:100%}
 .area-atuacao summary{cursor:pointer}
+#tabela td.difere{color:#a4161a;font-weight:600}

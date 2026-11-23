@@ -12,6 +12,9 @@
   </div>
   <a class="botao" href="/plantas/{{ p.id }}/a2.pdf" target="_blank">Gerar PDF A2</a>
 </div>
+<p class="meta" style="margin:-4px 0 8px">Cada etiqueta pintada é uma peça (código) diferente do Plannix, sem repetir nem entre folhas: a quantidade é exata, a posição de cada código é indicativa.
+  {% if sem %}<b>{{ sem }}</b> etiqueta(s) sem peça no Plannix (cinza).{% endif %}
+  {% if nao_desenhadas %}<b>{{ nao_desenhadas }}</b> unidade(s) do Plannix com nomes desta folha não aparecem em nenhuma planta da obra.{% endif %}</p>
 <div class="planta-layout">
   <div class="visor" id="visor">
     <div class="ctrl"><button type="button" data-z="1.25" aria-label="Aproximar">+</button><button type="button" data-z="0.8" aria-label="Afastar">−</button><button type="button" id="ajustar">Ajustar</button></div>
@@ -19,7 +22,7 @@
       <img src="/plantas/{{ p.id }}/imagem" width="{{ w }}" height="{{ h }}" alt="Planta {{ p.titulo }}">
       <svg viewBox="0 0 {{ w }} {{ h }}" width="{{ w }}" height="{{ h }}">
         {% for f in fora %}<rect x="{{ f.x }}" y="{{ f.y }}" width="{{ f.w }}" height="{{ f.h }}" fill="#6b7280" fill-opacity="0.45" pointer-events="none"></rect>{% endfor %}
-        {% for m in marcas %}<rect data-p="{{ m.p }}" x="{{ m.x }}" y="{{ m.y }}" width="{{ m.w }}" height="{{ m.h }}" fill="{{ CORES[m.s] }}" stroke="{{ CORES[m.s] }}"><title>{{ m.p }}</title></rect>{% endfor %}
+        {% for m in marcas %}<rect data-p="{{ m.p }}" data-s="{{ m.s }}" x="{{ m.x }}" y="{{ m.y }}" width="{{ m.w }}" height="{{ m.h }}" fill="{{ CORES[m.s] }}" stroke="{{ CORES[m.s] }}"><title>{{ m.dica }}</title></rect>{% endfor %}
       </svg>
     </div>
   </div>
@@ -45,11 +48,12 @@
     </div>
     <div class="rolagem">
       <table class="t" id="tabela">
-        <thead><tr><th>Peça</th><th>Produto</th><th class="n">Qtd</th><th class="n">Fab.</th><th class="n">Prog.</th><th class="n">Falta</th><th>Datas prog.</th></tr></thead>
+        <thead><tr><th>Peça</th><th>Produto</th><th class="n" title="Etiquetas pintadas nesta folha (cada uma uma peça)">Na folha</th><th class="n">Fab.</th><th class="n">Prog.</th><th class="n">Falta</th><th class="n" title="Unidades com esse nome no Plannix (obra toda)">Plannix</th><th>Datas prog.</th></tr></thead>
         <tbody>
         {% for s in linhas %}
           <tr data-p="{{ s.peca }}" data-s="{{ s.status }}"><td><i class="chip" style="background:{{ CORES[s.status] }}"></i>{{ s.peca }}</td><td>{{ s.produto }}</td>
             <td class="n">{{ s.total }}</td><td class="n">{{ s.fabricadas or '-' }}</td><td class="n">{{ s.programadas or '-' }}</td><td class="n">{{ s.falta or '-' }}</td>
+            <td class="n{{ ' difere' if s.sem or s.nao_desenhadas }}" title="{% if s.sem %}{{ s.sem }} etiqueta(s) a mais que o Plannix. {% endif %}{% if s.nao_desenhadas %}{{ s.nao_desenhadas }} unidade(s) não desenhada(s) em nenhuma planta.{% endif %}{% if s.plannix > s.total + s.sem + s.nao_desenhadas %} O restante está em outra folha.{% endif %}">{{ s.plannix }}</td>
             <td>{% for d in s.datas[:3] %}{{ d|dm }}{{ ', ' if not loop.last }}{% endfor %}{{ '…' if s.datas|length > 3 }}</td></tr>
         {% endfor %}
         </tbody>
@@ -81,8 +85,8 @@
   rects.forEach(r=>r.addEventListener('click',()=>{destacar(r.dataset.p); const l=linhas.find(l=>l.dataset.p===r.dataset.p); if(l)l.scrollIntoView({block:'center'});}));
   const busca=document.getElementById('busca'), filtro=document.getElementById('filtro');
   function filtrar(){const q=busca.value.trim().toUpperCase(), s=filtro.value;
-    linhas.forEach(l=>l.hidden=!((!q||l.dataset.p.toUpperCase().includes(q))&&(!s||l.dataset.s===s)));
-    rects.forEach(r=>r.style.display=(!s||linhas.find(l=>l.dataset.p===r.dataset.p)?.dataset.s===s)&&(!q||r.dataset.p.toUpperCase().includes(q))?'':'none');}
+    linhas.forEach(l=>l.hidden=!((!q||l.dataset.p.toUpperCase().includes(q))&&(!s||rects.some(r=>r.dataset.p===l.dataset.p&&r.dataset.s===s))));
+    rects.forEach(r=>r.style.display=(!s||r.dataset.s===s)&&(!q||r.dataset.p.toUpperCase().includes(q))?'':'none');}
   busca.oninput=filtrar; filtro.onchange=filtrar;
 })();
 </script>
