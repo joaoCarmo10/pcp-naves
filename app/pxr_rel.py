@@ -358,3 +358,45 @@ def planilha(ctx: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------- o que ficou para trás
+
+def pendencias(ls, ordem: str = "tipo", hoje: date | None = None) -> dict:
+    """Peças não realizadas do recorte, agrupadas por tipo de peça -> obra (ou obra -> tipo)."""
+    hoje = hoje or date.today()
+    nao = [l for l in ls if l.status == "NÃO REALIZADA"]
+    k1, k2 = ((lambda l: l.item.produto or "-"), (lambda l: l.item.obra or "-"))
+    if ordem == "obra":
+        k1, k2 = k2, k1
+    g: dict = defaultdict(lambda: defaultdict(list))
+    for l in nao:
+        g[k1(l)][k2(l)].append(l)
+
+    def soma(ls_):
+        return sum(l.qtd for l in ls_), sum(_vol(l) for l in ls_)
+
+    grupos = []
+    for a, sub in g.items():
+        filhos = []
+        for b, ls_ in sub.items():
+            ls_.sort(key=lambda l: (l.item.data, l.item.forma, l.item.peca))
+            n, v = soma(ls_)
+            filhos.append({"nome": b, "linhas": ls_, "n": n, "vol": v, "mais_antiga": ls_[0].item.data})
+        filhos.sort(key=lambda x: -x["n"])
+        n = sum(f["n"] for f in filhos)
+        grupos.append({"nome": a, "filhos": filhos, "n": n, "vol": sum(f["vol"] for f in filhos)})
+    grupos.sort(key=lambda x: -x["n"])
+    tipos = sorted({l.item.produto or "-" for l in nao})
+    obras = sorted({l.item.obra or "-" for l in nao})
+    mat = defaultdict(lambda: [0, 0.0])
+    for l in nao:
+        m = mat[(l.item.obra or "-", l.item.produto or "-")]
+        m[0] += l.qtd
+        m[1] += _vol(l)
+    sem_causa = sum(l.qtd for l in nao if not (l.ap and l.ap.causa))
+    n, v = soma(nao)
+    return {"grupos": grupos, "n": n, "vol": v, "tipos": tipos, "obras": obras, "mat": dict(mat), "ordem": ordem,
+            "sem_causa": sem_causa, "dias": lambda l: (hoje - l.item.data).days,
+            "por_obra": {o: sum(l.qtd for l in nao if (l.item.obra or "-") == o) for o in obras},
+            "por_tipo": {t: sum(l.qtd for l in nao if (l.item.produto or "-") == t) for t in tipos}}

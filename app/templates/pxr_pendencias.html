@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>O que ficou para trás {{ ini|dm }} a {{ fim|dm }} | PCP Naves</title>
+<style>
+  :root{--tinta:#1d2733;--suave:#5b6573;--linha:#dde2e8;--fundo:#f5f7fa;--azul:#1f3a68;--nao:{{ COR_STATUS['NÃO REALIZADA'] }}}
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;color:var(--tinta);margin:0;background:#e9edf2;font-size:11.5px;line-height:1.35}
+  .folha{max-width:1180px;margin:16px auto;background:#fff;padding:24px 28px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .barra{max-width:1180px;margin:14px auto 0;display:flex;gap:8px;justify-content:flex-end;align-items:center}
+  .barra a,.barra button{font:inherit;font-size:13px;padding:7px 14px;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer;text-decoration:none}
+  .barra .sec{background:#fff;color:var(--azul)}
+  .barra .on{background:#eef3fb;color:var(--azul);font-weight:bold}
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--azul);padding-bottom:8px;margin-bottom:12px}
+  h1{font-size:19px;margin:0;color:var(--azul)}
+  .per{font-size:13.5px;font-weight:bold}
+  .meta{text-align:right;color:var(--suave);font-size:10.5px}
+  .tot{display:flex;gap:22px;margin:4px 0 12px}
+  .tot b{font-size:19px;display:block}
+  .tot span{color:var(--suave);font-size:10.5px}
+  h2{font-size:13px;color:var(--azul);margin:16px 0 6px}
+  table{border-collapse:collapse;width:100%}
+  th{background:var(--azul);color:#fff;text-align:left;padding:3px 5px;font-size:10.5px;white-space:nowrap}
+  td{padding:2px 5px;border-bottom:1px solid var(--linha);vertical-align:top}
+  .n{text-align:right;white-space:nowrap}
+  table.mat td.n,table.mat th.n{width:1%}
+  table.mat tr.t td{font-weight:bold;background:var(--fundo)}
+  .g1{margin-top:14px}
+  .g1>h2{display:flex;justify-content:space-between;border-bottom:2px solid var(--azul);padding-bottom:3px}
+  .g2{margin:6px 0 10px}
+  .g2 h3{font-size:11.5px;margin:6px 0 3px;color:var(--tinta)}
+  .g2 h3 span{color:var(--suave);font-weight:normal}
+  table.det{table-layout:fixed;font-size:10.5px}
+  .velho{color:#c62828;font-weight:bold}
+  .falta{color:#c62828;font-style:italic}
+  .vazio{color:var(--suave);font-style:italic;padding:8px 0}
+  .notas{color:var(--suave);font-size:10px;border-top:1px solid var(--linha);margin-top:16px;padding-top:6px}
+  @page{size:A4 landscape;margin:10mm}
+  @media print{
+    body{background:#fff;font-size:10px}
+    .folha{box-shadow:none;margin:0;max-width:none;padding:0}
+    .barra{display:none}
+    th,table.mat tr.t td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    tr{break-inside:avoid}
+    h2,h3{break-after:avoid}
+  }
+</style>
+</head>
+<body>
+{% set P = p %}
+<div class="barra">
+  <span style="color:#5b6573;margin-right:auto;max-width:1180px">Agrupar por:</span>
+  <a class="{{ 'on' if P.ordem == 'tipo' else 'sec' }}" href="/pxr/pendencias?{{ qs_sem_por }}">Tipo de peça → obra</a>
+  <a class="{{ 'on' if P.ordem == 'obra' else 'sec' }}" href="/pxr/pendencias?{{ qs_sem_por }}&por=obra">Obra → tipo de peça</a>
+  <a class="sec" href="/pxr?{{ qs_sem_por }}">Voltar</a>
+  <button type="button" onclick="window.print()">Imprimir / salvar PDF</button>
+</div>
+<main class="folha">
+<header>
+  <div>
+    <h1>O que ficou para trás: peças programadas e não realizadas</h1>
+    <div class="per">Programadas de {{ DIAS[ini.weekday()] }} {{ ini.strftime('%d/%m/%Y') }} a {{ DIAS[fim.weekday()] }} {{ fim.strftime('%d/%m/%Y') }}</div>
+    <div style="color:var(--suave)">{% if filtros_txt %}Recorte: {{ filtros_txt }}{% else %}Todas as obras, naves e tipos de peça{% endif %}</div>
+  </div>
+  <div class="meta">Programação: {{ r.nome }}<br>Base Plannix: {{ base or '-' }}<br>Emitido em {{ emitido }}</div>
+</header>
+
+{% if not P.n %}
+<div class="vazio">Nenhuma peça não realizada neste recorte.</div>
+{% else %}
+<div class="tot">
+  <div><b>{{ P.n }}</b><span>peças não realizadas</span></div>
+  <div><b>{{ P.vol|num(1) }} m³</b><span>volume</span></div>
+  <div><b>{{ P.obras|length }}</b><span>obras</span></div>
+  <div><b>{{ P.tipos|length }}</b><span>tipos de peça</span></div>
+  <div><b>{{ P.n - P.sem_causa }} de {{ P.n }}</b><span>com causa registrada</span></div>
+</div>
+
+<h2>Resumo: obra × tipo de peça (peças · m³)</h2>
+<table class="mat">
+  <tr><th>Obra</th>{% for t in P.tipos %}<th class="n">{{ t }}</th>{% endfor %}<th class="n">Total</th></tr>
+  {% for o in P.obras %}<tr><td>{{ o }}</td>
+    {% for t in P.tipos %}{% set m = P.mat.get((o, t)) %}<td class="n">{% if m %}<b>{{ m[0] }}</b> · {{ m[1]|num(1) }}{% else %}<span style="color:#c5ccd6">-</span>{% endif %}</td>{% endfor %}
+    <td class="n"><b>{{ P.por_obra[o] }}</b></td></tr>{% endfor %}
+  <tr class="t"><td>Total</td>{% for t in P.tipos %}<td class="n">{{ P.por_tipo[t] }}</td>{% endfor %}<td class="n">{{ P.n }}</td></tr>
+</table>
+
+{% for g in P.grupos %}
+<section class="g1">
+  <h2><span>{{ g.nome }}</span><span>{{ g.n }} peça{{ 's' if g.n != 1 }} · {{ g.vol|num(1) }} m³</span></h2>
+  {% for f in g.filhos %}
+  <div class="g2">
+    <h3>{{ f.nome }} <span>· {{ f.n }} peça{{ 's' if f.n != 1 }} · {{ f.vol|num(1) }} m³ · mais antiga de {{ f.mais_antiga|dm }}</span></h3>
+    <table class="det">
+      <colgroup><col style="width:7.5%"><col style="width:5%"><col style="width:10%"><col style="width:8%"><col style="width:6%"><col style="width:5%"><col style="width:3.5%"><col style="width:12%"><col style="width:10%"><col style="width:15%"><col style="width:12%"><col style="width:6%"></colgroup>
+      <tr><th>Programada</th><th class="n">Dias</th><th>Peça</th><th>Código</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th><th>Fôrma</th><th>Causa</th><th>O que houve</th><th>Ação</th><th>Resp.</th></tr>
+      {% for l in f.linhas %}{% set i = l.item %}{% set a = l.ap %}{% set d = P.dias(l) %}
+      <tr><td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>
+        <td class="n {{ 'velho' if d >= 3 }}">{{ d }}</td>
+        <td><b>{{ i.peca }}</b></td><td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
+        <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td><td>{{ i.forma }}</td>
+        <td>{% if a and a.causa %}{{ a.causa }}{% else %}<span class="falta">sem causa</span>{% endif %}</td>
+        <td>{{ (a.comentario or a.ocorrido) if a else '' }}</td><td>{{ a.acao if a else '' }}</td><td>{{ a.responsavel if a else '' }}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+</section>
+{% endfor %}
+{% endif %}
+<div class="notas">Não realizada: data programada já vencida e a peça não tem data de fabricação no Plannix (nem data informada pelo PCP).
+  Dias = dias corridos desde a data programada até hoje; em vermelho, 3 dias ou mais. Peças iguais (mesmo nome na mesma obra) são atendidas em fila:
+  a concretagem mais antiga atende a programação mais antiga.</div>
+</main>
+</body>
+</html>

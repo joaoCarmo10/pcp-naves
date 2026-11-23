@@ -597,6 +597,19 @@ def pxr_relatorio(request: Request, db: Session = Depends(get_db)):
     return tpl.TemplateResponse(request, "pxr_relatorio.html", ctx)
 
 
+@app.get("/pxr/pendencias", response_class=HTMLResponse)
+def pxr_pendencias(request: Request, db: Session = Depends(get_db)):
+    """O que ficou para trás: peças não realizadas do recorte, para imprimir."""
+    ctx = _pxr_ctx(request, db)
+    if not ctx:
+        return RedirectResponse("/pxr", status_code=303)
+    ordem = "obra" if request.query_params.get("por") == "obra" else "tipo"
+    ctx["p"] = pxr.pendencias(ctx["todas"], ordem)
+    ctx["emitido"] = datetime.now(plannix.BAHIA).strftime("%d/%m/%Y %H:%M")
+    ctx["qs_sem_por"] = "&".join(f"{k}={quote(v)}" for k, v in request.query_params.items() if v and k != "por")
+    return tpl.TemplateResponse(request, "pxr_pendencias.html", ctx)
+
+
 @app.get("/pxr/planilha")
 def pxr_planilha(request: Request, db: Session = Depends(get_db)):
     ctx = _pxr_ctx(request, db)

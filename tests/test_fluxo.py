@@ -607,3 +607,15 @@ def test_pxr_filtros_e_relatorio(cliente):
     wb = openpyxl.load_workbook(io.BytesIO(r.content))
     assert {"Resumo", "Por obra", "Por tipo de peça", "Obra x tipo", "Causas (Pareto)", "Atrasadas (justificativas)"} <= set(wb.sheetnames)
     assert cliente.get(f"/pxr/relatorio?rev={rev.id}&semana=2026-11-09").status_code == 200
+
+
+def test_pxr_pendencias(cliente):
+    test_programacao_pxr(cliente)
+    from app import programacao as pg
+    from app.db import SessionLocal
+    rev = pg.revisao_atual(SessionLocal())
+    base = f"rev={rev.id}&de=2026-11-09&ate=2026-11-10"
+    assert "Imprimir o que ficou para trás" in cliente.get(f"/pxr?{base}").text
+    for por in ("", "&por=obra"):
+        h = cliente.get(f"/pxr/pendencias?{base}{por}").text
+        assert "O que ficou para trás" in h and "obra × tipo de peça" in h
