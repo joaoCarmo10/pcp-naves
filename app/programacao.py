@@ -108,7 +108,8 @@ def importar_programacao(db: Session, conteudo: bytes, arquivo: str) -> Importac
 
 
 def revisao_atual(db: Session) -> RevisaoProg | None:
-    return db.scalar(select(RevisaoProg).order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
+    return db.scalar(select(RevisaoProg).where(RevisaoProg.rascunho.is_not(True))
+                     .order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
 
 
 def codigos_programados(db: Session) -> dict[str, date]:

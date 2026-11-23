@@ -10,7 +10,7 @@ import secrets
 import threading
 import unicodedata
 import zipfile
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import replanejar as rp
 from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
@@ -926,10 +927,14 @@ def planejar_tela(request: Request, rev: int | None = None, dia: str | None = No
         naves.append({"cod": n, "nome": nome, "linhas": linhas, "w": w, "h": h, "cap": tot_cap, "uso": tot_uso})
     falt = pl.faltantes(db, r) if r else []
     i = dias.index(d)
+    rp_ini = hoje + timedelta(days=1)
+    while rp_ini.weekday() == 6:
+        rp_ini += timedelta(days=1)
+    rp_fim = max(r.fim, rp_ini) if r and r.fim else rp_ini + timedelta(days=13)
     return tpl.TemplateResponse(request, "planejar.html", {
         "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
         "naves": naves, "sobra": sobra, "falt": falt, "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
-        "tamanho": fm.tamanho, "altura": fm.altura, "hoje": hoje, "base": ultima_base(db)})
+        "tamanho": fm.tamanho, "altura": fm.altura, "hoje": hoje, "base": ultima_base(db), "rp_ini": rp_ini, "rp_fim": rp_fim})
 
 
 @app.post("/planejar/alocar")
@@ -964,6 +969,49 @@ def planejar_revisao(rev: str = Form(""), dia: str = Form(""), modo: str = Form(
         db.add(nova)
         db.commit()
     return RedirectResponse(f"/planejar?rev={nova.id}&dia={dia}", status_code=303)
+
+
+@app.post("/planejar/replanejar")
+def planejar_replanejar(rev: int = Form(...), inicio: str = Form(...), fim: str = Form(...), db: Session = Depends(get_db)):
+    base = db.get(RevisaoProg, rev) or _404()
+    ini, fi = _data(inicio), _data(fim)
+    if not ini or not fi or fi < ini or (fi - ini).days > 90:
+        raise HTTPException(400, "Período inválido (até 90 dias).")
+    nova = rp.replanejar(db, base, ini, fi)
+    return RedirectResponse(f"/planejar/replanejamento/{nova.id}", status_code=303)
+
+
+@app.get("/planejar/replanejamento/{rid}", response_class=HTMLResponse)
+def replanejamento_ver(request: Request, rid: int, db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, rid) or _404()
+    rel = r.relatorio or {}
+    ini = _data(rel.get("inicio")) or r.inicio
+    itens = [i for i in r.itens if i.data >= ini]
+    por_dia = defaultdict(lambda: defaultdict(lambda: [0, 0.0]))
+    for i in itens:
+        x = por_dia[i.data][i.nave]
+        x[0] += i.qtd or 1
+        x[1] += i.volume or 0
+    tot_dia = {d: sum(v[1] for v in n.values()) for d, n in por_dia.items()}
+    return tpl.TemplateResponse(request, "replanejamento.html", {"r": r, "rel": rel, "ini": ini, "por_dia": dict(sorted(por_dia.items())),
+                                                                 "tot_dia": tot_dia,
+                                                                 "base": ultima_base(db)})
+
+
+@app.get("/planejar/replanejamento/{rid}/planilha")
+def replanejamento_planilha(rid: int, db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, rid) or _404()
+    ini = _data((r.relatorio or {}).get("inicio")) or r.inicio
+    nome = f"Programacao_Producao_{ini:%d-%m}_a_{r.fim:%d-%m}_replanejada.xlsx"
+    return Response(rp.planilha(r, ini), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@app.post("/planejar/replanejamento/{rid}/publicar")
+def replanejamento_publicar(rid: int, db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, rid) or _404()
+    rp.publicar(db, r)
+    return RedirectResponse(f"/planejar/replanejamento/{rid}", status_code=303)
 
 
 @app.get("/planejar/forma/{fid}", response_class=HTMLResponse)

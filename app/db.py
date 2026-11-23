@@ -81,6 +81,13 @@ def migrar():
     if "formas" in insp.get_table_names() and "produtos" not in {c["name"] for c in insp.get_columns("formas")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE formas ADD COLUMN produtos VARCHAR(120) DEFAULT ''"))
+    if "revisoes_prog" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("revisoes_prog")}
+        with engine.begin() as cx:
+            if "rascunho" not in cols:
+                cx.execute(text("ALTER TABLE revisoes_prog ADD COLUMN rascunho BOOLEAN DEFAULT FALSE"))
+            if "relatorio" not in cols:
+                cx.execute(text("ALTER TABLE revisoes_prog ADD COLUMN relatorio JSON"))
     if "pecas" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("pecas")}
         with engine.begin() as cx:

@@ -765,3 +765,46 @@ def test_fora_da_area_sai_do_avanco():
     f2 = NS(area=area, marcas=[mk("PP10", 200), mk("PP10", 210), mk("PP9", 10), mk("PP9", 20), mk("PP9", 300), mk("V1", 400)])
     assert fora_da_area([f1, f2], un) == {"PP10": 2, "PP9": 1, "V1": 1}
     assert fora_da_area([NS(area=None, marcas=f1.marcas)], un) == {}
+
+
+def test_replanejamento_automatico(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Apontamento, ItemProg, Obra, RevisaoProg
+    from app import programacao as pg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    db.scalar(select(Obra)).ativa = True
+    base = RevisaoProg(nome="Rev03", inicio=date(2026, 11, 16), fim=date(2026, 11, 28))
+    i1 = ItemProg(data=date(2026, 11, 18), nave="N1", forma="N1 - F4 40x40 (16m)", obra="OBRA-TESTE", peca="P1", codigo="1003",
+                  produto="PILAR", secao="40x40", comprimento=8, qtd=1)
+    i1.apontamento = Apontamento(realizado="N", causa="Armação", comentario="faltou aço")
+    base.itens += [i1, ItemProg(data=date(2026, 11, 25), nave="N1", forma="N1 - F5 40x40 (21m)", obra="OBRA-TESTE", peca="P2",
+                                codigo="1004", produto="PILAR", secao="40x40", comprimento=8, qtd=1),
+                   ItemProg(data=date(2026, 11, 26), nave="N1", forma="N1 - F2 80x60 (80m)", obra="OBRA-TESTE", peca="VR1",
+                            codigo="1001", produto="VIGA", secao="20x60", comprimento=5, qtd=1)]
+    db.add(base)
+    db.commit()
+    r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-28"}, follow_redirects=False)
+    assert r.status_code == 303
+    rid = int(r.headers["location"].rsplit("/", 1)[1])
+    db.expire_all()
+    nova = db.get(RevisaoProg, rid)
+    assert nova.rascunho and pg.revisao_atual(db).id == base.id          # rascunho não vira a vigente
+    it = {(i.codigo, i.data >= date(2026, 11, 24)): i for i in nova.itens}
+    assert it[("1003", False)].apontamento.causa == "Armação"           # histórico mantém o apontamento
+    p1 = it[("1003", True)]
+    assert p1.data == date(2026, 11, 25) and "Atrasada" in p1.obs        # não armada: não entra no 1º dia
+    assert it[("1004", True)].forma.startswith("N1 - F5")                # fica na fôrma original
+    assert ("1001", True) not in it and nova.relatorio["ja_feitas"] == 1  # VR1 1001 já fabricada sai
+    assert it[("1002", True)].forma.startswith("N3 - F1") and "Nova" in it[("1002", True)].obs
+    h = cliente.get(f"/planejar/replanejamento/{rid}").text
+    assert "atrasadas reprogramadas" in h and "OBRA-TESTE" in h
+    x = cliente.get(f"/planejar/replanejamento/{rid}/planilha")
+    assert x.status_code == 200 and len(x.content) > 3000
+    imp = pg.importar_programacao(db, x.content, "replanejada.xlsx")          # a planilha volta para o app
+    assert imp.resumo["linhas"] == sum(1 for i in nova.itens if i.data >= date(2026, 11, 24))
+    cliente.post(f"/planejar/replanejamento/{rid}/publicar")
+    db.expire_all()
+    assert pg.revisao_atual(db).id == rid

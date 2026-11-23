@@ -15,7 +15,7 @@
         {% if prox %}<a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ prox }}" title="Próximo dia">›</a>{% endif %}
       </span></label>
     <label for="rev">Revisão em edição<select id="rev" name="rev" onchange="this.form.submit()">
-      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ '[RASCUNHO] ' if x.rascunho }}{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
   </form>
   {% endif %}
   <form method="post" action="/planejar/revisao" class="filtros" style="margin:0">
@@ -27,6 +27,15 @@
 {% if not r %}
 <div class="vazio">Não há revisão de programação. Crie uma revisão vazia ou importe a planilha em <a href="/importar">Importar dados</a>.</div>
 {% else %}
+<form method="post" action="/planejar/replanejar" class="filtros caixa-replan">
+  <input type="hidden" name="rev" value="{{ r.id }}">
+  <b style="align-self:center">Replanejar automático</b>
+  <label>A partir de<input type="date" name="inicio" value="{{ rp_ini }}" required></label>
+  <label>Até<input type="date" name="fim" value="{{ rp_fim }}" required></label>
+  <button type="submit" class="botao" onclick="this.disabled=true;this.textContent='Calculando...';this.form.submit()">Gerar rascunho</button>
+  <span class="meta" style="align-self:center;max-width:520px">Mantém o que já passou, põe as atrasadas primeiro e encaixa as faltantes nas fôrmas certas (seção, comprimento, capacidade, prioridade da obra). Sai como rascunho: só vale depois de publicar.</span>
+</form>
+{% if r.rascunho %}<p class="aviso">Rascunho de replanejamento, ainda não publicado. <a href="/planejar/replanejamento/{{ r.id }}">Ver resumo, baixar planilha ou publicar</a>.</p>{% endif %}
 <p class="meta" style="margin:-4px 0 10px">Você está editando <b>{{ r.nome }}</b>. As mudanças valem na hora no Realizado do dia e no programado x realizado. Para guardar a versão anterior, crie uma cópia antes.</p>
 <div class="plan">
   <aside class="lista-falt">

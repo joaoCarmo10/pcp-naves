@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}Replanejamento | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin-bottom:4px"><a href="/planejar?rev={{ r.id }}&dia={{ ini }}">Planejar</a> ›</p>
+<h1>Replanejamento {{ rel.inicio and ini.strftime('%d/%m') }} a {{ r.fim.strftime('%d/%m') }}</h1>
+<p class="sub">Base: {{ rel.base }}{% if rel.sabado %} · com sábado{% else %} · sem sábado{% endif %}</p>
+{% if r.rascunho %}
+<div class="aviso">Rascunho: ainda não vale para o status das plantas, armação e programado x realizado. Ajuste no quadro se precisar e publique.</div>
+{% else %}
+<div class="aviso ok">Publicado: esta é a programação vigente.</div>
+{% endif %}
+<div class="filtros" style="margin-bottom:12px">
+  <a class="botao" href="/planejar/replanejamento/{{ r.id }}/planilha">Baixar planilha (layout da programação)</a>
+  <a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ ini }}">Abrir no quadro para ajustar</a>
+  {% if r.rascunho %}
+  <form method="post" action="/planejar/replanejamento/{{ r.id }}/publicar" style="margin:0" onsubmit="return confirm('Publicar como programação vigente?')">
+    <button class="botao-sec" type="submit">Publicar como programação vigente</button></form>
+  <form method="post" action="/programacao/revisoes/{{ r.id }}/excluir" style="margin:0" onsubmit="return confirm('Descartar este rascunho?')">
+    <button class="botao-sec" type="submit">Descartar</button></form>
+  {% endif %}
+</div>
+<div class="kpis" style="margin-bottom:10px">
+  <div class="kpi"><b>{{ rel.programadas }}</b><span>peças programadas no período (de {{ rel.fila }} que faltam)</span></div>
+  <div class="kpi"><b>{{ rel.atrasadas_repostas }} de {{ rel.atrasadas }}</b><span>atrasadas reprogramadas</span></div>
+  <div class="kpi"><b>{{ rel.ja_feitas }}</b><span>já fabricadas, saíram da programação</span></div>
+  <div class="kpi"><b>{{ rel.sem_forma|sum(attribute='n') }}</b><span>sem fôrma compatível</span></div>
+</div>
+{% if rel.excluidas %}<p class="meta">Não entram: {% for k, v in rel.excluidas.items() %}{{ k }}: {{ v }}{{ '; ' if not loop.last }}{% endfor %}.{% if rel.fixos %} {{ rel.fixos }} linha(s) sem peça no Plannix ficaram onde estavam.{% endif %}</p>{% endif %}
+
+<h2>Por obra</h2>
+<table class="tabela"><thead><tr><th>Obra</th><th class="n">Prior.</th><th class="n">Faltam</th><th class="n">Programadas</th><th class="n">Atrasadas repostas</th><th class="n">Ficam p/ depois</th><th class="n">Atrasadas fora</th><th class="n">Sem fôrma</th><th class="n">Desenho bloq.</th></tr></thead>
+<tbody>{% for o in rel.por_obra %}<tr><td>{{ o.obra }}</td><td class="n">{{ o.prio if o.prio != 99 else '-' }}</td><td class="n">{{ o.faltam or 0 }}</td><td class="n"><b>{{ o.programadas or 0 }}</b></td>
+<td class="n">{{ o.atrasadas_repostas or '-' }}</td><td class="n">{{ o.ficam_para_depois or '-' }}</td><td class="n{{ ' difere' if o.atrasadas_fora }}">{{ o.atrasadas_fora or '-' }}</td><td class="n{{ ' difere' if o.sem_forma }}">{{ o.sem_forma or '-' }}</td><td class="n">{{ o.bloqueadas or '-' }}</td></tr>{% endfor %}</tbody></table>
+
+<h2>Carga por dia</h2>
+<table class="tabela"><thead><tr><th>Dia</th><th class="n">N1 pç</th><th class="n">N1 m³</th><th class="n">N2 pç</th><th class="n">N2 m³</th><th class="n">N3 pç</th><th class="n">N3 m³</th><th class="n">Total m³</th></tr></thead>
+<tbody>{% for d, n in por_dia.items() %}<tr><td>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</td>
+{% for nv in ('N1','N2','N3') %}<td class="n">{{ n[nv][0] if nv in n else '-' }}</td><td class="n">{{ n[nv][1]|num if nv in n else '-' }}</td>{% endfor %}
+<td class="n"><b>{{ tot_dia[d]|num }}</b></td></tr>{% endfor %}</tbody></table>
+
+<h2>Ocupação das fôrmas no período</h2>
+<table class="tabela"><thead><tr><th>Fôrma</th><th class="n">Usado</th><th class="n">Capacidade</th><th class="n">%</th></tr></thead>
+<tbody>{% for f in rel.ocupacao %}<tr><td>{{ f.forma }}</td><td class="n">{{ f.uso }}</td><td class="n">{{ f.cap }}</td><td class="n{{ ' difere' if f.pct < 0.5 }}">{{ f.pct|pct }}</td></tr>{% endfor %}</tbody></table>
+
+<h2>Sem fôrma compatível</h2>
+{% if rel.sem_forma %}<p class="meta">Nenhuma fôrma cadastrada aceita essa seção/produto/comprimento. Cadastre a fôrma ou a adaptação em <a href="/formas">Fôrmas e naves</a> e gere de novo.</p>
+<table class="tabela"><thead><tr><th>Obra</th><th>Produto</th><th>Seção</th><th class="n">Qtd</th></tr></thead>
+<tbody>{% for x in rel.sem_forma %}<tr><td>{{ x.obra }}</td><td>{{ x.produto }}</td><td>{{ x.secao }}</td><td class="n">{{ x.n }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="meta">Nenhuma.</p>{% endif %}
+
+<h2>Atrasadas que não couberam no período</h2>
+{% if rel.sobra_atrasadas %}<table class="tabela"><thead><tr><th>Obra</th><th>Peça</th><th>Código</th><th>Prog. antes</th><th>Fôrma antes</th></tr></thead>
+<tbody>{% for x in rel.sobra_atrasadas %}<tr><td>{{ x.obra }}</td><td>{{ x.peca }}</td><td>{{ x.codigo }}</td><td>{{ x.data0[8:10] }}/{{ x.data0[5:7] }}</td><td>{{ x.forma0 }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="meta">Nenhuma: todas as atrasadas entraram.</p>{% endif %}
+{% endblock %}

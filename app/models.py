@@ -60,6 +60,8 @@ class RevisaoProg(Base):
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     inicio: Mapped[date | None] = mapped_column(Date, nullable=True)
     fim: Mapped[date | None] = mapped_column(Date, nullable=True)
+    rascunho: Mapped[bool] = mapped_column(Boolean, default=False)          # replanejamento ainda não publicado
+    relatorio: Mapped[dict | None] = mapped_column(JSON, nullable=True)     # resumo do replanejamento automático
     itens: Mapped[list["ItemProg"]] = relationship(back_populates="revisao", cascade="all, delete-orphan")
 
 
