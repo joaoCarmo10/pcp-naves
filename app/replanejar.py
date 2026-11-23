@@ -275,12 +275,13 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             else:
                 est[f.id]["sec"] = (minhas or cands)[0].sec
 
-        # 1ª passada: cada fôrma pega as peças que já eram dela; 2ª: completa com o resto da fila
-        for so_minhas in (True, False):
+        # passadas: 1ª fura-fila (premissa/pendente) em qualquer fôrma; 2ª cada fôrma pega as peças que já eram dela;
+        # 3ª completa com o resto da fila
+        for passada in ("fura", "minhas", "resto"):
             for f in vig:
                 e = est[f.id]
                 for d in aceita[f.id]:
-                    if (so_minhas and (f.id, id(d)) not in pref) or not pode(d):
+                    if (passada == "fura" and not d.fura) or (passada == "minhas" and (f.id, id(d)) not in pref) or not pode(d):
                         continue
                     if e["sec"] and d.sec != e["sec"] and f.codigo not in MISTAS:
                         continue
