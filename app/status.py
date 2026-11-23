@@ -153,9 +153,11 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
     prog = codigos_programados(db)
     pecas = list(db.scalars(select(Peca).where(Peca.obra_id == obra_id)))
     vol_nome = {p.peca: p.volume for p in pecas if p.volume}
+    from . import premissas as pm
+    prs = [pr for pr in pm.ativas(db) if pr.tipo == "pendente"]
     out: dict[str, list[dict]] = defaultdict(list)
     for p in pecas:
-        if p.fabricada:
+        if p.fabricada and not (prs and pm.pendente(prs, p)):
             st, d = "FAB", p.data_fabricacao
         elif p.codigo in prog:
             st, d = "PROG", prog[p.codigo]

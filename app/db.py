@@ -81,6 +81,9 @@ def migrar():
     if "formas" in insp.get_table_names() and "produtos" not in {c["name"] for c in insp.get_columns("formas")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE formas ADD COLUMN produtos VARCHAR(120) DEFAULT ''"))
+    if "premissas" in insp.get_table_names() and "limite" not in {c["name"] for c in insp.get_columns("premissas")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE premissas ADD COLUMN limite INTEGER"))
     if "revisoes_prog" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("revisoes_prog")}
         with engine.begin() as cx:

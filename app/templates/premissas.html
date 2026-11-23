@@ -3,10 +3,10 @@
 {% block corpo %}
 <p class="sub" style="margin-bottom:4px"><a href="/planejar">Planejar</a> ›</p>
 <h1>Premissas do replanejamento</h1>
-<p class="sub">O replanejamento automático usa estas regras. Campo vazio vale para qualquer valor. Obra casa por parte do nome (ex.: "Gandú"); peças e seções aceitam lista separada por vírgula.</p>
+<p class="sub">O replanejamento automático usa estas regras. Campo vazio vale para qualquer valor. Obra casa por parte do nome (ex.: "Gandú"); peças e seções aceitam lista separada por vírgula; peças aceitam curinga (VS*).</p>
 
 <table class="tabela premissas">
-<thead><tr><th>Ativa</th><th>Tipo</th><th>Obra</th><th>Peças</th><th>Produto</th><th>Seções</th><th>Fôrma</th><th>De</th><th>Até</th><th>Vol. m³</th><th>Observação</th><th></th></tr></thead>
+<thead><tr><th>Ativa</th><th>Tipo</th><th>Obra</th><th>Peças</th><th>Produto</th><th>Seções</th><th>Fôrma</th><th>De</th><th>Até</th><th>Vol. m³</th><th>Máx./dia</th><th>Observação</th><th></th></tr></thead>
 <tbody>
 {% for p in prs %}
 <tr class="{{ '' if p.ativa else 'inativa' }}"><form method="post" action="/planejar/premissas" id="f{{ p.id }}"><input type="hidden" name="pid" value="{{ p.id }}"></form>
@@ -20,6 +20,7 @@
   <td><input form="f{{ p.id }}" type="date" name="de" value="{{ p.de or '' }}"></td>
   <td><input form="f{{ p.id }}" type="date" name="ate" value="{{ p.ate or '' }}"></td>
   <td><input form="f{{ p.id }}" name="volume" value="{{ p.volume if p.volume is not none else '' }}" size="5"></td>
+  <td><input form="f{{ p.id }}" name="limite" value="{{ p.limite if p.limite is not none else '' }}" size="3"></td>
   <td><input form="f{{ p.id }}" name="obs" value="{{ p.obs }}" size="34"></td>
   <td style="white-space:nowrap"><button form="f{{ p.id }}" name="acao" value="salvar" class="botao mini">Salvar</button>
     <button form="f{{ p.id }}" name="acao" value="excluir" class="botao-sec mini" onclick="return confirm('Apagar esta premissa?')">Apagar</button></td>
@@ -36,6 +37,7 @@
   <td><input form="fnova" type="date" name="de"></td>
   <td><input form="fnova" type="date" name="ate"></td>
   <td><input form="fnova" name="volume" size="5"></td>
+  <td><input form="fnova" name="limite" size="3"></td>
   <td><input form="fnova" name="obs" size="34"></td>
   <td><button form="fnova" name="acao" value="salvar" class="botao mini">Incluir</button></td>
 </tr>
@@ -50,6 +52,8 @@
   <li><b>Fura a fila</b>: as peças que casarem vão para a frente da fila.</li>
   <li><b>Parar fôrma</b>: a fôrma não produz de "De" a "Até".</li>
   <li><b>Peça avulsa</b>: peça fora do Plannix (outra obra, reposição), na fôrma e no dia "De". Ocupa a fôrma.</li>
+  <li><b>Plannix diz fabricada, mas está pendente</b>: as peças que casarem e que o Plannix aponta como fabricadas na data "De" (vazio = qualquer data) voltam a ser pendentes no avanço e no replanejamento, furam a fila e podem entrar no primeiro dia.</li>
+  <li><b>Máximo por fôrma por dia</b>: no máximo "Máx./dia" peças que casarem na mesma fôrma no mesmo dia. Em Peças aceita curinga: VS* = todas as VS.</li>
 </ul>
 
 <h2>Regras fixas</h2>

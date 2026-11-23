@@ -15,6 +15,8 @@ TIPOS = {
     "primeiro": "Fura a fila",
     "parar_forma": "Parar fôrma",
     "avulsa": "Peça avulsa (fora do Plannix)",
+    "pendente": "Plannix diz fabricada, mas está pendente",
+    "max_por_dia": "Máximo por fôrma por dia",
 }
 
 REGRAS_FIXAS = [
@@ -27,7 +29,7 @@ REGRAS_FIXAS = [
     "Montagem da fôrma no dia: a que a programação base previa para o dia; senão continua a do dia anterior enquanto houver peça dela; só depois muda (adaptação).",
     "Folga de 0,20 m entre peças na mesma fôrma linear (não vale para laje).",
     "A peça entra na fôrma pelo cadastro (seção e adaptações aceitas, comprimento útil, produto).",
-    "Primeiro dia: só peça já armada ou que já estava programada para esse dia (armação D-1).",
+    "Primeiro dia: só peça já armada, pendente (premissa) ou que já estava programada para esse dia (armação D-1).",
     "Não entram: obras inativas, fora da área de atuação da obra, desenho bloqueado no Autodoc.",
 ]
 
@@ -74,6 +76,13 @@ def _lista(s: str) -> set[str]:
     return {_n(x) for x in (s or "").split(",") if _n(x)}
 
 
+def _na_lista(valor: str, lista: str) -> bool:
+    """Nome na lista; aceita curinga (VS* = todas as VS)."""
+    from fnmatch import fnmatchcase
+    v = _n(valor)
+    return any(fnmatchcase(v, x) for x in _lista(lista))
+
+
 def casa_obra(pr: Premissa, obra: str) -> bool:
     return not pr.obra or _n(pr.obra) in _n(obra)
 
@@ -82,11 +91,13 @@ def casa(pr: Premissa, p: Peca) -> bool:
     """A peça casa com obra, nomes, produto e seções da premissa (campo vazio = qualquer)."""
     if not casa_obra(pr, p.obra.nome):
         return False
-    if pr.pecas and _n(p.peca) not in _lista(pr.pecas):
+    if pr.pecas and not _na_lista(p.peca, pr.pecas):
         return False
     if pr.produto and _n(p.produto) != _n(pr.produto):
         return False
     if pr.secoes and _n(p.secao) not in _lista(pr.secoes):
+        return False
+    if pr.tipo == "pendente" and pr.de and p.data_fabricacao != pr.de:
         return False
     return True
 
@@ -118,3 +129,12 @@ def fura_fila(prs: list[Premissa], p: Peca) -> bool:
 def forma_parada(prs: list[Premissa], codigo: str, d: date) -> bool:
     return any(pr.tipo == "parar_forma" and _n(pr.forma) == _n(codigo) and (not pr.de or pr.de <= d) and (not pr.ate or d <= pr.ate)
                for pr in prs)
+
+
+def pendente(prs: list[Premissa], p: Peca) -> bool:
+    """Plannix aponta a peça como fabricada, mas o PCP diz que ainda não foi (ex.: apontada antes da hora)."""
+    return bool(p.fabricada) and any(pr.tipo == "pendente" and casa(pr, p) for pr in prs)
+
+
+def limites(prs: list[Premissa], p: Peca) -> list[tuple[int, int]]:
+    return [(pr.id, pr.limite) for pr in prs if pr.tipo == "max_por_dia" and pr.limite and casa(pr, p)]

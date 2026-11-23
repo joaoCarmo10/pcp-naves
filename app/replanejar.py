@@ -32,6 +32,8 @@ class Dem:
     ordem0: int = 0                # posição na programação base (sequência de lajes)
     arranjo: str | None = None
     fura: bool = False
+    pend: bool = False             # Plannix diz fabricada, mas está pendente (premissa)
+    lims: list = field(default_factory=list)   # (id da premissa, máximo por fôrma por dia)
     desde: date | None = None      # premissa "só a partir de"
     feito: bool = False
     chave: tuple = field(default=())
@@ -85,7 +87,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
     existe_cod = {p.codigo for p in todas}
     existe_nome = {(p.obra.nome, p.peca) for p in todas}
     for p in todas:
-        if p.fabricada or p.obra_id not in ativas:
+        if (p.fabricada and not pm.pendente(prs, p)) or p.obra_id not in ativas:
             continue
         if p.codigo in fora:
             excluidas["Fora da área de atuação (outra empresa)"] += 1
@@ -126,9 +128,10 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         livres_por_nome[(p.obra.nome, p.peca)].append(c)
 
     def nova_dem(p: Peca, classe: int, i: ItemProg | None = None, k: int = 0) -> Dem:
+        pend = pm.pendente(prs, p)
         return Dem(p=p, classe=classe, prio=prio[p.obra_id], armada=bool(p.hora_armacao or p.codigo in armadas_app),
                    arm=p.hora_armacao, data0=i.data if i else None, forma0=i.forma if i else "", tipo0=i.tipo if i else "",
-                   ordem0=k, fura=pm.fura_fila(prs, p), desde=pm.nao_antes(prs, p))
+                   ordem0=k, fura=pend or pm.fura_fila(prs, p), pend=pend, lims=pm.limites(prs, p), desde=pm.nao_antes(prs, p))
 
     def pegar(cod: str, i: ItemProg, k: int):
         p = nf[cod]
@@ -241,7 +244,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         est = {}
         for f in vig:
             meus = [i for i in fixos_dia if fm.item_e_da_forma(i.forma, f)]
-            est[f.id] = {"cap": cap_dia(f, dia), "usado": 0.0, "n": 0, "arr": None, "sec": None}
+            est[f.id] = {"cap": cap_dia(f, dia), "usado": 0.0, "n": 0, "arr": None, "sec": None, "lim": Counter()}
             for i in meus:
                 est[f.id]["usado"] += (i.qtd or 1) if f.tipo == "unidade" else (i.comprimento or 0) + (FOLGA if est[f.id]["n"] else 0)
                 est[f.id]["n"] += i.qtd or 1
@@ -249,7 +252,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         def pode(d: Dem) -> bool:
             if d.feito or (d.desde and dia < d.desde) or (so_compromisso and d.classe == 2 and not d.fura):
                 return False
-            return not (dia == inicio and not (d.armada or d.data0 == inicio or _laje(d)))
+            return not (dia == inicio and not (d.armada or d.pend or d.data0 == inicio or _laje(d)))
 
         # seção do dia em cada fôrma de seção única: continua a de ontem se ainda tiver peça; senão a da 1ª da fila
         par = {a: b for x in MESMA_MONTAGEM for a, b in (x, x[::-1])}
@@ -291,10 +294,14 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
                         if f.tipo == "unidade":
                             break
                         continue
+                    if any(e["lim"][pid] >= lim for pid, lim in d.lims):
+                        continue
                     if f.tipo == "pista" and d.arranjo is not None:
                         if e["arr"] is not None and d.arranjo != e["arr"]:
                             continue
                         e["arr"] = d.arranjo
+                    for pid, _ in d.lims:
+                        e["lim"][pid] += 1
                     d.feito = True
                     e["usado"] += u
                     e["n"] += 1
@@ -302,7 +309,9 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
                         e["sec"] = d.sec
                     p = d.p
                     obs = []
-                    if d.fura:
+                    if d.pend:
+                        obs.append(f"Pendente: Plannix aponta {d.p.data_fabricacao:%d/%m}, não foi feita")
+                    elif d.fura:
                         obs.append("Prioridade (premissa)")
                     if so_compromisso:
                         obs.append(f"Remanejada para depois de {fim:%d/%m}")

@@ -985,7 +985,7 @@ def premissas_tela(request: Request, db: Session = Depends(get_db)):
 @app.post("/planejar/premissas")
 def premissas_salvar(pid: str = Form(""), acao: str = Form("salvar"), tipo: str = Form("excluir"), obra: str = Form(""),
                      pecas: str = Form(""), produto: str = Form(""), secoes: str = Form(""), forma: str = Form(""),
-                     de: str = Form(""), ate: str = Form(""), volume: str = Form(""), obs: str = Form(""),
+                     de: str = Form(""), ate: str = Form(""), volume: str = Form(""), limite: str = Form(""), obs: str = Form(""),
                      db: Session = Depends(get_db)):
     pr = db.get(Premissa, int(pid)) if pid.isdigit() else None
     if acao == "excluir" and pr:
@@ -999,6 +999,7 @@ def premissas_salvar(pid: str = Form(""), acao: str = Form("salvar"), tipo: str 
         pr.tipo, pr.obra, pr.pecas, pr.produto = tipo, obra.strip()[:80], pecas.strip()[:300], produto.strip().upper()[:40]
         pr.secoes, pr.forma, pr.obs = secoes.strip()[:120], forma.strip()[:30], obs.strip()[:300]
         pr.de, pr.ate, pr.volume = _data(de), _data(ate), _num(volume)
+        pr.limite = int(limite) if limite.strip().isdigit() else None
         db.add(pr)
     db.commit()
     return RedirectResponse("/planejar/premissas", status_code=303)

@@ -862,3 +862,34 @@ def test_replanejamento_laje_e_viga_juntas(cliente):
     db.commit()
     r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-28"}, follow_redirects=False)
     assert r.status_code == 303
+
+
+def test_premissa_pendente_e_limite(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra, Peca, RevisaoProg
+    from app.status import status_da_obra
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    for k in range(7):
+        db.add(Peca(obra_id=o.id, codigo=f"30{k}", peca="VS1-2", produto="VIGA", secao="40x60", comprimento=13.49, volume=1,
+                    fabricada=True, data_fabricacao=date(2026, 11, 12)))
+    base = RevisaoProg(nome="b", inicio=date(2026, 11, 16), fim=date(2026, 11, 28))
+    db.add(base)
+    db.commit()
+    cliente.get("/planejar/premissas")
+    cliente.post("/planejar/premissas", data={"tipo": "pendente", "obra": "OBRA-TESTE", "pecas": "VS1-2", "de": "2026-11-12"})
+    cliente.post("/planejar/premissas", data={"tipo": "max_por_dia", "obra": "OBRA-TESTE", "pecas": "VS*", "limite": "5"})
+    assert status_da_obra(db, o.id)["VS1-2"].fabricadas == 0              # avanço também deixa de contar
+    r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-28"}, follow_redirects=False)
+    db.expire_all()
+    nova = db.get(RevisaoProg, int(r.headers["location"].rsplit("/", 1)[1]))
+    vs = [i for i in nova.itens if i.peca == "VS1-2"]
+    assert len(vs) == 7 and all("Pendente" in i.obs for i in vs)
+    por_dia = {}
+    for i in vs:
+        por_dia[(i.data, i.forma)] = por_dia.get((i.data, i.forma), 0) + 1
+    assert max(por_dia.values()) <= 5 and min(i.data for i in vs) == date(2026, 11, 24)
