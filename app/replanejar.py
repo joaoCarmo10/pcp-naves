@@ -185,12 +185,10 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             del fila[c]
             continue
         d.arranjo = _arranjo(d.p, idx)
-        if _laje(d):   # laje: sequência da base (cronograma / ordem da folha)
-            d.chave = (0 if d.fura else 1, d.classe, d.prio, d.data0 or date.max, d.ordem0, d.p.obra.nome,
-                       chave_natural(d.p.peca), d.p.codigo)
-        else:
-            d.chave = (0 if d.fura else 1, d.classe, d.prio, 0 if d.armada else 1, d.arm or datetime.max, d.data0 or date.max,
-                       d.p.obra.nome, chave_natural(d.p.item or ""), d.p.produto, chave_natural(d.p.peca), d.p.codigo)
+        laje = _laje(d)   # laje: sequência da base (cronograma / ordem da folha), sem critério de armação
+        d.chave = (0 if d.fura else 1, d.classe, d.prio, 0 if (laje or d.armada) else 1,
+                   datetime.min if laje else (d.arm or datetime.max), d.data0 or date.max, d.ordem0 if laje else 0,
+                   d.p.obra.nome, [] if laje else chave_natural(d.p.item or ""), d.p.produto, chave_natural(d.p.peca), d.p.codigo)
     ordem = sorted(fila.values(), key=lambda d: d.chave)
 
     # 3. encaixe dia a dia

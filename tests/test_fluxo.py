@@ -841,3 +841,20 @@ def test_replanejamento_premissas(cliente):
     assert not av                                    # escadas do Barracão (25-27/11) ficam fora do período 24/11
     assert db.scalar(select(Premissa).where(Premissa.obra == "7Log"))
     assert "Remanejadas" in cliente.get(f"/planejar/replanejamento/{rid}").text or "não couberam" in cliente.get(f"/planejar/replanejamento/{rid}").text
+
+
+def test_replanejamento_laje_e_viga_juntas(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    db.add(Peca(obra_id=o.id, codigo="2001", peca="L1", produto="LAJE", secao="21x125", comprimento=10, volume=1))
+    base = RevisaoProg(nome="b", inicio=date(2026, 11, 16), fim=date(2026, 11, 28))
+    db.add(base)
+    db.commit()
+    r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-28"}, follow_redirects=False)
+    assert r.status_code == 303
