@@ -753,3 +753,15 @@ def test_pilar_em_varias_folhas_repete_codigo():
     ao = atribuir_obra([(1, [mk(0), mk(50)]), (2, [mk(0), mk(50)]), (3, [mk(0), mk(50)])], un)
     assert all([m["cod"] for m in ao[f]] == ["P0", "P1"] for f in (1, 2, 3))
     assert desenhadas(ao) == {"P1": 2}
+
+
+def test_fora_da_area_sai_do_avanco():
+    from types import SimpleNamespace as NS
+    from app.status import fora_da_area
+    un = {"PP10": [{}] * 2, "PP9": [{}] * 3, "V1": [{}] * 2}
+    area = {"x0": 0, "x1": 100}
+    mk = lambda n, x: {"t": n, "r": [x, 0, x + 4, 4]}
+    f1 = NS(area=area, marcas=[mk("PP10", 200), mk("PP10", 210), mk("PP9", 10), mk("PP9", 20), mk("PP9", 300), mk("V1", 10)])
+    f2 = NS(area=area, marcas=[mk("PP10", 200), mk("PP10", 210), mk("PP9", 10), mk("PP9", 20), mk("PP9", 300), mk("V1", 400)])
+    assert fora_da_area([f1, f2], un) == {"PP10": 2, "PP9": 1, "V1": 1}
+    assert fora_da_area([NS(area=None, marcas=f1.marcas)], un) == {}

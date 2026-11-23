@@ -63,25 +63,61 @@ def volume_estimado(p: Peca, vol_nome: dict[str, float]) -> float:
 
 
 def status_da_obra(db: Session, obra_id: int) -> dict[str, StatusPeca]:
-    from .programacao import codigos_programados
-    prog = codigos_programados(db)
-    pecas = list(db.scalars(select(Peca).where(Peca.obra_id == obra_id)))
-    vol_nome = {p.peca: p.volume for p in pecas if p.volume}
+    """Status por nome a partir das unidades do Plannix, já sem as que estão fora da área de atuação da obra."""
+    return status_de_unidades(unidades_da_obra(db, obra_id))
+
+
+def status_de_unidades(un: dict[str, list[dict]]) -> dict[str, StatusPeca]:
     out: dict[str, StatusPeca] = {}
-    for p in pecas:
-        s = out.setdefault(p.peca, StatusPeca(peca=p.peca, produto=p.produto, secao=p.secao))
-        v = volume_estimado(p, vol_nome)
-        s.total += 1
-        s.volume += v
-        if p.fabricada:
-            s.fabricadas += 1
-            s.volume_fab += v
-        elif p.codigo in prog:
-            s.programadas += 1
-            if prog[p.codigo]:
-                s.datas.append(prog[p.codigo])
-    for s in out.values():
+    for nome, us in un.items():
+        if not us:
+            continue
+        s = out[nome] = StatusPeca(peca=nome, produto=us[0].get("produto", ""), secao=us[0].get("secao", ""))
+        for u in us:
+            s.total += 1
+            s.volume += u["vol"]
+            if u["st"] == "FAB":
+                s.fabricadas += 1
+                s.volume_fab += u["vol"]
+            elif u["st"] == "PROG":
+                s.programadas += 1
+                if u["data"]:
+                    s.datas.append(u["data"])
         s.datas = sorted(set(s.datas))
+    return out
+
+
+def fora_da_area(plantas: list, unidades: dict[str, list[dict]]) -> dict[str, int]:
+    """Quantas unidades de cada nome ficam fora da área de atuação (ex.: Bay, eixos 26+ são de outra empresa).
+    Só vale para obras com área definida em alguma planta. Pilar repetido em várias folhas conta pela folha de maior
+    quantidade (é a mesma peça); peças diferentes em folhas diferentes somam."""
+    fs = [p for p in plantas if p.marcas]
+    if not any(p.area for p in fs):
+        return {}
+    den: dict[str, list[int]] = defaultdict(list)
+    fora: dict[str, list[int]] = defaultdict(list)
+    for p in fs:
+        d: dict[str, int] = defaultdict(int)
+        f: dict[str, int] = defaultdict(int)
+        for m in p.marcas:
+            cx = (m["r"][0] + m["r"][2]) / 2
+            if p.area and not (p.area["x0"] <= cx <= p.area["x1"]):
+                f[m["t"]] += 1
+            else:
+                d[m["t"]] += 1
+        for n in set(d) | set(f):
+            den[n].append(d[n])
+            fora[n].append(f[n])
+    out = {}
+    for n, fo in fora.items():
+        nu = len(unidades.get(n, []))
+        if not nu or not sum(fo):
+            continue
+        rep = sum(den[n]) + sum(fo) >= 1.5 * nu
+        fd, ff = (max(den[n]), max(fo)) if rep else (sum(den[n]), sum(fo))
+        k = min(ff, max(0, nu - fd))
+        if k:
+            out[n] = k
     return out
 
 
@@ -111,7 +147,7 @@ CORES["SEM"] = ((0.62, 0.62, 0.62), "#9e9e9e")
 LEGENDA_UNID = [("FAB", "Fabricada"), ("PROG", "Programada"), ("FALTA", "Sem programação"), ("SEM", "Sem peça no Plannix")]
 
 
-def unidades_da_obra(db: Session, obra_id: int) -> dict[str, list[dict]]:
+def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str, list[dict]]:
     """Unidades físicas por nome, na ordem em que ocupam as etiquetas: fabricadas (data), programadas (data), resto."""
     from .programacao import codigos_programados
     prog = codigos_programados(db)
@@ -125,11 +161,17 @@ def unidades_da_obra(db: Session, obra_id: int) -> dict[str, list[dict]]:
             st, d = "PROG", prog[p.codigo]
         else:
             st, d = "FALTA", None
-        out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome)})
+        out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome),
+                            "produto": p.produto, "secao": p.secao})
     ordem = {"FAB": 0, "PROG": 1, "FALTA": 2}
     for us in out.values():
         us.sort(key=lambda u: (ordem[u["st"]], u["data"] or date.max, u["cod"] or ""))
-    return out
+    if escopo:
+        from .models import Planta
+        fora = fora_da_area(list(db.scalars(select(Planta).where(Planta.obra_id == obra_id))), out)
+        for n, k in fora.items():
+            out[n] = out[n][:len(out[n]) - k]   # sai do fim da fila: as que não estão nas etiquetas de dentro
+    return {n: us for n, us in out.items() if us}
 
 
 def atribuir(marcas: list, unidades: dict[str, list[dict]]) -> list[dict]:

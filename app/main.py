@@ -455,7 +455,11 @@ def obra(request: Request, obra_id: int, db: Session = Depends(get_db)):
     ao = _atrib_obra(db, o)
     dz = desenhadas(ao)
     pl = [dict(p=p, r=resumo(status_folha(ao[p.id], st, dz))) for p in o.plantas]
-    return tpl.TemplateResponse(request, "obra.html", {"o": o, "r": resumo(st), "prod": por_produto(st), "plantas": pl, "base": ultima_base(db)})
+    bruto = unidades_da_obra(db, o.id, escopo=False)
+    fora = {n: len(us) - (st[n].total if n in st else 0) for n, us in bruto.items()}
+    fora = {n: k for n, k in fora.items() if k > 0}
+    return tpl.TemplateResponse(request, "obra.html", {"o": o, "r": resumo(st), "prod": por_produto(st), "plantas": pl,
+                                                       "base": ultima_base(db), "fora": fora})
 
 
 @app.post("/obras/{obra_id}")

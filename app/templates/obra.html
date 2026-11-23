@@ -10,6 +10,8 @@
   <div class="kpi"><b>{{ r.programadas }}</b><span>programadas</span></div>
   <div class="kpi"><b>{{ r.falta }}</b><span>sem programação</span></div>
 </div>
+{% if fora %}<p class="meta">Fora da área de atuação (outra empresa), não entram no avanço: <b>{{ fora.values()|sum }}</b> unidade(s) do Plannix
+  ({% for n, k in fora|dictsort %}{{ n }}{% if k > 1 %} ×{{ k }}{% endif %}{{ ', ' if not loop.last }}{% endfor %}).</p>{% endif %}
 
 <h2>Plantas</h2>
 {% if plantas %}
