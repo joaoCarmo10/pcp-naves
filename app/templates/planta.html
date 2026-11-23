@@ -18,11 +18,27 @@
     <div class="palco" id="palco" style="width:{{ w }}px;height:{{ h }}px">
       <img src="/plantas/{{ p.id }}/imagem" width="{{ w }}" height="{{ h }}" alt="Planta {{ p.titulo }}">
       <svg viewBox="0 0 {{ w }} {{ h }}" width="{{ w }}" height="{{ h }}">
+        {% for f in fora %}<rect x="{{ f.x }}" y="{{ f.y }}" width="{{ f.w }}" height="{{ f.h }}" fill="#6b7280" fill-opacity="0.45" pointer-events="none"></rect>{% endfor %}
         {% for m in marcas %}<rect data-p="{{ m.p }}" x="{{ m.x }}" y="{{ m.y }}" width="{{ m.w }}" height="{{ m.h }}" fill="{{ CORES[m.s] }}" stroke="{{ CORES[m.s] }}"><title>{{ m.p }}</title></rect>{% endfor %}
       </svg>
     </div>
   </div>
   <div class="lado">
+    {% if flash %}<div class="aviso {{ 'erro' if 'Erro' in flash else 'ok' }}" style="margin-bottom:6px">{{ flash }}</div>{% endif %}
+    <form method="post" action="/plantas/{{ p.id }}/area" class="area-atuacao">
+      <span class="meta">Nossa área:</span>
+      {% if p.area %}<b>eixos {{ p.area.de }} a {{ p.area.ate }}</b>{% else %}<span class="meta">planta inteira</span>{% endif %}
+      <details><summary class="meta">alterar</summary>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+          eixo <input name="de" type="number" min="0" value="{{ p.area.de if p.area else '' }}" style="width:64px" aria-label="Eixo inicial">
+          a <input name="ate" type="number" min="0" value="{{ p.area.ate if p.area else '' }}" style="width:64px" aria-label="Eixo final">
+          <label class="meta" style="display:flex;gap:4px;align-items:center"><input type="checkbox" name="todas" value="1" checked style="width:auto"> todas as plantas de {{ o.nome }}</label>
+          <button type="submit">Salvar</button>
+          {% if p.area %}<button type="submit" name="remover" value="1" class="sec">Planta inteira</button>{% endif %}
+        </div>
+        <p class="meta" style="margin:4px 0 0">O app lê os números dos eixos nos balões da planta. Fora da área fica cinza e não conta.</p>
+      </details>
+    </form>
     <div class="linha" style="display:flex;gap:8px">
       <input type="search" id="busca" placeholder="Buscar peça" aria-label="Buscar peça" style="flex:1">
       <select id="filtro" aria-label="Filtrar por status"><option value="">Todos os status</option>{% for k, lab in LEGENDA %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select>

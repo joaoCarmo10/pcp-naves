@@ -5,6 +5,7 @@ import hmac
 import io
 import os
 import re
+import pymupdf
 import secrets
 import threading
 import unicodedata
@@ -445,7 +446,7 @@ def obra(request: Request, obra_id: int, db: Session = Depends(get_db)):
     pl = []
     for p in o.plantas:
         _garantir_marcas(db, p)
-        nomes = {m["t"] for m in p.marcas} & set(st)
+        nomes = {m["t"] for m in plantas.dentro(p.marcas, p.area)} & set(st)
         pl.append(dict(p=p, r=resumo(st, nomes)))
     return tpl.TemplateResponse(request, "obra.html", {"o": o, "r": resumo(st), "prod": por_produto(st), "plantas": pl, "base": ultima_base(db)})
 
@@ -491,11 +492,48 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
     st = status_da_obra(db, p.obra_id)
     caminho = DATA_DIR / p.arquivo
     png, zoom = plantas.imagem_base(caminho, p.id)
-    marcas = plantas.marcas_tela(caminho, p.marcas, st, zoom)
+    marcas = plantas.marcas_tela(caminho, plantas.dentro(p.marcas, p.area), st, zoom)
     nomes = sorted({m["p"] for m in marcas}, key=lambda k: (st[k].produto, chave_natural(k)))
+    with pymupdf.open(caminho) as doc:
+        pg0 = doc[0]
+        mtx = pg0.rotation_matrix * pymupdf.Matrix(zoom, zoom)
+        fora = [r * mtx for r in plantas.sombras(pg0.mediabox.width, pg0.mediabox.height, p.area)]
+    fora = [dict(x=round(r.x0), y=round(r.y0), w=round(r.width), h=round(r.height)) for r in fora]
     return tpl.TemplateResponse(request, "planta.html", {
         "p": p, "o": p.obra, "marcas": marcas, "w": round(p.largura * zoom), "h": round(p.altura * zoom), "linhas": [st[k] for k in nomes],
-        "r": resumo(st, set(nomes)), "base": ultima_base(db)})
+        "r": resumo(st, set(nomes)), "base": ultima_base(db), "fora": fora, "flash": request.session.pop("flash", None)})
+
+
+@app.post("/plantas/{pid}/area")
+def planta_area(request: Request, pid: int, de: str = Form(""), ate: str = Form(""), todas: str = Form(""), remover: str = Form(""),
+                db: Session = Depends(get_db)):
+    """Área de atuação: só os eixos 'de' a 'ate' são nossos (o resto da planta é de outra empresa)."""
+    p = db.get(Planta, pid) or _404()
+    alvo = list(p.obra.plantas) if todas else [p]
+    if remover:
+        for x in alvo:
+            x.area = None
+        db.commit()
+        _flash(request, "Área de atuação removida: a planta inteira volta a contar.")
+        return RedirectResponse(f"/plantas/{pid}", status_code=303)
+    if not (de.strip().isdigit() and ate.strip().isdigit()):
+        _flash(request, "Erro: informe os eixos inicial e final (números).")
+        return RedirectResponse(f"/plantas/{pid}", status_code=303)
+    d, a = int(de), int(ate)
+    ok, ruins = [], []
+    for x in alvo:
+        if x.eixos is None:
+            x.eixos = plantas.eixos(DATA_DIR / x.arquivo)
+        f = plantas.faixa(x.eixos or [], d, a)
+        if f:
+            x.area = {"de": d, "ate": a, "x0": f[0], "x1": f[1]}
+            ok.append(x.titulo)
+        else:
+            ruins.append(x.titulo)
+    db.commit()
+    _flash(request, (f"Área de atuação: eixos {d} a {a} em {len(ok)} planta(s)." if ok else "")
+           + (f" Erro: não achei os eixos {d} e {a} em: {', '.join(ruins)}." if ruins else ""))
+    return RedirectResponse(f"/plantas/{pid}", status_code=303)
 
 
 @app.get("/plantas/{pid}/imagem")
@@ -510,7 +548,7 @@ def planta_a2(pid: int, db: Session = Depends(get_db)):
     p = db.get(Planta, pid) or _404()
     _garantir_marcas(db, p)
     st = status_da_obra(db, p.obra_id)
-    pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, p.marcas, st, f"{p.obra.nome.upper()} - {p.titulo.upper()}", ultima_base(db))
+    pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, p.marcas, st, f"{p.obra.nome.upper()} - {p.titulo.upper()}", ultima_base(db), p.area)
     nome = f"Avanco_{p.obra.nome}_{p.titulo}_{date.today():%d-%m}.pdf".replace(" ", "_")
     ascii_ = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
     return Response(pdf, media_type="application/pdf",

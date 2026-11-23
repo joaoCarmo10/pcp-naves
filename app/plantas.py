@@ -88,9 +88,14 @@ def marcas_tela(caminho: Path, marcas: list, status: dict[str, StatusPeca], zoom
     return out
 
 
-def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: str, data_ref: str) -> bytes:
+def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: str, data_ref: str, area: dict | None = None) -> bytes:
     src = pymupdf.open(caminho)
     pg0 = src[0]
+    marcas = dentro(marcas, area)
+    for r in sombras(pg0.mediabox.width, pg0.mediabox.height, area):
+        pg0.draw_rect(r, color=None, fill=(0.55, 0.55, 0.55), fill_opacity=0.45, overlay=True)
+        pg0.insert_textbox(r + (20, 20, -20, -20), f"Fora do escopo (eixos {area['de']} a {area['ate']} são nossos)",
+                           fontsize=max(14, min(60, r.width / 25)), fontname="tiro", color=(0.25, 0.25, 0.25), align=1, overlay=True)
     nomes = set()
     for mk in marcas:
         s = status.get(mk["t"])
@@ -163,3 +168,83 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
     if len(ordem) > maxrows * ncol:
         pg.insert_text((x0 + 8, y1 - 16), f"+ {len(ordem) - maxrows * ncol} peças (lista completa no sistema)", fontsize=7, fontname="helv")
     pg.insert_text((x0 + 8, y1 - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2", fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))
+
+
+
+# ------------------------------------------------------------------ eixos e área de atuação
+
+def eixos(caminho: Path) -> list[list]:
+    """Eixos numerados da planta: [[número, x], ...] em ordem. Lê os balões (círculos) de uma fileira com
+    pelo menos 5 balões e o número dentro de cada um; os que o OCR não ler são completados pela sequência."""
+    import shutil
+    import subprocess
+    import tempfile
+    from collections import Counter, defaultdict
+    pg = pymupdf.open(caminho)[0]
+    circ = []
+    for d in pg.get_drawings():
+        r = d["rect"]
+        if 4 <= r.width <= 30 and abs(r.width - r.height) < 1.5 and sum(1 for it in d["items"] if it[0] == "c") >= 3:
+            circ.append(r)
+    if not circ:
+        return []
+    fileiras = defaultdict(list)
+    for r in sorted(circ, key=lambda r: r.y0):
+        chave = next((k for k in fileiras if abs(k - r.y0) <= 6), r.y0)
+        fileiras[chave].append(r)
+    candidatas = [sorted({round((r.x0 + r.x1) / 2, 1): r for r in rs}.items()) for rs in fileiras.values() if len(rs) >= 5]
+    if not candidatas or not shutil.which("tesseract"):
+        return []
+
+    def ler(r):
+        with tempfile.TemporaryDirectory() as t:
+            f = Path(t) / "b.png"
+            pg.get_pixmap(matrix=pymupdf.Matrix(12, 12), clip=r + (1.2, 1.2, -1.2, -1.2), colorspace=pymupdf.csGRAY).save(f)
+            o = subprocess.run(["tesseract", str(f), "-", "--psm", "7", "-c", "tessedit_char_whitelist=0123456789"],
+                               capture_output=True, text=True, timeout=20).stdout.strip()
+        return int(o) if o.isdigit() else None
+
+    melhor = []
+    for fil in sorted(candidatas, key=lambda f: -len(f))[:3]:
+        lidos = [(k, x, ler(r)) for k, (x, r) in enumerate(fil)]
+        desloc = Counter(n - k for k, _, n in lidos if n is not None)
+        if not desloc:
+            continue
+        off, votos = desloc.most_common(1)[0]
+        if votos < max(3, len(fil) // 3):
+            continue
+        out = [[k + off, x] for k, x, _ in lidos]
+        if len(out) > len(melhor):
+            melhor = out
+    return melhor
+
+
+def faixa(eixos_: list, de: int, ate: int) -> tuple[float, float] | None:
+    """Faixa em x que vai do meio do vão antes do eixo 'de' até o meio do vão depois do eixo 'ate'."""
+    pos = {int(n): x for n, x in eixos_}
+    if de not in pos or ate not in pos or ate < de:
+        return None
+    xs = sorted(pos.values())
+    x0, x1 = pos[de], pos[ate]
+    antes = [x for x in xs if x < x0]
+    depois = [x for x in xs if x > x1]
+    return ((x0 + antes[-1]) / 2 if antes else -1e9, (x1 + depois[0]) / 2 if depois else 1e9)
+
+
+def dentro(marcas: list, area: dict | None) -> list:
+    """Só as etiquetas dentro da área de atuação (sem área: todas)."""
+    if not area:
+        return marcas
+    return [m for m in marcas if area["x0"] <= (m["r"][0] + m["r"][2]) / 2 <= area["x1"]]
+
+
+def sombras(largura: float, altura: float, area: dict | None) -> list:
+    """Retângulos (coordenadas da página) fora da área de atuação."""
+    if not area:
+        return []
+    out = []
+    if area["x0"] > 0:
+        out.append(pymupdf.Rect(0, 0, area["x0"], altura))
+    if area["x1"] < largura:
+        out.append(pymupdf.Rect(area["x1"], 0, largura, altura))
+    return out

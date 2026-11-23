@@ -121,6 +121,8 @@ class Planta(Base):
     altura: Mapped[float] = mapped_column(Float, default=0)
     rotacao: Mapped[int] = mapped_column(Integer, default=0)
     marcas: Mapped[list] = mapped_column(JSON, default=list)              # [{"peca": "VR13", "r": [x0,y0,x1,y1]}, ...]
+    eixos: Mapped[list | None] = mapped_column(JSON, nullable=True)       # [[número, x], ...] lidos dos balões da planta
+    area: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # {"de": 1, "ate": 25, "x0": .., "x1": ..}: só isso é nosso
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="plantas")
 

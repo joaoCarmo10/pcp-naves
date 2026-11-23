@@ -716,3 +716,16 @@ def test_robo_autodoc_sem_rede(cliente, monkeypatch):
     db.commit()
     assert autodoc.pranchas_para_baixar(db, linhas) == []
     assert "Autodoc automático" in cliente.get("/importar").text
+
+
+def test_area_de_atuacao_planta():
+    from app import plantas
+    eixos = [[1, 100], [2, 200], [3, 300], [4, 400]]
+    assert plantas.faixa(eixos, 1, 2) == (-1e9, 250)
+    assert plantas.faixa(eixos, 2, 3) == (150, 350)
+    assert plantas.faixa(eixos, 1, 9) is None
+    marcas = [{"t": "A", "r": [90, 0, 110, 5]}, {"t": "B", "r": [290, 0, 310, 5]}]
+    area = {"de": 1, "ate": 2, "x0": -1e9, "x1": 250}
+    assert [m["t"] for m in plantas.dentro(marcas, area)] == ["A"]
+    assert plantas.dentro(marcas, None) == marcas
+    assert len(plantas.sombras(400, 100, area)) == 1
