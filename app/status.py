@@ -173,7 +173,15 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
         from .models import Planta
         fora = fora_da_area(list(db.scalars(select(Planta).where(Planta.obra_id == obra_id))), out)
         for n, k in fora.items():
-            out[n] = out[n][:len(out[n]) - k]   # sai do fim da fila: as que não estão nas etiquetas de dentro
+            # sai do fim da fila (as que não estão nas etiquetas de dentro); pendente por premissa é nossa e fica
+            us = out[n]
+            tirar = set()
+            for i in range(len(us) - 1, -1, -1):
+                if len(tirar) >= k:
+                    break
+                if not us[i].get("pend"):
+                    tirar.add(i)
+            out[n] = [u for i, u in enumerate(us) if i not in tirar]
     return {n: us for n, us in out.items() if us}
 
 
