@@ -636,3 +636,42 @@ def test_pxr_tabela_producao(cliente):
     ws = wb[wb.sheetnames[1]]
     cab = [c.value for c in ws[3]]
     assert cab[:5] == ["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA"] and "O QUE HOUVE" in cab and "SEG\n09/11" in cab
+
+
+def _autodoc_xlsx(projeto="9999-OBRA TESTE", pecas=(("PP1", "02", "Bloqueado"),)):
+    import io
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Relatório de Arquivos"
+    ws["C1"] = "Civil Pré-Fabricados - Relatório de Arquivos"
+    ws.append([])
+    ws.append(["Código", "Tipo", "Extensão", "Revisão", "Título", "Tamanho", "Data", "Cadastrado por", "Status", "Obsoleto",
+               "Data Obsoleto", "Pasta", "Link da Pasta", "Projeto", "Disciplina", "Fase", "Cor de Impressão", "Observações"])
+    for k, (p, rev, st) in enumerate(pecas, 1):
+        ws.append([f"{k:02d}-773-FAB-PIL-R{rev}.pdf", "Arquivo", "pdf", rev, f"Detalhamento de Pilar {p}", "1 MB", "05/11/2026 10:29",
+                   "x@y", st, "Não", " ", "OBRA/02-PILARES/", "https://x", projeto, "", "", "", "Em conferência" if st != "Aprovado" else ""])
+    b = io.BytesIO()
+    wb.save(b)
+    return b.getvalue()
+
+
+def test_autodoc_status_na_peca(cliente):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra, Peca
+    from app import planejar
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    db.commit()
+    nome = db.scalar(select(Peca.peca).where(Peca.obra_id == o.id, Peca.fabricada.is_(False)))
+    r = cliente.post("/importar", files={"arquivo": ("ExportarDeDiretorios.xlsx",
+                                                     _autodoc_xlsx(f"{o.sigla}-TESTE", ((nome, "01", "Bloqueado"), ("ZZ1", "00", "Aprovado"))))})
+    assert "Autodoc, 2 desenhos" in r.text and f"bloqueados: {nome}" in r.text
+    g = next(x for x in planejar.faltantes(db, None) if x["peca"] == nome)
+    assert g["ad"]["bloqueado"] and g["ad"]["rev"] == "01"
+    p = db.scalar(select(Peca).where(Peca.obra_id == o.id, Peca.peca == nome))
+    assert planejar.desenho_bloqueado(db, [p])
+    assert "Bloqueado R01" in cliente.get(f"/pecas?obra={o.nome}").text

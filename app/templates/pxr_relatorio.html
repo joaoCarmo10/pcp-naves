@@ -184,7 +184,7 @@
       <colgroup><col style="width:7%"><col style="width:9.5%"><col style="width:7.5%"><col style="width:5%"><col style="width:13.5%"><col style="width:8%"><col style="width:7%"><col style="width:11%"><col style="width:17%"><col style="width:14.5%"></colgroup>
       <tr><th>Programada</th><th>Peça</th><th>Código</th><th>Seção</th><th>Fôrma</th><th>Status</th><th>Fabricação</th><th>Causa</th><th>Ação / responsável</th><th>Comentário</th></tr>
       {% for l in tp.linhas %}{% set i = l.item %}{% set ap = l.ap %}
-      <tr><td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td><td style="white-space:nowrap"><b>{{ i.peca }}</b>{% if l.qtd > 1 %} ×{{ l.qtd }}{% endif %}</td>
+      <tr><td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td><td style="white-space:nowrap"><b>{{ i.peca }}</b>{% if l.qtd > 1 %} ×{{ l.qtd }}{% endif %}{% if l.ad and l.ad.bloqueado %}<br><span style="color:#a4161a;font-weight:bold;font-size:9.5px">desenho {{ l.ad.status|lower }}</span>{% endif %}</td>
         <td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td><td>{{ i.forma }}{% if i.nave and not i.forma.startswith(i.nave) %} <span style="color:var(--suave)">({{ i.nave }})</span>{% endif %}</td>
         <td><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ 'Não realizada' if l.status == 'NÃO REALIZADA' else 'Com atraso' }}</span></td>
         <td style="white-space:nowrap">{% if l.data_fab %}{{ l.data_fab|dm }}{% if l.desvio %} (+{{ l.desvio }}d){% endif %}{% else %}-{% endif %}</td>

@@ -266,3 +266,28 @@ class Config(Base):
     __tablename__ = "config"
     chave: Mapped[str] = mapped_column(String(60), primary_key=True)
     valor: Mapped[str] = mapped_column(String(500), default="")
+
+
+class DesenhoAutodoc(Base):
+    """Arquivo listado no Autodoc (relatório 'Exportar' de um diretório), ligado à peça pelo título."""
+    __tablename__ = "desenhos_autodoc"
+    __table_args__ = (UniqueConstraint("projeto", "codigo"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    projeto: Mapped[str] = mapped_column(String(120))                    # ex.: 8249-BAY-GALPÃO USIBA
+    obra_id: Mapped[int | None] = mapped_column(ForeignKey("obras.id"), nullable=True)
+    codigo: Mapped[str] = mapped_column(String(160))                     # nome do arquivo no Autodoc
+    extensao: Mapped[str] = mapped_column(String(10), default="")
+    revisao: Mapped[str] = mapped_column(String(10), default="")
+    titulo: Mapped[str] = mapped_column(String(200), default="")
+    pecas: Mapped[list] = mapped_column(JSON, default=list)              # nomes de peça tirados do título
+    status: Mapped[str] = mapped_column(String(30), default="")
+    data: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    obsoleto: Mapped[bool] = mapped_column(Boolean, default=False)
+    pasta: Mapped[str] = mapped_column(String(300), default="")
+    link: Mapped[str] = mapped_column(String(300), default="")
+    observacoes: Mapped[str] = mapped_column(String(500), default="")
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    @property
+    def bloqueado(self) -> bool:
+        return (self.status or "").strip().lower() != "aprovado"

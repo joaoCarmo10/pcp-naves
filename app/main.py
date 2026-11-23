@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import acesso, armacao as arm, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
+from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
@@ -65,7 +65,7 @@ async def exige_login(request: Request, call_next):
     request.state.usuario = None
     request.state.niveis = {m: 2 for m in acesso.MODULOS}
     request.state.nivel_pagina = 2
-    if not SENHA or caminho.startswith(("/static", "/login", "/saude", "/armador/", "/api/plannix")):
+    if not SENHA or caminho.startswith(("/static", "/login", "/saude", "/armador/", "/api/plannix", "/api/autodoc")):
         return await call_next(request)
     quer_json = "application/json" in request.headers.get("content-type", "") or request.headers.get("accept", "").startswith("application/json")
     with SessionLocal() as db:
@@ -198,6 +198,19 @@ def importar_token(request: Request, db: Session = Depends(get_db)):
     return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "token_novo": token, "sync": _sync_status(db), "admin": True})
 
 
+@app.post("/api/autodoc")
+async def autodoc_automatico(request: Request, db: Session = Depends(get_db)):
+    """Recebe o relatório 'Exportar' do Autodoc enviado por automação (mesmo token do Plannix automático)."""
+    tok = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    guardado = _cfg(db, "sync_token")
+    if not tok or not guardado or not hmac.compare_digest(hashlib.sha256(tok.encode()).hexdigest(), guardado):
+        return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
+    conteudo = await request.body()
+    if not autodoc.detectar(conteudo):
+        return JSONResponse({"ok": False, "erro": "Não é um relatório de arquivos do Autodoc."}, status_code=422)
+    return {"ok": True, **autodoc.importar(db, conteudo)}
+
+
 @app.post("/api/plannix")
 async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
     """Recebe o 'all data' enviado pelo script que roda no PC da fábrica (lê o SQL Server do Plannix).
@@ -265,6 +278,12 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
                 msgs.append(importar_pacote(db, conteudo))
                 continue
             (DATA_DIR / "importacoes" / f"{date.today():%Y%m%d}_{secrets.token_hex(3)}_{Path(nome).name}").write_bytes(conteudo)
+            if nome.lower().endswith(".xlsx") and autodoc.detectar(conteudo):
+                r = autodoc.importar(db, conteudo)
+                msgs.append(f"{nome}: Autodoc, {r['arquivos']} desenhos ({r['novos']} novos)"
+                            + (f", bloqueados: {', '.join(r['bloqueadas'])}" if r["bloqueadas"] else ", nenhum bloqueado")
+                            + (f". Projeto sem obra no Plannix: {', '.join(r['sem_obra'])}" if r["sem_obra"] else "") + ".")
+                continue
             if nome.lower().endswith(".xlsx"):
                 imp = pg.importar_programacao(db, conteudo, nome)
                 msgs.append(f"{nome}: programação importada como nova revisão ({imp.resumo['linhas']} linhas).")
@@ -567,6 +586,10 @@ def _pxr_ctx(request: Request, db: Session) -> dict | None:
     a = pxr.analisar(ls, ls_ant)
     lista = [l for l in pxr.so_status(ls, f["status"] or "atrasadas") if l.status not in ("PENDENTE", "SEM INFORMAÇÃO")]
     lista.sort(key=lambda l: (l.item.data, l.item.nave, l.item.forma, l.item.obra, l.item.peca))
+    ad_idx = autodoc.indice(db)
+    obra_id = {o.nome: o.id for o in db.scalars(select(Obra))}
+    for l in ls:
+        l.ad = autodoc.resumo(autodoc.de(ad_idx, obra_id.get(l.item.obra), l.item.peca)) if l.item.obra in obra_id else None
     nomes = {"obra": "Obra", "nave": "Nave", "produto": "Tipo de peça"}
     filtros_txt = ", ".join(f"{nomes[k]}: {v}" for k, v in f.items() if v and k in nomes)
     if f["status"] and f["status"] != "atrasadas":

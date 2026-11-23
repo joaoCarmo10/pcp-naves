@@ -432,8 +432,8 @@ def tabela_programacao(ctx: dict) -> bytes:
     cab = (["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (m)", "QTD", "VOL. (m³)", "TIPO",
             "OBSERVAÇÃO", "REALIZADO", "STATUS", "DATA FABRIC."]
            + [f"{pg.DIAS[d.weekday()]}\n{d:%d/%m}" for d in dias]
-           + ["ATRASO (dias)", "CAUSA", "O QUE HOUVE", "AÇÃO", "RESPONSÁVEL"])
-    larg = [10, 6, 22, 12, 17, 12, 11, 10, 9, 6, 9, 9, 28, 10, 14, 11] + [7] * len(dias) + [9, 18, 34, 28, 16]
+           + ["ATRASO (dias)", "CAUSA", "O QUE HOUVE", "AÇÃO", "RESPONSÁVEL", "DESENHO (AUTODOC)"])
+    larg = [10, 6, 22, 12, 17, 12, 11, 10, 9, 6, 9, 9, 28, 10, 14, 11] + [7] * len(dias) + [9, 18, 34, 28, 16, 22]
     c_status = 15
     c_dia0 = 17
 
@@ -464,7 +464,8 @@ def tabela_programacao(ctx: dict) -> bytes:
                      l.data_fab]
                     + ["X" if l.data_fab == d else ("•" if i.data == d and l.data_fab != d else None) for d in dias]
                     + [atraso, a.causa if a else "", (a.comentario or a.ocorrido) if a else "", a.acao if a else "",
-                       a.responsavel if a else ""])
+                       a.responsavel if a else "",
+                       (f"{l.ad['status']} R{l.ad['rev']}" if getattr(l, "ad", None) else "")])
             cor = PatternFill("solid", fgColor=COR[l.status])
             for k, v in enumerate(vals, 1):
                 c = ws.cell(r, k, v)
@@ -476,6 +477,8 @@ def tabela_programacao(ctx: dict) -> bytes:
             ws.cell(r, 11).number_format = "0.000"
             ws.cell(r, 5).font = f_neg
             ws.cell(r, c_status).font = f_neg
+            if getattr(l, "ad", None) and l.ad["bloqueado"]:
+                ws.cell(r, len(vals)).font = Font(name="Calibri", size=10, bold=True, color="C00000")
             for k, d in enumerate(dias):
                 c = ws.cell(r, c_dia0 + k)
                 if c.value == "X":

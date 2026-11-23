@@ -55,8 +55,10 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
     if rev:
         ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
     armadas_app = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
+    from . import autodoc
     from . import cadastro as cad
     idx = cad.indice(db)
+    ad = autodoc.indice(db)
     grupos: dict[tuple, dict] = {}
     q = select(Peca, Obra).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))
     for p, o in db.execute(q):
@@ -69,7 +71,8 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
             g = grupos[k] = {"obra": o.nome, "prio": o.prioridade or 99, "peca": p.peca, "secao": p.secao, "comp": p.comprimento,
                              "produto": p.produto, "codigos": [], "armadas": 0,
                              "prot": c.protensao if c else None, "aco": round(c.aco_passivo) if c and c.aco_passivo else None,
-                             "e2": (c.etapa2_obs or "sim") if c and c.segunda_etapa else None}
+                             "e2": (c.etapa2_obs or "sim") if c and c.segunda_etapa else None,
+                             "ad": autodoc.resumo(autodoc.de(ad, o.id, p.peca))}
         g["codigos"].append(p.codigo)
         if p.hora_armacao or p.codigo in armadas_app:
             g["armadas"] += 1
@@ -117,6 +120,7 @@ def alocar(db: Session, rev: RevisaoProg, f: Forma, d: date, codigos: list[str],
     por, _ = itens_por_forma(db, rev, d, vig)
     probs = validar(f, d, pecas, uso(f, por.get(f.id, [])))
     probs += conflito_protensao(db, f, pecas, por.get(f.id, []))
+    probs += desenho_bloqueado(db, pecas)
     if probs and not forcar:
         return {"ok": False, "problemas": probs, "pode_forcar": True}
     for p in pecas:
@@ -138,6 +142,19 @@ def copiar_revisao(db: Session, rev: RevisaoProg, nome: str) -> RevisaoProg:
     db.add(nova)
     db.commit()
     return nova
+
+
+def desenho_bloqueado(db: Session, pecas: list[Peca]) -> list[str]:
+    """Peça cujo desenho vigente no Autodoc não está aprovado (ex.: bloqueado para conferência)."""
+    from . import autodoc
+    idx = autodoc.indice(db)
+    out = []
+    for nome in sorted({(p.obra_id, p.peca) for p in pecas}, key=lambda x: x[1]):
+        x = autodoc.de(idx, *nome)
+        if x and x.bloqueado:
+            out.append(f"{nome[1]}: desenho {x.status.lower()} no Autodoc (R{x.revisao}, {x.data:%d/%m})"
+                       + (f", {x.observacoes}" if x.observacoes else "") + ".")
+    return out
 
 
 def conflito_protensao(db: Session, f: Forma, novas: list[Peca], ja: list[ItemProg]) -> list[str]:

@@ -7,7 +7,7 @@
 <tr data-id="{{ i.id }}">
   {% if com_data %}<td style="white-space:nowrap" data-ord="{{ i.data }}">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>{% endif %}
   <td>{{ i.obra }}</td>
-  <td style="white-space:nowrap" title="{{ i.obs }}">{{ i.peca }}{% if com_forma %}<br><span class="meta">{{ i.forma }}</span>{% endif %}</td>
+  <td style="white-space:nowrap" title="{{ i.obs }}">{{ i.peca }}{% if l.ad and l.ad.bloqueado %} <span class="tag-bloq" title="Autodoc: {{ l.ad.titulo }} · R{{ l.ad.rev }} · {{ l.ad.data }}{{ ' · ' ~ l.ad.obs if l.ad.obs }}">desenho {{ l.ad.status|lower }}</span>{% endif %}{% if com_forma %}<br><span class="meta">{{ i.forma }}</span>{% endif %}</td>
   <td class="meta">{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
   <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td>
   <td style="white-space:nowrap"><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if l.data_fab %}<br><span class="meta">fab. {{ l.data_fab|dm }}{% if l.desvio %} ({{ '%+d'|format(l.desvio) }}d){% endif %}</span>{% endif %}</td>

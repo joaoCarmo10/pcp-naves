@@ -35,6 +35,7 @@
   table.det{table-layout:fixed;font-size:10.5px}
   .velho{color:#c62828;font-weight:bold}
   .falta{color:#c62828;font-style:italic}
+  .bloq{color:#a4161a;font-weight:bold;font-size:9.5px}
   .vazio{color:var(--suave);font-style:italic;padding:8px 0}
   .notas{color:var(--suave);font-size:10px;border-top:1px solid var(--linha);margin-top:16px;padding-top:6px}
   @page{size:A4 landscape;margin:10mm}
@@ -90,7 +91,7 @@
       {% for l in f.linhas %}{% set i = l.item %}{% set a = l.ap %}{% set d = P.dias(l) %}
       <tr><td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>
         <td class="n {{ 'velho' if d >= 3 }}">{{ d }}</td>
-        <td><b>{{ i.peca }}</b></td><td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
+        <td><b>{{ i.peca }}</b>{% if l.ad and l.ad.bloqueado %}<br><span class="bloq">desenho {{ l.ad.status|lower }} (R{{ l.ad.rev }})</span>{% endif %}</td><td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
         <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td><td>{{ i.forma }}</td>
         <td>{{ a.causa if a and a.causa else '' }}</td>
         <td>{{ (a.comentario or a.ocorrido) if a else '' }}</td><td>{{ a.acao if a else '' }}</td><td>{{ a.responsavel if a else '' }}</td></tr>

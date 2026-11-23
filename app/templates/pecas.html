@@ -73,7 +73,7 @@
     <th class="g-prot">Protensão</th><th class="g-prot n">Força (tf)</th><th class="g-prot n">Aço ativo (kg/pç)</th><th class="g-prot n">Contraflecha (cm)</th>
     <th class="g-prot n" title="Plannix">Taxa protendido (kg/m³)</th><th class="g-prot">Modelo</th>
     <th class="g-out">2ª etapa</th><th class="g-out">Içamento</th><th class="g-out">Neoprene</th>
-    <th class="n">Feitas / total</th><th class="g-pr">Prancha</th></tr></thead>
+    <th class="n">Feitas / total</th><th class="g-pr">Prancha</th><th class="g-pr" title="Status do desenho vigente no Autodoc">Autodoc</th></tr></thead>
   <tbody>{% for t in linhas %}{% set c = t.c %}
     <tr class="{{ 'sem-cad' if not c }}">
       <td class="meta" style="white-space:nowrap">{{ t.o.nome }}</td>
@@ -108,6 +108,7 @@
       <td class="n">{{ t.fab }}/{{ t.n }}</td>
       <td class="g-pr" style="white-space:nowrap">{% if c %}{{ c.prancha }} {{ c.revisao }}{% if c.fonte == 'ocr' %} <span class="meta">OCR</span>{% endif %} {% if c.situacao == 'revisar' %}<span class="tag-revisar" title="{{ (c.alertas or [])|join(' | ') }}">revisar</span>{% else %}<span class="meta">ok</span>{% endif %}
         {% else %}<a class="meta" href="/pecas?obra={{ t.o.nome|urlencode }}#enviar">enviar</a>{% endif %}</td>
+      <td class="g-pr" style="white-space:nowrap">{% set ad = t.ad %}{% if ad %}<span class="{{ 'tag-bloq' if ad.bloqueado else 'tag-ok' }}" title="{{ ad.titulo }} · {{ ad.data }}{{ ' · ' ~ ad.obs if ad.obs }}">{{ ad.status }} R{{ ad.rev }}</span>{% if c and c.revisao and c.revisao.lstrip('R').zfill(2) != ad.rev.zfill(2) %} <span class="tag-revisar" title="A prancha lida no app é {{ c.revisao }}; no Autodoc a vigente é R{{ ad.rev }}">revisão diferente</span>{% endif %}{% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div>
 {% if cortadas %}<p class="meta">Mais {{ cortadas }} tipos não mostrados. Use os filtros ou baixe o Excel.</p>{% endif %}

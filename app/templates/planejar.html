@@ -99,6 +99,13 @@ function guardar() {
     y: window.scrollY, ly: lista.scrollTop }));
 }
 
+function escAttr(s) { return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+function adTag(a) {
+  const t = escAttr(`Autodoc: ${a.titulo} · R${a.rev} · ${a.data}${a.obs ? ' · ' + a.obs : ''}`);
+  return a.bloqueado ? `<span class="tag-bloq" title="${t}">Desenho ${escAttr(a.status.toLowerCase())} · R${escAttr(a.rev)}</span>`
+                     : `<span class="tag-ok" title="${t}">Desenho aprovado · R${escAttr(a.rev)}</span>`;
+}
+
 function desenhar() {
   const b = norm(fBusca.value);
   const vis = FALT.filter(g => (!fObra.value || g.obra === fObra.value) && (!fProd.value || g.produto === fProd.value)
@@ -112,6 +119,7 @@ function desenhar() {
       <div class="meta">${g.produto} · ${g.secao || 's/ seção'}${g.comp ? ' · ' + num(g.comp) + ' m' : ''}${g.armadas ? ` · <span class="arm">${g.armadas} armada${g.armadas > 1 ? 's' : ''}</span>` : ''}</div>
       ${g.prot != null || g.aco ? `<div class="cp-cad">${g.prot ? `<span class="prot">${g.prot}</span>` : (g.prot === '' ? '<span class="meta">sem protensão</span>' : '')}${g.aco ? ` <span class="meta">· ${g.aco} kg aço</span>` : ''}</div>` : ''}
       ${g.e2 ? `<div class="cp-cad"><span class="tag-e2" title="${g.e2 === 'sim' ? 'Segunda concretagem' : g.e2}">2ª etapa</span></div>` : ''}
+      ${g.ad ? `<div class="cp-cad">${adTag(g.ad)}</div>` : ''}
       <div class="cp-qtd">${n > 1 ? `<input type="number" min="1" max="${n}" value="1" aria-label="Quantidade a programar"> de ${n}` : '1 peça'}</div>
     </div>`;
   }).join('') + (vis.length > 400 ? `<p class="meta">Mostrando 400 de ${vis.length} grupos. Use os filtros.</p>` : '');

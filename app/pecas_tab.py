@@ -58,8 +58,10 @@ def _da_prancha(c) -> dict:
 
 def montar(db: Session, qp) -> dict:
     f = {k: (qp.get(k) or "") for k in FILTROS}
+    from . import autodoc
     obras = {o.id: o for o in db.scalars(select(Obra))}
     idx = cad.indice(db)
+    ad_idx = autodoc.indice(db)
     tipos: dict = {}
     for p in db.scalars(select(Peca)):
         k = (p.obra_id, cad._canon(p.peca), p.item or "")
@@ -68,7 +70,8 @@ def montar(db: Session, qp) -> dict:
             larg, alt = dim_secao(p.secao, p.produto)
             t = tipos[k] = {"o": obras[p.obra_id], "nome": p.peca, "item": p.item or "", "produto": p.produto, "secao": p.secao,
                             "larg": larg, "alt": alt, "comp": p.comprimento, "vol": p.vol_projeto or p.volume,
-                            "n": 0, "fab": 0, "c": cad.de_peca(idx, p), "_traco": Counter(), "_taxa": [], "_modelo": Counter()}
+                            "n": 0, "fab": 0, "c": cad.de_peca(idx, p), "_traco": Counter(), "_taxa": [], "_modelo": Counter(),
+                            "ad": autodoc.resumo(autodoc.de(ad_idx, p.obra_id, p.peca))}
         t["n"] += 1
         t["fab"] += 1 if p.fabricada else 0
         if p.traco:

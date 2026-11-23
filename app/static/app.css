@@ -246,3 +246,5 @@ details.enviar summary{cursor:pointer}
 table.ordenavel th.ord-asc::after{content:" ▲";font-size:10px}
 table.ordenavel th.ord-desc::after{content:" ▼";font-size:10px}
 #lista-pxr textarea.ap{width:220px;min-height:30px;resize:vertical;font:inherit;padding:4px 6px;border:1px solid var(--linha);border-radius:4px}
+.tag-bloq{display:inline-block;padding:0 6px;border-radius:9px;background:#fde2e1;color:#a4161a;font-size:11px;font-weight:700;white-space:nowrap}
+.tag-ok{display:inline-block;padding:0 6px;border-radius:9px;background:#e3f2e6;color:#276b34;font-size:11px;font-weight:600;white-space:nowrap}
