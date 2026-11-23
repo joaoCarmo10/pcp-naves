@@ -157,17 +157,18 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
     prs = [pr for pr in pm.ativas(db) if pr.tipo == "pendente"]
     out: dict[str, list[dict]] = defaultdict(list)
     for p in pecas:
-        if p.fabricada and not (prs and pm.pendente(prs, p)):
+        pend = bool(prs) and pm.pendente(prs, p)
+        if p.fabricada and not pend:
             st, d = "FAB", p.data_fabricacao
         elif p.codigo in prog:
             st, d = "PROG", prog[p.codigo]
         else:
             st, d = "FALTA", None
         out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome),
-                            "produto": p.produto, "secao": p.secao})
+                            "produto": p.produto, "secao": p.secao, "pend": pend})
     ordem = {"FAB": 0, "PROG": 1, "FALTA": 2}
-    for us in out.values():
-        us.sort(key=lambda u: (ordem[u["st"]], u["data"] or date.max, u["cod"] or ""))
+    for us in out.values():   # pendente (premissa) vem antes das outras não feitas: é peça nossa, não sai na área
+        us.sort(key=lambda u: (ordem[u["st"]], 0 if u["pend"] else 1, u["data"] or date.max, u["cod"] or ""))
     if escopo:
         from .models import Planta
         fora = fora_da_area(list(db.scalars(select(Planta).where(Planta.obra_id == obra_id))), out)
