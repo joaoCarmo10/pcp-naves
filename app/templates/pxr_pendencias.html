@@ -92,7 +92,7 @@
         <td class="n {{ 'velho' if d >= 3 }}">{{ d }}</td>
         <td><b>{{ i.peca }}</b></td><td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
         <td class="n">{{ i.comprimento|num(2) if i.comprimento else '' }}</td><td class="n">{{ l.qtd }}</td><td>{{ i.forma }}</td>
-        <td>{% if a and a.causa %}{{ a.causa }}{% else %}<span class="falta">sem causa</span>{% endif %}</td>
+        <td>{{ a.causa if a and a.causa else '' }}</td>
         <td>{{ (a.comentario or a.ocorrido) if a else '' }}</td><td>{{ a.acao if a else '' }}</td><td>{{ a.responsavel if a else '' }}</td></tr>
       {% endfor %}
     </table>
