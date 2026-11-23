@@ -618,4 +618,4 @@ def test_pxr_pendencias(cliente):
     assert "Imprimir o que ficou para trás" in cliente.get(f"/pxr?{base}").text
     for por in ("", "&por=obra"):
         h = cliente.get(f"/pxr/pendencias?{base}{por}").text
-        assert "O que ficou para trás" in h and "obra × tipo de peça" in h
+        assert "O que ficou para trás" in h and "obra × tipo de peça" not in h

@@ -78,15 +78,6 @@
   <div><b>{{ P.n - P.sem_causa }} de {{ P.n }}</b><span>com causa registrada</span></div>
 </div>
 
-<h2>Resumo: obra × tipo de peça (peças · m³)</h2>
-<table class="mat">
-  <tr><th>Obra</th>{% for t in P.tipos %}<th class="n">{{ t }}</th>{% endfor %}<th class="n">Total</th></tr>
-  {% for o in P.obras %}<tr><td>{{ o }}</td>
-    {% for t in P.tipos %}{% set m = P.mat.get((o, t)) %}<td class="n">{% if m %}<b>{{ m[0] }}</b> · {{ m[1]|num(1) }}{% else %}<span style="color:#c5ccd6">-</span>{% endif %}</td>{% endfor %}
-    <td class="n"><b>{{ P.por_obra[o] }}</b></td></tr>{% endfor %}
-  <tr class="t"><td>Total</td>{% for t in P.tipos %}<td class="n">{{ P.por_tipo[t] }}</td>{% endfor %}<td class="n">{{ P.n }}</td></tr>
-</table>
-
 {% for g in P.grupos %}
 <section class="g1">
   <h2><span>{{ g.nome }}</span><span>{{ g.n }} peça{{ 's' if g.n != 1 }} · {{ g.vol|num(1) }} m³</span></h2>
