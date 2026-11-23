@@ -586,3 +586,24 @@ def test_planta_texto_de_traco():
     sh.commit()
     ws = ocr_planta.palavras_traco(pg)
     assert len(ws) == 1 and ws[0]["n"] == 3 and ws[0]["rect"].height >= 9.5
+
+
+def test_pxr_filtros_e_relatorio(cliente):
+    import io
+    import openpyxl
+    test_programacao_pxr(cliente)
+    from app import programacao as pg
+    from app.db import SessionLocal
+    rev = pg.revisao_atual(SessionLocal())
+    base = f"rev={rev.id}&de=2026-11-09&ate=2026-11-10"
+    h = cliente.get(f"/pxr?{base}&status=atrasadas").text
+    assert "Gerar relatório" in h and "Por tipo de peça" in h and 'name="semana"' in h
+    h = cliente.get(f"/pxr?{base}&obra=NAOEXISTE").text
+    assert cliente.get(f"/pxr?{base}&obra=NAOEXISTE").status_code == 200
+    rel = cliente.get(f"/pxr/relatorio?{base}").text
+    assert "Destaques" in rel and "Causas de não cumprimento" in rel and "Peças atrasadas e justificativas" in rel
+    assert "Ferragem atrasou" in rel or "Armação" in rel
+    r = cliente.get(f"/pxr/planilha?{base}")
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert {"Resumo", "Por obra", "Por tipo de peça", "Obra x tipo", "Causas (Pareto)", "Atrasadas (justificativas)"} <= set(wb.sheetnames)
+    assert cliente.get(f"/pxr/relatorio?rev={rev.id}&semana=2026-11-09").status_code == 200

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Programado x realizado {{ ini|dm }} a {{ fim|dm }} | PCP Naves</title>
+{% set t = a.tot or tot %}{% set ant = a.ant %}
+{% macro p(v) %}{{ v|pct if v is not none else '-' }}{% endmacro %}
+{% macro barra(v) %}{% if v is not none %}<span class="mini"><i style="width:{{ (100 * v)|round(0) }}%"></i></span>{% endif %}{% endmacro %}
+{% macro cab(rotulo) %}<tr><th>{{ rotulo }}</th><th class="n">Prog.</th><th class="n">No prazo</th><th class="n">Com atraso</th><th class="n">A confirmar</th><th class="n">Não realiz.</th><th class="n">PPC</th><th></th><th class="n">Realizado</th><th class="n">Vol. prog. (m³)</th><th class="n">PPC vol.</th><th class="n">Atraso méd.</th></tr>{% endmacro %}
+{% macro lin(x, nome=None, cls='') %}<tr class="{{ cls }}"><td>{{ nome if nome is not none else x.chave }}</td><td class="n">{{ x.prog }}</td><td class="n">{{ x['NO PRAZO'] or '-' }}</td>
+  <td class="n">{{ x['COM ATRASO'] or '-' }}</td><td class="n">{{ x['DATA A CONFIRMAR'] or '-' }}</td><td class="n">{{ x['NÃO REALIZADA'] or '-' }}</td>
+  <td class="n"><b>{{ p(x.ppc) }}</b></td><td class="w">{{ barra(x.ppc) }}</td><td class="n">{{ p(x.feito) }}</td><td class="n">{{ x.vol_prog|num(1) }}</td><td class="n">{{ p(x.ppc_vol) }}</td>
+  <td class="n">{{ (x.atraso_medio|num(1) ~ ' d') if x.atraso_medio is not none else '-' }}</td></tr>{% endmacro %}
+<style>
+  :root{--tinta:#1d2733;--suave:#5b6573;--linha:#dde2e8;--fundo:#f5f7fa;--azul:#1f3a68;
+        --prazo:{{ COR_STATUS['NO PRAZO'] }};--atraso:{{ COR_STATUS['COM ATRASO'] }};--confirmar:{{ COR_STATUS['DATA A CONFIRMAR'] }};--nao:{{ COR_STATUS['NÃO REALIZADA'] }}}
+  *{box-sizing:border-box}
+  body{font-family:Arial,Helvetica,sans-serif;color:var(--tinta);margin:0;background:#e9edf2;font-size:12px;line-height:1.4}
+  .folha{max-width:1040px;margin:18px auto;background:#fff;padding:28px 34px;box-shadow:0 1px 4px rgba(0,0,0,.12)}
+  .barra-acoes{max-width:1040px;margin:14px auto 0;display:flex;gap:8px;justify-content:flex-end}
+  .barra-acoes a,.barra-acoes button{font:inherit;font-size:13px;padding:7px 14px;border-radius:6px;border:1px solid var(--azul);background:var(--azul);color:#fff;cursor:pointer;text-decoration:none}
+  .barra-acoes .sec{background:#fff;color:var(--azul)}
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--azul);padding-bottom:10px;margin-bottom:16px}
+  header h1{font-size:21px;margin:0;color:var(--azul)}
+  header .per{font-size:15px;font-weight:bold;margin-top:2px}
+  header .meta{text-align:right;color:var(--suave);font-size:11px}
+  h2{font-size:14px;color:var(--azul);margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--linha);break-after:avoid}
+  h3{font-size:12.5px;margin:14px 0 6px}
+  .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .kpi{border:1px solid var(--linha);border-radius:6px;padding:8px 10px;background:var(--fundo)}
+  .kpi b{display:block;font-size:20px;line-height:1.1}
+  .kpi span{color:var(--suave);font-size:10.5px}
+  .kpi.ppc{border-color:var(--azul);background:#eef3fb}
+  .kpi .delta{font-size:10.5px;font-weight:bold}
+  .up{color:#2e7d32}.down{color:#c62828}
+  .chip{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  ul.dest{margin:6px 0 0;padding-left:18px}
+  ul.dest li{margin:3px 0}
+  table{border-collapse:collapse;width:100%;font-size:11px}
+  th{background:var(--azul);color:#fff;font-weight:bold;text-align:left;padding:4px 6px;white-space:nowrap}
+  td{padding:3px 6px;border-bottom:1px solid var(--linha);vertical-align:top}
+  td.n,th.n{text-align:right;white-space:nowrap}
+  td.w{width:70px}
+  tr.sub td{color:var(--suave)} tr.sub td:first-child{padding-left:18px}
+  tr.grp td{font-weight:bold;background:var(--fundo)}
+  .mini{display:inline-block;width:64px;height:7px;background:#e6e9ee;border-radius:4px;overflow:hidden;vertical-align:middle}
+  .mini i{display:block;height:100%;background:var(--azul);border-radius:4px}
+  .st{display:inline-block;padding:0 5px;border-radius:3px;font-size:10px;font-weight:bold;color:#1d2733;white-space:nowrap}
+  .dois{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .leg{display:flex;gap:14px;color:var(--suave);font-size:11px;margin:4px 0 2px}
+  .obra-bloco{break-inside:avoid-page}
+  .tipo{font-weight:bold;margin:8px 0 3px;color:var(--suave)}
+  .vazio{color:var(--suave);font-style:italic;padding:6px 0}
+  .falta{color:#c62828;font-style:italic}
+  table.det{table-layout:fixed;font-size:10px} table.det td{word-wrap:break-word;padding:2px 4px} table.det th{padding:3px 4px}
+  .notas{color:var(--suave);font-size:10.5px;border-top:1px solid var(--linha);margin-top:22px;padding-top:8px}
+  svg text{font-family:Arial,Helvetica,sans-serif}
+  @page{size:A4;margin:12mm 10mm}
+  @media print{
+    body{background:#fff;font-size:10.5px}
+    .folha{box-shadow:none;margin:0;max-width:none;padding:0}
+    .barra-acoes{display:none}
+    th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .kpi,.mini,.mini i,.st,.chip,tr.grp td,svg{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    h2{break-after:avoid}
+    tr{break-inside:avoid}
+    .quebra{break-before:page}
+  }
+</style>
+</head>
+<body>
+<div class="barra-acoes">
+  <a class="sec" href="/pxr?{{ qs }}">Voltar</a>
+  <a class="sec" href="/pxr/planilha?{{ qs }}">Baixar Excel</a>
+  <button type="button" onclick="window.print()">Imprimir / salvar PDF</button>
+</div>
+<main class="folha">
+<header>
+  <div>
+    <h1>Programado x Realizado</h1>
+    <div class="per">{{ DIAS[ini.weekday()] }} {{ ini.strftime('%d/%m/%Y') }} a {{ DIAS[fim.weekday()] }} {{ fim.strftime('%d/%m/%Y') }}</div>
+    <div style="color:var(--suave)">{% if filtros_txt %}Recorte: {{ filtros_txt }}{% else %}Todas as obras, naves e tipos de peça{% endif %}</div>
+  </div>
+  <div class="meta">Programação: {{ r.nome }}<br>Base Plannix: {{ base or '-' }}<br>Emitido em {{ emitido }}{% if autor %} por {{ autor }}{% endif %}</div>
+</header>
+
+{% if not t or not t.prog %}
+<div class="vazio">Nenhuma peça programada com data vencida neste recorte.</div>
+{% else %}
+<section>
+  <div class="kpis">
+    <div class="kpi ppc"><b>{{ p(t.ppc) }}</b><span>PPC (no prazo ÷ programadas)</span>
+      {% if ant and ant.ppc is not none %}{% set d = (t.ppc - ant.ppc) * 100 %}<div class="delta {{ 'up' if d > 0.5 else 'down' if d < -0.5 else '' }}">{{ '▲' if d > 0.5 else '▼' if d < -0.5 else '=' }} {{ '%+.0f'|format(d) }} pts vs semana anterior ({{ p(ant.ppc) }})</div>{% endif %}</div>
+    <div class="kpi"><b>{{ t.prog }}</b><span>peças programadas · {{ t.vol_prog|num(1) }} m³</span></div>
+    <div class="kpi"><b>{{ t['NO PRAZO'] }}</b><span><i class="chip" style="background:var(--prazo)"></i>no prazo · {{ t.vol_prazo|num(1) }} m³</span></div>
+    <div class="kpi"><b>{{ t['COM ATRASO'] }}</b><span><i class="chip" style="background:var(--atraso)"></i>feitas com atraso{% if t.atraso_medio is not none %} · média {{ t.atraso_medio|num(1) }} d{% endif %}</span></div>
+    <div class="kpi"><b>{{ t['NÃO REALIZADA'] }}</b><span><i class="chip" style="background:var(--nao)"></i>não realizadas</span></div>
+    <div class="kpi"><b>{{ p(t.ppc_vol) }}</b><span>PPC em volume (m³)</span></div>
+    <div class="kpi"><b>{{ p(t.feito) }}</b><span>realizado (no prazo + atraso + a confirmar)</span></div>
+    <div class="kpi"><b>{{ t['DATA A CONFIRMAR'] }}</b><span><i class="chip" style="background:var(--confirmar)"></i>feitas, data a confirmar</span></div>
+    <div class="kpi"><b>{{ a.n_atras }}</b><span>atrasadas (não realizadas + com atraso)</span></div>
+    <div class="kpi"><b>{{ p(a.justificadas / a.n_atras if a.n_atras else none) }}</b><span>das atrasadas com justificativa</span></div>
+  </div>
+  <h2>Destaques</h2>
+  <ul class="dest">{% for d in a.destaques %}<li>{{ d }}</li>{% endfor %}</ul>
+</section>
+
+<section>
+  <h2>Programado x realizado por dia</h2>
+  {% set dias = a.por_dia %}{% set mx = (dias|map(attribute='prog')|max) or 1 %}
+  {% set W = 960 %}{% set H = 190 %}{% set n = dias|length %}{% set bw = [((W - 40) / n) * 0.58, 70]|min %}
+  <div class="leg">{% for s, nm in [('NO PRAZO','No prazo'),('COM ATRASO','Com atraso'),('DATA A CONFIRMAR','Data a confirmar'),('NÃO REALIZADA','Não realizada')] %}<span><i class="chip" style="background:{{ COR_STATUS[s] }}"></i>{{ nm }}</span>{% endfor %}<span>· número acima da barra: PPC do dia</span></div>
+  <svg viewBox="0 0 {{ W }} {{ H + 36 }}" width="100%" role="img" aria-label="Peças programadas por dia, por status">
+    <line x1="20" x2="{{ W - 10 }}" y1="{{ H }}" y2="{{ H }}" stroke="#c5ccd6" stroke-width="1"/>
+    {% for x in dias %}
+      {% set cx = 20 + (loop.index0 + 0.5) * (W - 30) / n %}
+      {% set ns = namespace(y=H) %}
+      {% for s in ['NO PRAZO','COM ATRASO','DATA A CONFIRMAR','NÃO REALIZADA'] %}{% if x[s] %}
+        {% set h = (H - 26) * x[s] / mx %}
+        <rect x="{{ cx - bw / 2 }}" y="{{ ns.y - h + 1 }}" width="{{ bw }}" height="{{ [h - 2, 1]|max }}" rx="2" fill="{{ COR_STATUS[s] }}"><title>{{ DIAS[x.chave.weekday()] }} {{ x.chave|dm }} · {{ s|capitalize }}: {{ x[s] }}</title></rect>
+        {% set ns.y = ns.y - h %}
+      {% endif %}{% endfor %}
+      <text x="{{ cx }}" y="{{ ns.y - 5 }}" text-anchor="middle" font-size="11" font-weight="bold" fill="#1d2733">{{ p(x.ppc) }}</text>
+      <text x="{{ cx }}" y="{{ H + 14 }}" text-anchor="middle" font-size="10.5" fill="#5b6573">{{ DIAS[x.chave.weekday()] }} {{ x.chave|dm }}</text>
+      <text x="{{ cx }}" y="{{ H + 28 }}" text-anchor="middle" font-size="10" fill="#5b6573">{{ x.prog }} pç</text>
+    {% endfor %}
+  </svg>
+</section>
+
+<section>
+  <h2>Por obra</h2>
+  <table>{{ cab('Obra') }}{% for x in a.por_obra %}{{ lin(x) }}{% endfor %}</table>
+  <h2>Por tipo de peça</h2>
+  <table>{{ cab('Tipo de peça') }}{% for x in a.por_produto %}{{ lin(x) }}{% endfor %}</table>
+</section>
+
+{% if a.obra_prod|length > 1 or (a.obra_prod and a.obra_prod[0].produtos|length > 1) %}
+<section>
+  <h2>Obra × tipo de peça</h2>
+  <table>{{ cab('Obra / tipo de peça') }}
+  {% for g in a.obra_prod %}{{ lin(g.obra, cls='grp') }}{% if g.produtos|length > 1 %}{% for x in g.produtos %}{{ lin(x, cls='sub') }}{% endfor %}{% endif %}{% endfor %}
+  </table>
+</section>
+{% endif %}
+
+<section>
+  <h2>Por nave</h2><table>{{ cab('Nave') }}{% for x in a.por_nave %}{{ lin(x, {'N1':'Nave 1','N2':'Nave 2','N3':'Nave 3'}.get(x.chave, x.chave)) }}{% endfor %}</table>
+  <h2>Fôrmas com pior PPC <span style="font-weight:normal;color:var(--suave);font-size:11px">(3 peças ou mais no período)</span></h2>
+  {% if a.por_forma %}<table>{{ cab('Fôrma') }}{% for x in a.por_forma[:8] %}{{ lin(x) }}{% endfor %}</table>
+  {% else %}<p class="vazio">Nenhuma fôrma com 3 peças ou mais.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Causas de não cumprimento ({{ a.n_atras }} peças atrasadas)</h2>
+  {% if a.pareto %}
+  {% set mxc = (a.pareto|map(attribute='n')|max) or 1 %}
+  <table>
+    <tr><th>Causa</th><th class="n">Peças</th><th style="width:34%"></th><th class="n">% das atrasadas</th><th class="n">% acumulado</th><th>Obras mais afetadas</th></tr>
+    {% for c in a.pareto %}
+    <tr><td>{% if c.causa == 'Sem justificativa' %}<span class="falta">{{ c.causa }}</span>{% else %}{{ c.causa }}{% endif %}</td><td class="n"><b>{{ c.n }}</b></td>
+      <td><svg viewBox="0 0 100 8" width="100%" height="9" preserveAspectRatio="none" aria-hidden="true"><rect x="0" y="0" width="{{ 100 * c.n / mxc }}" height="8" rx="2" fill="{{ '#b8c0cc' if c.causa == 'Sem justificativa' else '#1f3a68' }}"/></svg></td>
+      <td class="n">{{ p(c.pct) }}</td><td class="n">{{ p(c.acum) }}</td><td style="color:var(--suave)">{% for o, nn in c.obras %}{{ o }} ({{ nn }}){{ ', ' if not loop.last }}{% endfor %}</td></tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="vazio">Nenhuma peça atrasada no recorte.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Plano de ação registrado</h2>
+  {% if a.plano %}<table><tr><th>Ação</th><th>Responsável</th><th class="n">Peças</th><th>Obras</th><th>Causas</th></tr>
+    {% for x in a.plano %}<tr><td>{{ x.acao }}</td><td>{{ x.resp or '-' }}</td><td class="n">{{ x.n }}</td><td>{{ x.obras|join(', ') }}</td><td>{{ x.causas|join(', ') }}</td></tr>{% endfor %}</table>
+  {% else %}<p class="vazio">Nenhuma ação registrada para as peças atrasadas deste recorte.</p>{% endif %}
+</section>
+
+<section class="quebra">
+  <h2>Peças atrasadas e justificativas, por obra e tipo de peça</h2>
+  {% for o in a.detalhe %}
+  <div class="obra-bloco">
+    <h3>{{ o.obra }} · {{ o.n }} peça{{ 's' if o.n != 1 }}</h3>
+    {% for tp in o.tipos %}
+    <div class="tipo">{{ tp.produto }} ({{ tp.n }})</div>
+    <table class="det">
+      <colgroup><col style="width:7%"><col style="width:9.5%"><col style="width:7.5%"><col style="width:5%"><col style="width:13.5%"><col style="width:8%"><col style="width:7%"><col style="width:11%"><col style="width:17%"><col style="width:14.5%"></colgroup>
+      <tr><th>Programada</th><th>Peça</th><th>Código</th><th>Seção</th><th>Fôrma</th><th>Status</th><th>Fabricação</th><th>Causa</th><th>Ação / responsável</th><th>Comentário</th></tr>
+      {% for l in tp.linhas %}{% set i = l.item %}{% set ap = l.ap %}
+      <tr><td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td><td style="white-space:nowrap"><b>{{ i.peca }}</b>{% if l.qtd > 1 %} ×{{ l.qtd }}{% endif %}</td>
+        <td>{{ i.codigo or '' }}</td><td>{{ i.secao }}</td><td>{{ i.forma }}{% if i.nave and not i.forma.startswith(i.nave) %} <span style="color:var(--suave)">({{ i.nave }})</span>{% endif %}</td>
+        <td><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ 'Não realizada' if l.status == 'NÃO REALIZADA' else 'Com atraso' }}</span></td>
+        <td style="white-space:nowrap">{% if l.data_fab %}{{ l.data_fab|dm }}{% if l.desvio %} (+{{ l.desvio }}d){% endif %}{% else %}-{% endif %}</td>
+        <td>{% if ap and ap.causa %}{{ ap.causa }}{% else %}<span class="falta">sem justificativa</span>{% endif %}</td>
+        <td>{{ ap.acao if ap and ap.acao else '' }}{% if ap and ap.responsavel %}<br><span style="color:var(--suave)">{{ ap.responsavel }}</span>{% endif %}</td>
+        <td>{{ (ap.comentario or ap.ocorrido) if ap else '' }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endfor %}
+  </div>
+  {% else %}<p class="vazio">Nenhuma peça atrasada no recorte.</p>{% endfor %}
+</section>
+{% endif %}
+
+<div class="notas">
+  <b>Como ler.</b> Programadas: peças com data programada já vencida no período (as de hoje em diante não entram).
+  No prazo: concretada até a data programada (data de fabricação do Plannix). Com atraso: concretada depois da data.
+  Data a confirmar: saiu da lista do Plannix sem data de fabricação. PPC = no prazo ÷ programadas; PPC em volume usa os m³ da programação.
+  Peças iguais (mesmo nome na mesma obra) são atendidas em fila: a concretagem mais antiga atende a programação mais antiga.
+  Semana anterior: {{ ant_ini|dm }} a {{ ant_fim|dm }}, mesmo recorte.
+</div>
+</main>
+</body>
+</html>

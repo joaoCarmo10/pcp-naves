@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import acesso, armacao as arm, cadastro as cad, formas as fm, pecas_tab as ptab, planejar as pl, plannix, plantas, programacao as pg
+from . import acesso, armacao as arm, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
 from .status import CORES, LEGENDA, chave_natural, por_produto, resumo, status_da_obra
@@ -473,7 +473,7 @@ def _404():
 
 
 # ======================================================== programação e programado x realizado
-tpl.env.globals.update(CAUSAS=pg.CAUSAS, COR_STATUS=pg.COR_STATUS, DIAS=pg.DIAS, STATUS=pg.STATUS)
+tpl.env.globals.update(CAUSAS=pg.CAUSAS, COR_STATUS=pg.COR_STATUS, DIAS=pg.DIAS, STATUS=pg.STATUS, timedelta=timedelta)
 
 
 def _rev(db: Session, rev: int | None) -> RevisaoProg | None:
@@ -549,35 +549,62 @@ def programacao_quadro(request: Request, rev: int | None = None, db: Session = D
                                                          "hoje": date.today(), "base": ultima_base(db)})
 
 
-@app.get("/pxr", response_class=HTMLResponse)
-def pxr(request: Request, rev: int | None = None, de: str | None = None, ate: str | None = None, db: Session = Depends(get_db)):
-    if rev is None:
-        # abre na revisão mais recente que já tem dia passado para medir
-        rev = db.scalar(select(RevisaoProg.id).where(RevisaoProg.inicio < date.today())
-                        .order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
-    r = _rev(db, rev)
+def _pxr_ctx(request: Request, db: Session) -> dict | None:
+    """Recorte do programado x realizado a partir da URL (revisão, semana/datas, obra, nave, tipo de peça, status)."""
+    qp = request.query_params
+    per = pxr.periodo(db, qp, _rev(db, None))
+    r = per["rev"]
     if not r:
+        return None
+    ini, fim = per["ini"], per["fim"]
+    todas = pg.linhas(db, r, ini, fim)
+    f = {k: qp.get(k, "") for k in ("obra", "nave", "produto", "status")}
+    ls = pxr.filtrar(todas, f)
+    # semana anterior, mesmo recorte, na revisão que cobre aquela data
+    ant_ini, ant_fim = ini - timedelta(days=7), fim - timedelta(days=7)
+    r_ant = pxr.revisao_para(db, ant_ini)
+    ls_ant = pxr.filtrar(pg.linhas(db, r_ant, ant_ini, ant_fim), f) if r_ant else []
+    a = pxr.analisar(ls, ls_ant)
+    lista = [l for l in pxr.so_status(ls, f["status"] or "atrasadas") if l.status not in ("PENDENTE", "SEM INFORMAÇÃO")]
+    lista.sort(key=lambda l: (l.status != "NÃO REALIZADA", l.item.obra, l.item.produto, l.item.data, l.item.forma))
+    nomes = {"obra": "Obra", "nave": "Nave", "produto": "Tipo de peça"}
+    filtros_txt = ", ".join(f"{nomes[k]}: {v}" for k, v in f.items() if v and k in nomes)
+    if f["status"] and f["status"] != "atrasadas":
+        filtros_txt = ", ".join(x for x in (filtros_txt, "Lista: " + pxr.FILTROS_STATUS[f["status"]][0]) if x)
+    return {"r": r, "revs": _revisoes(db), "ini": ini, "fim": fim, "semanas": per["semanas"], "semana": per["semana"],
+            "f": f, "op": pxr.opcoes(todas), "a": a, "tot": a["tot"] or pxr.vazio(), "lista": lista,
+            "ant_ini": ant_ini, "ant_fim": ant_fim, "filtros_txt": filtros_txt, "todas": ls,
+            "FILTROS_STATUS": pxr.FILTROS_STATUS, "base": ultima_base(db),
+            "qs": "&".join(f"{k}={quote(v)}" for k, v in qp.items() if v)}
+
+
+@app.get("/pxr", response_class=HTMLResponse)
+def pxr_tela(request: Request, db: Session = Depends(get_db)):
+    ctx = _pxr_ctx(request, db)
+    if not ctx:
         return tpl.TemplateResponse(request, "pxr.html", {"r": None, "revs": [], "base": ultima_base(db)})
-    hoje = date.today()
-    ini = _data(de) or r.inicio
-    fim = _data(ate) or min(r.fim, hoje - timedelta(days=1))
-    if fim < ini:
-        fim = r.fim
-    ls = pg.linhas(db, r, ini, fim)
-    causas = Counter()
-    for l in ls:
-        if l.ap and l.ap.causa and l.status in ("NÃO REALIZADA", "COM ATRASO"):
-            causas[l.ap.causa] += l.qtd
-    nao = [l for l in ls if l.status in ("NÃO REALIZADA", "COM ATRASO")]
-    nao.sort(key=lambda l: (l.status != "NÃO REALIZADA", l.item.obra, l.item.forma, l.item.data))
-    return tpl.TemplateResponse(request, "pxr.html", {
-        "r": r, "revs": _revisoes(db), "ini": ini, "fim": fim, "tot": pg.totais(ls),
-        "por_dia": sorted(pg.agrega(ls, lambda l: l.item.data), key=lambda x: x["chave"]),
-        "por_semana": sorted(pg.agrega(ls, lambda l: l.item.data - timedelta(days=l.item.data.weekday())), key=lambda x: x["chave"]),
-        "por_nave": sorted(pg.agrega(ls, lambda l: l.item.nave or "-"), key=lambda x: x["chave"]),
-        "por_obra": sorted(pg.agrega(ls, lambda l: l.item.obra or "-"), key=lambda x: -x["prog"]),
-        "por_forma": sorted([a for a in pg.agrega(ls, lambda l: l.item.forma or "-") if a["prog"] >= 3], key=lambda x: (x["ppc"] or 0, -x["prog"])),
-        "causas": causas.most_common(), "nao": nao, "base": ultima_base(db)})
+    return tpl.TemplateResponse(request, "pxr.html", ctx)
+
+
+@app.get("/pxr/relatorio", response_class=HTMLResponse)
+def pxr_relatorio(request: Request, db: Session = Depends(get_db)):
+    ctx = _pxr_ctx(request, db)
+    if not ctx:
+        return RedirectResponse("/pxr", status_code=303)
+    ctx["emitido"] = datetime.now(plannix.BAHIA).strftime("%d/%m/%Y %H:%M")
+    u = request.state.usuario
+    ctx["autor"] = (u.nome if u and getattr(u, "nome", "") else "")
+    return tpl.TemplateResponse(request, "pxr_relatorio.html", ctx)
+
+
+@app.get("/pxr/planilha")
+def pxr_planilha(request: Request, db: Session = Depends(get_db)):
+    ctx = _pxr_ctx(request, db)
+    if not ctx:
+        return RedirectResponse("/pxr", status_code=303)
+    nome = f"programado_x_realizado_{ctx['ini']:%d-%m}_a_{ctx['fim']:%d-%m-%Y}.xlsx"
+    return Response(pxr.planilha(ctx), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 @app.post("/apontamentos/{item_id}")
