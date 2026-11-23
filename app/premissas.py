@@ -24,7 +24,7 @@ REGRAS_FIXAS = [
     "Nave 2: as pistas P1 e P2 alternam, uma por dia (segue a pista da base quando ela já tinha laje no dia).",
     "Pista: um arranjo de cordoalha por dia.",
     "Uma seção por fôrma por dia, exceto N1 F1, F2, F6 e F7 (mistas). A F6 e a F7 usam a mesma montagem no dia.",
-    "A fôrma continua na seção do dia anterior enquanto houver peça dela; só depois muda (adaptação).",
+    "Montagem da fôrma no dia: a que a programação base previa para o dia; senão continua a do dia anterior enquanto houver peça dela; só depois muda (adaptação).",
     "Folga de 0,20 m entre peças na mesma fôrma linear (não vale para laje).",
     "A peça entra na fôrma pelo cadastro (seção e adaptações aceitas, comprimento útil, produto).",
     "Primeiro dia: só peça já armada ou que já estava programada para esse dia (armação D-1).",

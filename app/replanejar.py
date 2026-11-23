@@ -224,7 +224,17 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         return capacidade(f, dia)
 
     ocup_forma: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
+    # montagem de cada fôrma na programação base: a do dia (alinhamento) e a da véspera do início (continuidade)
+    sec_base: dict[tuple, str] = {}
     sec_ant: dict[str, str] = {}
+    for i in itens:
+        f = next((f for f in formas if fm.item_e_da_forma(i.forma, f)), None)
+        if not f or not i.secao:
+            continue
+        if i.data >= inicio:
+            sec_base.setdefault((f.codigo, i.data), fm._norm(i.secao))
+        else:
+            sec_ant[f.codigo] = fm._norm(i.secao)
     def alocar_dia(dia: date, so_compromisso: bool = False) -> None:
         vig = [f for f in formas if f.vigente(dia) and cap_dia(f, dia)]
         fixos_dia = [i for i in fixos if i.data == dia]
@@ -253,8 +263,11 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             if not cands:
                 continue
             ant = sec_ant.get(f.codigo)
+            prevista = sec_base.get((f.codigo, dia))
             minhas = [d for d in cands if (f.id, id(d)) in pref]
-            if ant and any(d.sec == ant for d in cands) and not (minhas and minhas[0].sec != ant and minhas[0].classe == 0):
+            if prevista and any(d.sec == prevista for d in cands):
+                est[f.id]["sec"] = prevista            # montagem que a programação base já previa para o dia
+            elif ant and any(d.sec == ant for d in cands) and not (minhas and minhas[0].sec != ant and minhas[0].classe == 0):
                 est[f.id]["sec"] = ant
             else:
                 est[f.id]["sec"] = (minhas or cands)[0].sec
