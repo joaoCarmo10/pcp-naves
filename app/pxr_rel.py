@@ -400,3 +400,155 @@ def pendencias(ls, ordem: str = "tipo", hoje: date | None = None) -> dict:
             "sem_causa": sem_causa, "dias": lambda l: (hoje - l.item.data).days,
             "por_obra": {o: sum(l.qtd for l in nao if (l.item.obra or "-") == o) for o in obras},
             "por_tipo": {t: sum(l.qtd for l in nao if (l.item.produto or "-") == t) for t in tipos}}
+
+
+# ---------------------------------------------------------------- tabela no layout da planilha de programação
+
+def tabela_programacao(ctx: dict) -> bytes:
+    """Programado x realizado no mesmo layout da planilha de programação (abas por nave, uma linha por peça,
+    X no dia da concretagem), com status, atraso e justificativas. Para entregar à produção."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.formatting.rule import FormulaRule
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    ini, fim = ctx["ini"], ctx["fim"]
+    dias = [ini + timedelta(days=k) for k in range((fim - ini).days + 1)][:14]
+    hoje = date.today()
+    AZUL = "1F3864"
+    fino = Side(style="thin", color="BFBFBF")
+    borda = Border(left=fino, right=fino, top=fino, bottom=fino)
+    f_cab = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    f_txt = Font(name="Calibri", size=10)
+    f_neg = Font(name="Calibri", size=10, bold=True)
+    centro = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    esq = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    COR = {"NO PRAZO": "E2F0D9", "COM ATRASO": "FFF2CC", "DATA A CONFIRMAR": "DDEBF7", "NÃO REALIZADA": "F8CBAD",
+           "PENDENTE": "FFFFFF", "SEM INFORMAÇÃO": "F2F2F2"}
+    ROT = {"NO PRAZO": "No prazo", "COM ATRASO": "Com atraso", "DATA A CONFIRMAR": "Data a confirmar",
+           "NÃO REALIZADA": "Não realizada", "PENDENTE": "A realizar", "SEM INFORMAÇÃO": "Sem informação"}
+
+    cab = (["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (m)", "QTD", "VOL. (m³)", "TIPO",
+            "OBSERVAÇÃO", "REALIZADO", "STATUS", "DATA FABRIC."]
+           + [f"{pg.DIAS[d.weekday()]}\n{d:%d/%m}" for d in dias]
+           + ["ATRASO (dias)", "CAUSA", "O QUE HOUVE", "AÇÃO", "RESPONSÁVEL"])
+    larg = [10, 6, 22, 12, 17, 12, 11, 10, 9, 6, 9, 9, 28, 10, 14, 11] + [7] * len(dias) + [9, 18, 34, 28, 16]
+    c_status = 15
+    c_dia0 = 17
+
+    wb = Workbook()
+    ws0 = wb.active
+    ws0.title = "RESUMO"
+
+    def aba(titulo, linhas):
+        ws = wb.create_sheet(titulo)
+        ws["A1"] = f"PROGRAMADO X REALIZADO | {titulo.replace('N1 + N3', 'NAVES 1 E 3').replace('N2', 'NAVE 2')} | {ini:%d/%m} a {fim:%d/%m/%Y}"
+        ws["A1"].font = Font(name="Calibri", size=14, bold=True, color=AZUL)
+        ws["A2"] = (f"Programação: {ctx['r'].nome} · Base Plannix: {ctx.get('base') or '-'}"
+                    + (f" · Recorte: {ctx['filtros_txt']}" if ctx.get("filtros_txt") else ""))
+        ws["A2"].font = Font(name="Calibri", size=9, italic=True, color="595959")
+        for k, t in enumerate(cab, 1):
+            c = ws.cell(3, k, t)
+            c.font, c.alignment, c.border = f_cab, centro, borda
+            c.fill = PatternFill("solid", fgColor=AZUL)
+            ws.column_dimensions[get_column_letter(k)].width = larg[k - 1]
+        ws.row_dimensions[3].height = 30
+        r = 4
+        for l in linhas:
+            i, a = l.item, l.ap
+            realizado = "S" if l.status in ("NO PRAZO", "COM ATRASO", "DATA A CONFIRMAR") else ("N" if l.status == "NÃO REALIZADA" else "")
+            atraso = l.desvio if l.status == "COM ATRASO" else ((hoje - i.data).days if l.status == "NÃO REALIZADA" else None)
+            vals = ([i.data, pg.DIAS[i.data.weekday()], i.forma, i.obra, i.peca, i.codigo or "", i.produto, i.secao,
+                     i.comprimento, l.qtd, round(_vol(l), 3) if i.volume else None, i.tipo, i.obs, realizado, ROT[l.status],
+                     l.data_fab]
+                    + ["X" if l.data_fab == d else ("•" if i.data == d and l.data_fab != d else None) for d in dias]
+                    + [atraso, a.causa if a else "", (a.comentario or a.ocorrido) if a else "", a.acao if a else "",
+                       a.responsavel if a else ""])
+            cor = PatternFill("solid", fgColor=COR[l.status])
+            for k, v in enumerate(vals, 1):
+                c = ws.cell(r, k, v)
+                c.font, c.border, c.fill = f_txt, borda, cor
+                c.alignment = esq if k in (3, 13, c_dia0 + len(dias) + 1, c_dia0 + len(dias) + 2, c_dia0 + len(dias) + 3) else centro
+            ws.cell(r, 1).number_format = "dd/mm/yy"
+            ws.cell(r, 16).number_format = "dd/mm/yy"
+            ws.cell(r, 9).number_format = "0.00"
+            ws.cell(r, 11).number_format = "0.000"
+            ws.cell(r, 5).font = f_neg
+            ws.cell(r, c_status).font = f_neg
+            for k, d in enumerate(dias):
+                c = ws.cell(r, c_dia0 + k)
+                if c.value == "X":
+                    c.font = Font(name="Calibri", size=11, bold=True, color="375623" if l.data_fab <= i.data else "9C5700")
+                elif c.value == "•":
+                    c.font = Font(name="Calibri", size=11, bold=True, color="C00000" if l.status == "NÃO REALIZADA" else "7F7F7F")
+            ws.row_dimensions[r].height = 18
+            r += 1
+        ws.freeze_panes = "F4"
+        ws.auto_filter.ref = f"A3:{get_column_letter(len(cab))}{max(r - 1, 3)}"
+        ws.sheet_view.zoomScale = 85
+        ws.page_setup.orientation = "landscape"
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_title_rows = "3:3"
+        # legenda
+        r += 1
+        ws.cell(r, 1, "Legenda:").font = f_neg
+        for k, (s, nome) in enumerate([("NO PRAZO", "No prazo"), ("COM ATRASO", "Com atraso"), ("NÃO REALIZADA", "Não realizada"),
+                                       ("DATA A CONFIRMAR", "Data a confirmar"), ("PENDENTE", "A realizar")]):
+            c = ws.cell(r, 3 + k * 2, nome)
+            c.fill, c.font, c.border, c.alignment = PatternFill("solid", fgColor=COR[s]), f_txt, borda, centro
+        ws.cell(r + 1, 1, "X = dia da concretagem (Plannix ou informada pelo PCP)   • = dia programado em que a peça não foi concretada").font = Font(name="Calibri", size=9, italic=True)
+        return ws
+
+    ord_ = lambda l: (l.item.data, l.item.forma, l.item.obra, l.item.peca)
+    ls = [l for l in ctx["todas"]]
+    grupos = [("N1 + N3", sorted([l for l in ls if l.item.nave != "N2"], key=ord_)),
+              ("N2", sorted([l for l in ls if l.item.nave == "N2"], key=ord_))]
+    for nome, linhas in grupos:
+        if linhas:
+            aba(nome, linhas)
+
+    # resumo por dia e por nave (mesmas regras do PPC)
+    ws = ws0
+    ws["A1"] = f"PROGRAMADO X REALIZADO | {ini:%d/%m} a {fim:%d/%m/%Y}"
+    ws["A1"].font = Font(name="Calibri", size=14, bold=True, color=AZUL)
+    ws["A2"] = "PPC = no prazo ÷ programadas (só dias já vencidos). Realizado = no prazo + com atraso + data a confirmar."
+    ws["A2"].font = Font(name="Calibri", size=9, italic=True, color="595959")
+    cab_r = ["", "Programadas", "No prazo", "Com atraso", "Data a confirmar", "Não realizadas", "A realizar", "PPC", "Realizado"]
+
+    def bloco(r0, titulo, ags, rot):
+        ws.cell(r0, 1, titulo).font = Font(name="Calibri", size=11, bold=True, color=AZUL)
+        for k, t in enumerate(cab_r, 1):
+            c = ws.cell(r0 + 1, k, t if k > 1 else rot)
+            c.font, c.alignment, c.border, c.fill = f_cab, centro, borda, PatternFill("solid", fgColor=AZUL)
+        r = r0 + 2
+        for a in ags:
+            nome = (f"{pg.DIAS[a['chave'].weekday()]} {a['chave']:%d/%m}" if isinstance(a["chave"], date)
+                    else {"N1": "Nave 1", "N2": "Nave 2", "N3": "Nave 3"}.get(a["chave"], a["chave"]))
+            vals = [nome, a["prog"], a["NO PRAZO"], a["COM ATRASO"], a["DATA A CONFIRMAR"], a["NÃO REALIZADA"], a["pend"], a["ppc"], a["feito"]]
+            for k, v in enumerate(vals, 1):
+                c = ws.cell(r, k, v)
+                c.font, c.border, c.alignment = (f_neg if titulo.startswith("Total") else f_txt), borda, centro
+                if k >= 8 and v is not None:
+                    c.number_format = "0%"
+            r += 1
+        return r + 1
+
+    r = 4
+    r = bloco(r, "Por dia", sorted(grupo(ls, lambda l: l.item.data), key=lambda a: a["chave"]), "Dia")
+    r = bloco(r, "Por nave", sorted(grupo(ls, lambda l: l.item.nave or "-"), key=lambda a: a["chave"]), "Nave")
+    r = bloco(r, "Por obra", sorted(grupo(ls, lambda l: l.item.obra or "-"), key=lambda a: -a["prog"]), "Obra")
+    tot = grupo(ls, lambda l: "Total")
+    if tot:
+        bloco(r, "Total do período", tot, "")
+    ws.column_dimensions["A"].width = 18
+    for col in "BCDEFGHI":
+        ws.column_dimensions[col].width = 13
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

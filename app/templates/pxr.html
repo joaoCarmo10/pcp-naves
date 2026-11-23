@@ -37,6 +37,7 @@
 <div class="acoes-rel">
   <a class="botao" href="/pxr/relatorio?{{ qs }}{{ '&' if qs }}rev={{ r.id }}&de={{ ini }}&ate={{ fim }}" target="_blank" rel="noopener">Gerar relatório</a>
   <a class="botao-sec" href="/pxr/pendencias?{{ qs }}{{ '&' if qs }}rev={{ r.id }}&de={{ ini }}&ate={{ fim }}" target="_blank" rel="noopener">Imprimir o que ficou para trás</a>
+  <a class="botao-sec" href="/pxr/tabela?{{ qs }}{{ '&' if qs }}rev={{ r.id }}&de={{ ini }}&ate={{ fim }}">Tabela para a produção (Excel)</a>
   <a class="botao-sec" href="/pxr/planilha?{{ qs }}{{ '&' if qs }}rev={{ r.id }}&de={{ ini }}&ate={{ fim }}">Baixar Excel</a>
   <span class="meta">{{ ini.strftime('%d/%m/%Y') }} a {{ fim.strftime('%d/%m/%Y') }}{% if filtros_txt %} · {{ filtros_txt }}{% endif %}</span>
 </div>

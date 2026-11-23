@@ -610,6 +610,17 @@ def pxr_pendencias(request: Request, db: Session = Depends(get_db)):
     return tpl.TemplateResponse(request, "pxr_pendencias.html", ctx)
 
 
+@app.get("/pxr/tabela")
+def pxr_tabela(request: Request, db: Session = Depends(get_db)):
+    """Programado x realizado no layout da planilha de programação, para a produção."""
+    ctx = _pxr_ctx(request, db)
+    if not ctx:
+        return RedirectResponse("/pxr", status_code=303)
+    nome = f"Programado_x_Realizado_{ctx['ini']:%d-%m}_a_{ctx['fim']:%d-%m}.xlsx"
+    return Response(pxr.tabela_programacao(ctx), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @app.get("/pxr/planilha")
 def pxr_planilha(request: Request, db: Session = Depends(get_db)):
     ctx = _pxr_ctx(request, db)

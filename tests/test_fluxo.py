@@ -619,3 +619,20 @@ def test_pxr_pendencias(cliente):
     for por in ("", "&por=obra"):
         h = cliente.get(f"/pxr/pendencias?{base}{por}").text
         assert "O que ficou para trás" in h and "obra × tipo de peça" not in h
+
+
+def test_pxr_tabela_producao(cliente):
+    import io
+    import openpyxl
+    test_programacao_pxr(cliente)
+    from app import programacao as pg
+    from app.db import SessionLocal
+    rev = pg.revisao_atual(SessionLocal())
+    base = f"rev={rev.id}&de=2026-11-09&ate=2026-11-10"
+    assert "Tabela para a produção (Excel)" in cliente.get(f"/pxr?{base}").text
+    r = cliente.get(f"/pxr/tabela?{base}")
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames[0] == "RESUMO"
+    ws = wb[wb.sheetnames[1]]
+    cab = [c.value for c in ws[3]]
+    assert cab[:5] == ["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA"] and "O QUE HOUVE" in cab and "SEG\n09/11" in cab
