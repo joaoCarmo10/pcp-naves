@@ -341,8 +341,9 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             pista_do_dia[dia] = pistas[(pistas.index(ant) + 1) % len(pistas)]
         alocar_dia(dia, so_compromisso=True)
         extra.append(dia)
-    if extra:
-        nova.fim = max(nova.fim, extra[-1])
+    usados = [i.data for i in nova.itens if i.data > fim]
+    if usados:
+        nova.fim = max(nova.fim, max(usados))
 
     # 4. relatório
     aceitas_ids = {id(d) for ds in aceita.values() for d in ds}
@@ -385,7 +386,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
                         forma=p.forma, de=p.de.isoformat() if p.de else "", ate=p.ate.isoformat() if p.ate else "", obs=p.obs)
                    for p in prs],
         pistas={d.isoformat(): p for d, p in pista_do_dia.items()},
-        dias_extra=[d.isoformat() for d in extra],
+        dias_extra=sorted({i.data.isoformat() for i in nova.itens if "Remanejada" in (i.obs or "")}),
         remanejadas=sum(1 for i in nova.itens if "Remanejada" in (i.obs or "")),
         mudaram=sorted([dict(obra=i.obra, peca=i.peca, codigo=i.codigo, antes=f"{d0.data0:%d/%m} {d0.forma0}", depois=f"{i.data:%d/%m} {i.forma}",
                              dias=(i.data - d0.data0).days)
