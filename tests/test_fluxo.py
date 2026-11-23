@@ -744,3 +744,12 @@ def test_etiqueta_unidade_unica_entre_folhas():
     assert (f1.total, f1.fabricadas, f1.programadas, f1.nao_desenhadas) == (3, 2, 1, 0)
     f2 = status_folha(ao[2], st, desenhadas(ao))["V1"]
     assert (f2.total, f2.sem) == (1, 1)
+
+
+def test_pilar_em_varias_folhas_repete_codigo():
+    from app.status import atribuir_obra, desenhadas
+    un = {"P1": [{"cod": f"P{i}", "st": "FAB", "data": None, "vol": 1.0} for i in range(2)]}
+    mk = lambda x: {"t": "P1", "r": [x, 0, x + 10, 5]}
+    ao = atribuir_obra([(1, [mk(0), mk(50)]), (2, [mk(0), mk(50)]), (3, [mk(0), mk(50)])], un)
+    assert all([m["cod"] for m in ao[f]] == ["P0", "P1"] for f in (1, 2, 3))
+    assert desenhadas(ao) == {"P1": 2}

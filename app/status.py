@@ -149,29 +149,36 @@ def atribuir(marcas: list, unidades: dict[str, list[dict]]) -> list[dict]:
 
 
 def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]]) -> dict[int, list[dict]]:
-    """Distribui as unidades por TODAS as folhas da obra, sem repetir código entre folhas: a folha seguinte continua de
-    onde a anterior parou. Assim a mesma peça nunca aparece pintada duas vezes (nem em pavimentos diferentes)."""
+    """Distribui as unidades pelas folhas da obra, por nome:
+    - unidades diferentes em folhas diferentes (V1 no pav 1 e V1 no pav 2): a folha seguinte continua de onde a
+      anterior parou, então nenhum código se repete;
+    - a mesma peça desenhada em várias folhas (pilar que atravessa os pavimentos): a soma das etiquetas passa muito do
+      Plannix (>= 1,5x); aí cada folha mostra os MESMOS códigos, e a peça continua contando uma vez só na obra."""
+    por_folha = {fid: defaultdict(list) for fid, _ in folhas}
+    soma: dict[str, int] = defaultdict(int)
+    for fid, marcas in folhas:
+        for m in marcas:
+            por_folha[fid][m["t"]].append(m)
+            soma[m["t"]] += 1
+    repetida = {n for n, q in soma.items() if q >= 1.5 * max(1, len(unidades.get(n, [])))}
     usadas: dict[str, int] = defaultdict(int)
     out: dict[int, list[dict]] = {}
     for fid, marcas in folhas:
-        por_nome: dict[str, list] = defaultdict(list)
-        for m in marcas:
-            por_nome[m["t"]].append(m)
-        resto = {n: unidades.get(n, [])[usadas[n]:] for n in por_nome}
+        resto = {n: unidades.get(n, []) if n in repetida else unidades.get(n, [])[usadas[n]:] for n in por_folha[fid]}
         out[fid] = atribuir(marcas, resto)
-        for n, ms in por_nome.items():
+        for n, ms in por_folha[fid].items():
             usadas[n] += len(ms)
     return out
 
 
 def desenhadas(atrib_obra: dict[int, list[dict]]) -> dict[str, int]:
-    """Etiquetas com unidade, por nome, somando todas as folhas."""
-    c: dict[str, int] = defaultdict(int)
+    """Códigos distintos desenhados na obra, por nome (a mesma peça em várias folhas conta uma vez)."""
+    c: dict[str, set] = defaultdict(set)
     for ms in atrib_obra.values():
         for m in ms:
             if m["st"] != "SEM":
-                c[m["t"]] += 1
-    return c
+                c[m["t"]].add(m["cod"])
+    return {n: len(v) for n, v in c.items()}
 
 
 def status_folha(atribuidas: list[dict], st_obra: dict[str, StatusPeca],

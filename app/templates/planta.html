@@ -12,7 +12,7 @@
   </div>
   <a class="botao" href="/plantas/{{ p.id }}/a2.pdf" target="_blank">Gerar PDF A2</a>
 </div>
-<p class="meta" style="margin:-4px 0 8px">Cada etiqueta pintada é uma peça (código) diferente do Plannix, sem repetir nem entre folhas: a quantidade é exata, a posição de cada código é indicativa.
+<p class="meta" style="margin:-4px 0 8px">Cada etiqueta pintada é uma peça (código) diferente do Plannix, sem repetir na folha: a quantidade é exata, a posição de cada código é indicativa. Peças com mesmo nome em pavimentos diferentes recebem códigos diferentes; só o pilar, que aparece em todas as plantas, repete o código (é a mesma peça).
   {% if sem %}<b>{{ sem }}</b> etiqueta(s) sem peça no Plannix (cinza).{% endif %}
   {% if nao_desenhadas %}<b>{{ nao_desenhadas }}</b> unidade(s) do Plannix com nomes desta folha não aparecem em nenhuma planta da obra.{% endif %}</p>
 <div class="planta-layout">

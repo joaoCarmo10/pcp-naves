@@ -173,7 +173,7 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
     if len(ordem) > maxrows * ncol:
         pg.insert_text((x0 + 8, y1 - 16), f"+ {len(ordem) - maxrows * ncol} peças (lista completa no sistema)", fontsize=7, fontname="helv")
     pg.insert_text((x0 + 8, y1 - 6), f"PCP | Emitido em {date.today():%d/%m/%Y} | Formato A2 | Cada etiqueta pintada é uma peça (código) "
-                   "diferente do Plannix; a quantidade é exata, a posição de cada código na planta é indicativa.",
+                   "diferente do Plannix; a quantidade é exata, a posição de cada código na planta é indicativa. Pilar desenhado em várias plantas é a mesma peça (mesmo código).",
                    fontsize=7, fontname="helv", color=(0.45, 0.45, 0.45))
 
 
