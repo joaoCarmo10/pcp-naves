@@ -803,6 +803,10 @@ def test_replanejamento_automatico(cliente):
     assert "atrasadas reprogramadas" in h and "OBRA-TESTE" in h
     x = cliente.get(f"/planejar/replanejamento/{rid}/planilha")
     assert x.status_code == 200 and len(x.content) > 3000
+    import io as _io
+    from openpyxl import load_workbook
+    cab = [c.value for c in load_workbook(_io.BytesIO(x.content))["N1 + N3"][3]]
+    assert "PROTENSÃO" in cab and "AÇO ATIVO (KG)" in cab
     imp = pg.importar_programacao(db, x.content, "replanejada.xlsx")          # a planilha volta para o app
     assert imp.resumo["linhas"] == sum(1 for i in nova.itens if i.data >= date(2026, 11, 24))
     cliente.post(f"/planejar/replanejamento/{rid}/publicar")

@@ -1026,8 +1026,13 @@ def replanejamento_ver(request: Request, rid: int, db: Session = Depends(get_db)
         x[0] += i.qtd or 1
         x[1] += i.volume or 0
     tot_dia = {d: sum(v[1] for v in n.values()) for d, n in por_dia.items()}
+    prot = rp.protensao_dos_itens(db, [i for i in itens if i.nave == "N2"])
+    prot_dia = defaultdict(set)
+    for i in itens:
+        if i.nave == "N2" and prot.get(i.codigo or "", {}).get("txt"):
+            prot_dia[i.data].add(prot[i.codigo]["txt"])
     return tpl.TemplateResponse(request, "replanejamento.html", {"r": r, "rel": rel, "ini": ini, "por_dia": dict(sorted(por_dia.items())),
-                                                                 "tot_dia": tot_dia,
+                                                                 "tot_dia": tot_dia, "prot_dia": prot_dia,
                                                                  "base": ultima_base(db)})
 
 
@@ -1036,7 +1041,7 @@ def replanejamento_planilha(rid: int, db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, rid) or _404()
     ini = _data((r.relatorio or {}).get("inicio")) or r.inicio
     nome = f"Programacao_Producao_{ini:%d-%m}_a_{r.fim:%d-%m}_replanejada.xlsx"
-    return Response(rp.planilha(r, ini), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    return Response(rp.planilha(r, ini, db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 

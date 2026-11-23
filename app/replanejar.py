@@ -416,7 +416,31 @@ def publicar(db: Session, rev: RevisaoProg) -> None:
     db.commit()
 
 
-def planilha(rev: RevisaoProg, inicio: date | None = None) -> bytes:
+def protensao_dos_itens(db: Session, itens: list[ItemProg]) -> dict[str, dict]:
+    """Protensão por código: arranjo e força da prancha (cadastro de peças) e, sem prancha, o modelo e a taxa do Plannix."""
+    from . import cadastro as cad
+    cods = [i.codigo for i in itens if i.codigo]
+    if not cods:
+        return {}
+    pecas = list(db.scalars(select(Peca).where(Peca.codigo.in_(cods))))
+    idx = cad.indice(db, {p.obra_id for p in pecas})
+    out = {}
+    for p in pecas:
+        c = cad.de_peca(idx, p)
+        arr = c.protensao.replace("Ø", "Ø ").replace(".", ",") if c and c.cordoalhas else ""
+        txt = []
+        if arr:
+            txt.append(arr + (f" · {c.forca:,.0f} kgf/cord.".replace(",", ".") if c.forca else ""))
+        if p.modelo_protensao and (not arr or p.modelo_protensao.strip().upper() not in arr.upper()):
+            txt.append(f"Modelo {p.modelo_protensao.strip()}")
+        ativo = c.aco_ativo if c and c.aco_ativo else (round(p.taxa_aco_prot * p.volume, 1) if p.taxa_aco_prot and p.volume else None)
+        if txt or ativo:
+            out[p.codigo] = {"txt": " | ".join(txt), "ativo": ativo,
+                             "fonte": "prancha" if c and (c.cordoalhas or c.aco_ativo) else "Plannix"}
+    return out
+
+
+def planilha(rev: RevisaoProg, inicio: date | None = None, db: Session | None = None) -> bytes:
     """Programação no layout da planilha da fábrica: abas 'N1 + N3' e 'N2', uma linha por peça (código),
     X no dia da concretagem. Reimportável pelo app (cabeçalho DATA, FÔRMA, OBRA, PEÇA, CÓDIGO...)."""
     import io
@@ -427,6 +451,7 @@ def planilha(rev: RevisaoProg, inicio: date | None = None) -> bytes:
 
     ini = inicio or rev.inicio
     itens = [i for i in rev.itens if i.data >= ini]
+    prot = protensao_dos_itens(db, itens) if db is not None else {}
     fim = max([i.data for i in itens] + [ini])
     dias = [ini + timedelta(days=k) for k in range((fim - ini).days + 1)]
     dias = [d for d in dias if d.weekday() != 6]
@@ -439,9 +464,11 @@ def planilha(rev: RevisaoProg, inicio: date | None = None) -> bytes:
     esq = Alignment(horizontal="left", vertical="center", wrap_text=True)
     COR = {"Remanejada": "E4DFEC", "Prioridade": "F8CBAD", "Atrasada": "F8CBAD", "Antes": "FFF2CC", "Nova": "DDEBF7",
            "Barracão": "E2F0D9"}
-    cab = (["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (M)", "QTD", "VOL. (M³)", "TIPO", "OBSERVAÇÃO"]
+    cab = (["DATA", "DIA", "FÔRMA", "OBRA", "PEÇA", "CÓDIGO", "PRODUTO", "SEÇÃO", "COMP. (M)", "QTD", "VOL. (M³)", "TIPO",
+            "PROTENSÃO", "AÇO ATIVO (KG)", "OBSERVAÇÃO"]
            + [f"{DIAS[d.weekday()]}\n{d:%d/%m}" for d in dias])
-    larg = [10, 6, 24, 14, 16, 12, 11, 10, 9, 6, 9, 12, 34] + [7] * len(dias)
+    larg = [10, 6, 24, 14, 16, 12, 11, 10, 9, 6, 9, 12, 26, 9, 34] + [7] * len(dias)
+    NC = 15   # colunas antes dos dias
 
     wb = Workbook()
     ws0 = wb.active
@@ -496,27 +523,34 @@ def planilha(rev: RevisaoProg, inicio: date | None = None) -> bytes:
         sel = sorted((i for i in itens if i.nave in naves), key=lambda i: (i.data, i.forma, i.obra, chave_natural(i.peca), i.codigo or ""))
         for i in sel:
             d, obs = i.data, i.obs
+            pr = prot.get(i.codigo or "", {})
             vals = ([d, DIAS[d.weekday()], i.forma, i.obra, i.peca, i.codigo or "", i.produto, i.secao, i.comprimento, i.qtd or 1,
-                     round(i.volume, 3) if i.volume else None, i.tipo, obs] + ["X" if x == d else None for x in dias])
+                     round(i.volume, 3) if i.volume else None, i.tipo, pr.get("txt") or None, pr.get("ativo"), obs]
+                    + ["X" if x == d else None for x in dias])
             cor = "E2F0D9" if i.tipo == "AVULSA" else next((COR[c] for c in COR if (obs or "").startswith(c)), None)
             for kk, v in enumerate(vals, 1):
                 c = ws.cell(lin, kk, v)
                 c.font, c.border = f_txt, borda
-                c.alignment = esq if kk in (3, 6, 13) else centro
-                if cor and kk <= 13:
+                c.alignment = esq if kk in (3, 6, 13, 15) else centro
+                if cor and kk <= NC:
                     c.fill = PatternFill("solid", fgColor=cor)
             ws.cell(lin, 1).number_format = "dd/mm/yy"
             ws.cell(lin, 9).number_format = "0.00"
             ws.cell(lin, 11).number_format = "0.000"
+            ws.cell(lin, 14).number_format = "#,##0.0"
+            if pr.get("fonte") == "Plannix" and pr.get("txt"):
+                ws.cell(lin, 13).font = Font(name="Calibri", size=10, italic=True, color="595959")
             ws.cell(lin, 5).font = Font(name="Calibri", size=10, bold=True)
             for kk in range(len(dias)):
-                c = ws.cell(lin, 14 + kk)
+                c = ws.cell(lin, NC + 1 + kk)
                 if c.value == "X":
                     c.font = Font(name="Calibri", size=11, bold=True, color="375623")
             lin += 1
         ws.freeze_panes = "D4"
         ws.auto_filter.ref = f"A3:{get_column_letter(len(cab))}{max(lin - 1, 3)}"
         leg = lin + 1
+        ws.cell(leg, 3, "Protensão: da prancha (cadastro de peças); em itálico cinza, modelo do Plannix quando não há prancha.").font = Font(name="Calibri", size=9, italic=True, color="595959")
+        leg += 1
         for t, cor in [("Atrasada (vinha de antes do início)", "F8CBAD"), ("Mudou de dia ou de fôrma", "FFF2CC"),
                        ("Nova na programação", "DDEBF7"), ("Remanejada para depois do período", "E4DFEC"),
                        ("Peça avulsa (premissa, fora do Plannix)", "E2F0D9")]:

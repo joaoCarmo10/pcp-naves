@@ -39,10 +39,10 @@
 
 <h2>Carga por dia</h2>
 <p class="meta">Pista da Nave 2 em cada dia: {% for d, p in (rel.pistas or {}).items() %}{{ d[8:10] }}/{{ d[5:7] }} {{ p[2:] }}{{ ' · ' if not loop.last }}{% endfor %}</p>
-<table class="tabela"><thead><tr><th>Dia</th><th class="n">N1 pç</th><th class="n">N1 m³</th><th class="n">N2 pç</th><th class="n">N2 m³</th><th class="n">N3 pç</th><th class="n">N3 m³</th><th class="n">Total m³</th></tr></thead>
+<table class="tabela"><thead><tr><th>Dia</th><th class="n">N1 pç</th><th class="n">N1 m³</th><th class="n">N2 pç</th><th class="n">N2 m³</th><th class="n">N3 pç</th><th class="n">N3 m³</th><th class="n">Total m³</th><th>Protensão na pista (N2)</th></tr></thead>
 <tbody>{% for d, n in por_dia.items() %}<tr><td>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</td>
 {% for nv in ('N1','N2','N3') %}<td class="n">{{ n[nv][0] if nv in n else '-' }}</td><td class="n">{{ n[nv][1]|num if nv in n else '-' }}</td>{% endfor %}
-<td class="n"><b>{{ tot_dia[d]|num }}</b></td></tr>{% endfor %}</tbody></table>
+<td class="n"><b>{{ tot_dia[d]|num }}</b></td><td class="{{ 'difere' if prot_dia[d]|length > 1 }}">{{ prot_dia[d]|sort|join(' / ') or '-' }}</td></tr>{% endfor %}</tbody></table>
 
 <h2>Ocupação das fôrmas no período</h2>
 <table class="tabela"><thead><tr><th>Fôrma</th><th class="n">Usado</th><th class="n">Capacidade</th><th class="n">%</th></tr></thead>
