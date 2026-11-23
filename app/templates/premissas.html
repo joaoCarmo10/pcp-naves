@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block titulo %}Premissas do replanejamento | PCP Naves{% endblock %}
+{% block corpo %}
+<p class="sub" style="margin-bottom:4px"><a href="/planejar">Planejar</a> ›</p>
+<h1>Premissas do replanejamento</h1>
+<p class="sub">O replanejamento automático usa estas regras. Campo vazio vale para qualquer valor. Obra casa por parte do nome (ex.: "Gandú"); peças e seções aceitam lista separada por vírgula.</p>
+
+<table class="tabela premissas">
+<thead><tr><th>Ativa</th><th>Tipo</th><th>Obra</th><th>Peças</th><th>Produto</th><th>Seções</th><th>Fôrma</th><th>De</th><th>Até</th><th>Vol. m³</th><th>Observação</th><th></th></tr></thead>
+<tbody>
+{% for p in prs %}
+<tr class="{{ '' if p.ativa else 'inativa' }}"><form method="post" action="/planejar/premissas" id="f{{ p.id }}"><input type="hidden" name="pid" value="{{ p.id }}"></form>
+  <td><button form="f{{ p.id }}" name="acao" value="alternar" class="botao-sec mini" title="Ativar ou desativar">{{ 'Sim' if p.ativa else 'Não' }}</button></td>
+  <td><select form="f{{ p.id }}" name="tipo">{% for k, v in TIPOS.items() %}<option value="{{ k }}" {{ 'selected' if k == p.tipo }}>{{ v }}</option>{% endfor %}</select></td>
+  <td><input form="f{{ p.id }}" name="obra" value="{{ p.obra }}" list="l-obras" size="12"></td>
+  <td><input form="f{{ p.id }}" name="pecas" value="{{ p.pecas }}" size="14"></td>
+  <td><input form="f{{ p.id }}" name="produto" value="{{ p.produto }}" size="8"></td>
+  <td><input form="f{{ p.id }}" name="secoes" value="{{ p.secoes }}" size="10"></td>
+  <td><select form="f{{ p.id }}" name="forma"><option value=""></option>{% for c, n in formas %}<option value="{{ c }}" {{ 'selected' if c == p.forma }}>{{ n }}</option>{% endfor %}</select></td>
+  <td><input form="f{{ p.id }}" type="date" name="de" value="{{ p.de or '' }}"></td>
+  <td><input form="f{{ p.id }}" type="date" name="ate" value="{{ p.ate or '' }}"></td>
+  <td><input form="f{{ p.id }}" name="volume" value="{{ p.volume if p.volume is not none else '' }}" size="5"></td>
+  <td><input form="f{{ p.id }}" name="obs" value="{{ p.obs }}" size="34"></td>
+  <td style="white-space:nowrap"><button form="f{{ p.id }}" name="acao" value="salvar" class="botao mini">Salvar</button>
+    <button form="f{{ p.id }}" name="acao" value="excluir" class="botao-sec mini" onclick="return confirm('Apagar esta premissa?')">Apagar</button></td>
+</tr>
+{% endfor %}
+<tr class="nova"><form method="post" action="/planejar/premissas" id="fnova"></form>
+  <td><b>Nova</b></td>
+  <td><select form="fnova" name="tipo">{% for k, v in TIPOS.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></td>
+  <td><input form="fnova" name="obra" list="l-obras" size="12"></td>
+  <td><input form="fnova" name="pecas" size="14"></td>
+  <td><input form="fnova" name="produto" size="8"></td>
+  <td><input form="fnova" name="secoes" size="10"></td>
+  <td><select form="fnova" name="forma"><option value=""></option>{% for c, n in formas %}<option value="{{ c }}">{{ n }}</option>{% endfor %}</select></td>
+  <td><input form="fnova" type="date" name="de"></td>
+  <td><input form="fnova" type="date" name="ate"></td>
+  <td><input form="fnova" name="volume" size="5"></td>
+  <td><input form="fnova" name="obs" size="34"></td>
+  <td><button form="fnova" name="acao" value="salvar" class="botao mini">Incluir</button></td>
+</tr>
+</tbody></table>
+<datalist id="l-obras">{% for o in obras %}<option value="{{ o }}">{% endfor %}</datalist>
+
+<h2>Como cada tipo funciona</h2>
+<ul class="meta">
+  <li><b>Não programar</b>: as peças que casarem não entram.</li>
+  <li><b>Da obra, só programar</b>: da obra indicada, entra só o que casar com peças/produto/seções; o resto da obra fica fora.</li>
+  <li><b>Só a partir de</b>: as peças que casarem só entram a partir da data "De".</li>
+  <li><b>Fura a fila</b>: as peças que casarem vão para a frente da fila.</li>
+  <li><b>Parar fôrma</b>: a fôrma não produz de "De" a "Até".</li>
+  <li><b>Peça avulsa</b>: peça fora do Plannix (outra obra, reposição), na fôrma e no dia "De". Ocupa a fôrma.</li>
+</ul>
+
+<h2>Regras fixas</h2>
+<ul class="meta">{% for r in FIXAS %}<li>{{ r }}</li>{% endfor %}</ul>
+{% endblock %}

@@ -254,3 +254,8 @@ table.ordenavel th.ord-desc::after{content:" ▼";font-size:10px}
 #tabela td.difere{color:#a4161a;font-weight:600}
 .aviso{background:#fff7e0;border:1px solid #f0d58a}
 .caixa-replan{background:#f4f7fb;border:1px solid #d6e0ee;border-radius:8px;padding:8px 12px;margin:0 0 10px;align-items:flex-end}
+.premissas td{padding:3px 4px;vertical-align:middle}
+.premissas input,.premissas select{font-size:12px;padding:3px 4px}
+.premissas tr.inativa td{opacity:.45}
+.premissas tr.nova td{background:#f4f7fb}
+.mini{padding:3px 8px;font-size:12px}

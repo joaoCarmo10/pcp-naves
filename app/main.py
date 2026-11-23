@@ -23,10 +23,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import premissas as pm
 from . import replanejar as rp
 from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
-from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, RevisaoProg
+from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, Premissa, RevisaoProg
 from .status import (CORES, LEGENDA, LEGENDA_UNID, atribuir_obra, chave_natural, desenhadas, por_produto, resumo,
                      status_da_obra, status_folha, unidades_da_obra)
 
@@ -969,6 +970,38 @@ def planejar_revisao(rev: str = Form(""), dia: str = Form(""), modo: str = Form(
         db.add(nova)
         db.commit()
     return RedirectResponse(f"/planejar?rev={nova.id}&dia={dia}", status_code=303)
+
+
+@app.get("/planejar/premissas", response_class=HTMLResponse)
+def premissas_tela(request: Request, db: Session = Depends(get_db)):
+    pm.semear(db)
+    prs = db.scalars(select(Premissa).order_by(Premissa.ativa.desc(), Premissa.tipo, Premissa.id)).all()
+    formas = sorted({(f.codigo, f.nome_completo) for f in db.scalars(select(Forma))})
+    obras = [o.nome for o in db.scalars(select(Obra).order_by(Obra.nome))]
+    return tpl.TemplateResponse(request, "premissas.html", {"prs": prs, "TIPOS": pm.TIPOS, "FIXAS": pm.REGRAS_FIXAS, "formas": formas,
+                                                            "obras": obras, "base": ultima_base(db)})
+
+
+@app.post("/planejar/premissas")
+def premissas_salvar(pid: str = Form(""), acao: str = Form("salvar"), tipo: str = Form("excluir"), obra: str = Form(""),
+                     pecas: str = Form(""), produto: str = Form(""), secoes: str = Form(""), forma: str = Form(""),
+                     de: str = Form(""), ate: str = Form(""), volume: str = Form(""), obs: str = Form(""),
+                     db: Session = Depends(get_db)):
+    pr = db.get(Premissa, int(pid)) if pid.isdigit() else None
+    if acao == "excluir" and pr:
+        db.delete(pr)
+    elif acao == "alternar" and pr:
+        pr.ativa = not pr.ativa
+    else:
+        if tipo not in pm.TIPOS:
+            raise HTTPException(400, "Tipo inválido.")
+        pr = pr or Premissa()
+        pr.tipo, pr.obra, pr.pecas, pr.produto = tipo, obra.strip()[:80], pecas.strip()[:300], produto.strip().upper()[:40]
+        pr.secoes, pr.forma, pr.obs = secoes.strip()[:120], forma.strip()[:30], obs.strip()[:300]
+        pr.de, pr.ate, pr.volume = _data(de), _data(ate), _num(volume)
+        db.add(pr)
+    db.commit()
+    return RedirectResponse("/planejar/premissas", status_code=303)
 
 
 @app.post("/planejar/replanejar")

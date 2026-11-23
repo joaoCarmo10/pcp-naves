@@ -2,7 +2,7 @@
 {% block titulo %}Replanejamento | PCP Naves{% endblock %}
 {% block corpo %}
 <p class="sub" style="margin-bottom:4px"><a href="/planejar?rev={{ r.id }}&dia={{ ini }}">Planejar</a> ›</p>
-<h1>Replanejamento {{ rel.inicio and ini.strftime('%d/%m') }} a {{ r.fim.strftime('%d/%m') }}</h1>
+<h1>Replanejamento {{ ini.strftime('%d/%m') }} a {{ rel.fim[8:10] }}/{{ rel.fim[5:7] }}</h1>
 <p class="sub">Base: {{ rel.base }}{% if rel.sabado %} · com sábado{% else %} · sem sábado{% endif %}</p>
 {% if r.rascunho %}
 <div class="aviso">Rascunho: ainda não vale para o status das plantas, armação e programado x realizado. Ajuste no quadro se precisar e publique.</div>
@@ -22,10 +22,15 @@
 <div class="kpis" style="margin-bottom:10px">
   <div class="kpi"><b>{{ rel.programadas }}</b><span>peças programadas no período (de {{ rel.fila }} que faltam)</span></div>
   <div class="kpi"><b>{{ rel.atrasadas_repostas }} de {{ rel.atrasadas }}</b><span>atrasadas reprogramadas</span></div>
+  <div class="kpi"><b>{{ rel.remanejadas or 0 }}</b><span>já programadas que não couberam e foram para {% if rel.dias_extra %}{{ rel.dias_extra[0][8:10] }}/{{ rel.dias_extra[0][5:7] }} a {{ rel.dias_extra[-1][8:10] }}/{{ rel.dias_extra[-1][5:7] }}{% else %}depois{% endif %}</span></div>
   <div class="kpi"><b>{{ rel.ja_feitas }}</b><span>já fabricadas, saíram da programação</span></div>
   <div class="kpi"><b>{{ rel.sem_forma|sum(attribute='n') }}</b><span>sem fôrma compatível</span></div>
 </div>
-{% if rel.excluidas %}<p class="meta">Não entram: {% for k, v in rel.excluidas.items() %}{{ k }}: {{ v }}{{ '; ' if not loop.last }}{% endfor %}.{% if rel.fixos %} {{ rel.fixos }} linha(s) sem peça no Plannix ficaram onde estavam.{% endif %}</p>{% endif %}
+{% if rel.excluidas %}<h2>Não entram (premissas e escopo)</h2>
+<table class="tabela"><thead><tr><th>Motivo</th><th class="n">Peças</th></tr></thead>
+<tbody>{% for k, v in rel.excluidas.items() %}<tr><td>{{ k }}</td><td class="n">{{ v }}</td></tr>{% endfor %}</tbody></table>
+<p class="meta">{% if rel.tiradas_premissa %}{{ rel.tiradas_premissa }} delas estavam na programação base do período e saíram. {% endif %}{% if rel.fixos %}{{ rel.fixos }} linha(s) sem peça no Plannix ficaram onde estavam. {% endif %}{% if rel.avulsas %}{{ rel.avulsas }} peça(s) avulsa(s) das premissas incluída(s).{% endif %}
+  <a href="/planejar/premissas">Ver e editar as premissas</a>.</p>{% endif %}
 
 <h2>Por obra</h2>
 <table class="tabela"><thead><tr><th>Obra</th><th class="n">Prior.</th><th class="n">Faltam</th><th class="n">Programadas</th><th class="n">Atrasadas repostas</th><th class="n">Ficam p/ depois</th><th class="n">Atrasadas fora</th><th class="n">Sem fôrma</th><th class="n">Desenho bloq.</th></tr></thead>
@@ -33,6 +38,7 @@
 <td class="n">{{ o.atrasadas_repostas or '-' }}</td><td class="n">{{ o.ficam_para_depois or '-' }}</td><td class="n{{ ' difere' if o.atrasadas_fora }}">{{ o.atrasadas_fora or '-' }}</td><td class="n{{ ' difere' if o.sem_forma }}">{{ o.sem_forma or '-' }}</td><td class="n">{{ o.bloqueadas or '-' }}</td></tr>{% endfor %}</tbody></table>
 
 <h2>Carga por dia</h2>
+<p class="meta">Pista da Nave 2 em cada dia: {% for d, p in (rel.pistas or {}).items() %}{{ d[8:10] }}/{{ d[5:7] }} {{ p[2:] }}{{ ' · ' if not loop.last }}{% endfor %}</p>
 <table class="tabela"><thead><tr><th>Dia</th><th class="n">N1 pç</th><th class="n">N1 m³</th><th class="n">N2 pç</th><th class="n">N2 m³</th><th class="n">N3 pç</th><th class="n">N3 m³</th><th class="n">Total m³</th></tr></thead>
 <tbody>{% for d, n in por_dia.items() %}<tr><td>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</td>
 {% for nv in ('N1','N2','N3') %}<td class="n">{{ n[nv][0] if nv in n else '-' }}</td><td class="n">{{ n[nv][1]|num if nv in n else '-' }}</td>{% endfor %}
@@ -44,8 +50,8 @@
 
 <h2>Sem fôrma compatível</h2>
 {% if rel.sem_forma %}<p class="meta">Nenhuma fôrma cadastrada aceita essa seção/produto/comprimento. Cadastre a fôrma ou a adaptação em <a href="/formas">Fôrmas e naves</a> e gere de novo.</p>
-<table class="tabela"><thead><tr><th>Obra</th><th>Produto</th><th>Seção</th><th class="n">Qtd</th></tr></thead>
-<tbody>{% for x in rel.sem_forma %}<tr><td>{{ x.obra }}</td><td>{{ x.produto }}</td><td>{{ x.secao }}</td><td class="n">{{ x.n }}</td></tr>{% endfor %}</tbody></table>
+<table class="tabela"><thead><tr><th>Obra</th><th>Produto</th><th>Seção</th><th>Motivo</th><th class="n">Qtd</th></tr></thead>
+<tbody>{% for x in rel.sem_forma %}<tr><td>{{ x.obra }}</td><td>{{ x.produto }}</td><td>{{ x.secao }}</td><td>{{ x.motivo }}</td><td class="n">{{ x.n }}</td></tr>{% endfor %}</tbody></table>
 {% else %}<p class="meta">Nenhuma.</p>{% endif %}
 
 <h2>Atrasadas que não couberam no período</h2>

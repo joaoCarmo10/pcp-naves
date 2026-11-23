@@ -808,3 +808,36 @@ def test_replanejamento_automatico(cliente):
     cliente.post(f"/planejar/replanejamento/{rid}/publicar")
     db.expire_all()
     assert pg.revisao_atual(db).id == rid
+
+
+def test_replanejamento_premissas(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import ItemProg, Obra, Premissa, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    db.scalar(select(Obra)).ativa = True
+    base = RevisaoProg(nome="Rev03", inicio=date(2026, 11, 16), fim=date(2026, 11, 28))
+    base.itens += [ItemProg(data=date(2026, 11, 24), nave="N1", forma="N1 - F5 40x40 (21m)", obra="OBRA-TESTE", peca="P2",
+                            codigo="1004", produto="PILAR", secao="40x40", comprimento=8, qtd=1),
+                   ItemProg(data=date(2026, 11, 24), nave="N1", forma="N1 - F4 40x40 (16m)", obra="OBRA-TESTE", peca="P1",
+                            codigo="1003", produto="PILAR", secao="40x40", comprimento=8, qtd=1)]
+    db.add(base)
+    db.commit()
+    assert "Premissas do replanejamento" in cliente.get("/planejar/premissas").text     # semeia as iniciais
+    cliente.post("/planejar/premissas", data={"tipo": "excluir", "obra": "OBRA-TESTE", "pecas": "P2", "obs": "teste"})
+    cliente.post("/planejar/premissas", data={"tipo": "parar_forma", "forma": "N1F4", "de": "2026-11-24", "ate": "2026-11-24"})
+    cliente.post("/planejar/premissas", data={"tipo": "parar_forma", "forma": "N1F5", "de": "2026-11-24", "ate": "2026-11-24"})
+    r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-24"}, follow_redirects=False)
+    rid = int(r.headers["location"].rsplit("/", 1)[1])
+    db.expire_all()
+    nova = db.get(RevisaoProg, rid)
+    cods = {i.codigo: i for i in nova.itens if i.codigo}
+    assert "1004" not in cods and nova.relatorio["tiradas_premissa"] == 1           # excluída pela premissa
+    assert cods["1003"].data == date(2026, 11, 25) and "Remanejada" in cods["1003"].obs   # fôrma parada: vai para o dia seguinte
+    assert "1002" not in cods                                                           # nova não passa do período
+    av = [i for i in nova.itens if i.tipo == "AVULSA"]
+    assert not av                                    # escadas do Barracão (25-27/11) ficam fora do período 24/11
+    assert db.scalar(select(Premissa).where(Premissa.obra == "7Log"))
+    assert "Remanejadas" in cliente.get(f"/planejar/replanejamento/{rid}").text or "não couberam" in cliente.get(f"/planejar/replanejamento/{rid}").text

@@ -298,3 +298,23 @@ class DesenhoAutodoc(Base):
     @property
     def bloqueado(self) -> bool:
         return (self.status or "").strip().lower() != "aprovado"
+
+
+class Premissa(Base):
+    """Premissa do replanejamento automático, editável na tela. Tipos:
+    excluir (não programar), somente (da obra, só o que casar), nao_antes (só a partir de 'de'), primeiro (fura a fila),
+    parar_forma (fôrma sem produção de 'de' a 'ate'), avulsa (peça fora do Plannix com data e fôrma fixas)."""
+    __tablename__ = "premissas"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String(20))
+    obra: Mapped[str] = mapped_column(String(80), default="")
+    pecas: Mapped[str] = mapped_column(String(300), default="")      # nomes separados por vírgula
+    produto: Mapped[str] = mapped_column(String(40), default="")
+    secoes: Mapped[str] = mapped_column(String(120), default="")     # separadas por vírgula
+    forma: Mapped[str] = mapped_column(String(30), default="")       # código da fôrma (ex.: N3ESC2)
+    de: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ate: Mapped[date | None] = mapped_column(Date, nullable=True)
+    volume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    obs: Mapped[str] = mapped_column(String(300), default="")
+    ativa: Mapped[bool] = mapped_column(Boolean, default=True)
+    criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
