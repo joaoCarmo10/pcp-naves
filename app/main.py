@@ -566,7 +566,7 @@ def _pxr_ctx(request: Request, db: Session) -> dict | None:
     ls_ant = pxr.filtrar(pg.linhas(db, r_ant, ant_ini, ant_fim), f) if r_ant else []
     a = pxr.analisar(ls, ls_ant)
     lista = [l for l in pxr.so_status(ls, f["status"] or "atrasadas") if l.status not in ("PENDENTE", "SEM INFORMAÇÃO")]
-    lista.sort(key=lambda l: (l.status != "NÃO REALIZADA", l.item.obra, l.item.produto, l.item.data, l.item.forma))
+    lista.sort(key=lambda l: (l.item.data, l.item.nave, l.item.forma, l.item.obra, l.item.peca))
     nomes = {"obra": "Obra", "nave": "Nave", "produto": "Tipo de peça"}
     filtros_txt = ", ".join(f"{nomes[k]}: {v}" for k, v in f.items() if v and k in nomes)
     if f["status"] and f["status"] != "atrasadas":

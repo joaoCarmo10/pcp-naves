@@ -1,11 +1,11 @@
 {# linha editável de apontamento: status, S/N, causa, ação, responsável #}
 {% macro cabecalho(com_data=False) %}
 <tr>{% if com_data %}<th>Data</th>{% endif %}<th>Obra</th><th>Peça</th><th>Código</th><th>Seção</th><th class="n">Comp.</th><th class="n">Qtd</th>
-<th>Status</th><th>Realizado</th><th>Causa</th><th>Ação</th><th>Responsável</th></tr>
+<th>Status</th><th>Realizado</th><th>Causa</th><th>O que houve</th><th>Ação</th><th>Responsável</th></tr>
 {% endmacro %}
 {% macro linha(l, com_data=False, com_forma=False) %}{% set i = l.item %}{% set a = l.ap %}
 <tr data-id="{{ i.id }}">
-  {% if com_data %}<td style="white-space:nowrap">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>{% endif %}
+  {% if com_data %}<td style="white-space:nowrap" data-ord="{{ i.data }}">{{ DIAS[i.data.weekday()] }} {{ i.data|dm }}</td>{% endif %}
   <td>{{ i.obra }}</td>
   <td style="white-space:nowrap" title="{{ i.obs }}">{{ i.peca }}{% if com_forma %}<br><span class="meta">{{ i.forma }}</span>{% endif %}</td>
   <td class="meta">{{ i.codigo or '' }}</td><td>{{ i.secao }}</td>
@@ -13,6 +13,7 @@
   <td style="white-space:nowrap"><span class="st" style="background:{{ COR_STATUS[l.status] }}">{{ l.status }}</span>{% if l.data_fab %}<br><span class="meta">fab. {{ l.data_fab|dm }}{% if l.desvio %} ({{ '%+d'|format(l.desvio) }}d){% endif %}</span>{% endif %}</td>
   <td style="white-space:nowrap"><button type="button" class="sn {{ 'on' if a and a.realizado == 'S' }}" data-v="S">S</button><button type="button" class="sn {{ 'on n' if a and a.realizado == 'N' }}" data-v="N">N</button></td>
   <td><select class="ap" data-k="causa" aria-label="Causa"><option value=""></option>{% for c in CAUSAS %}<option {{ 'selected' if a and a.causa == c }}>{{ c }}</option>{% endfor %}</select></td>
+  <td><textarea class="ap" data-k="comentario" rows="1" maxlength="500" aria-label="O que houve" placeholder="o que houve">{{ (a.comentario or a.ocorrido) if a else '' }}</textarea></td>
   <td><input class="ap" data-k="acao" type="text" value="{{ a.acao if a else '' }}" aria-label="Ação"></td>
   <td><input class="ap" data-k="responsavel" type="text" value="{{ a.responsavel if a else '' }}" aria-label="Responsável" style="width:110px"></td>
 </tr>

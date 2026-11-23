@@ -77,11 +77,46 @@
 {{ tabela('Por dia', a.por_dia, 'Dia', 'dia') }}
 {{ tabela('Por fôrma (pior PPC primeiro, 3 ou mais peças)', a.por_forma, 'Fôrma') }}
 <h2>{{ FILTROS_STATUS[f.status or 'atrasadas'][0] }} ({{ lista|sum(attribute='qtd') }})</h2>
-<p class="sub">Registre a causa, a ação e o responsável durante a reunião. Salva sozinho e entra no relatório.</p>
-<div class="rolagem-x"><table class="t">
+<p class="sub">Registre a causa, o que houve, a ação e o responsável durante a reunião. Salva sozinho e entra no relatório. Ordenada pela data programada; clique no título de uma coluna para ordenar por ela.</p>
+<div class="rolagem-x"><table class="t ordenavel" id="lista-pxr">
   <thead>{{ ap.cabecalho(com_data=True) }}</thead>
   <tbody>{% for l in lista %}{{ ap.linha(l, com_data=True, com_forma=True) }}{% endfor %}</tbody>
 </table></div>
 {% endif %}
 {% endblock %}
-{% block scripts %}{{ ap.script() }}{% endblock %}
+{% block scripts %}{{ ap.script() }}
+<script>
+(() => {
+  const tab = document.getElementById("lista-pxr");
+  if (!tab) return;
+  const corpo = tab.tBodies[0], ths = [...tab.tHead.rows[0].cells];
+  const chave = (tr, k) => {
+    const td = tr.cells[k];
+    if (!td) return "";
+    if (td.dataset.ord !== undefined) return td.dataset.ord;
+    const campo = td.querySelector("select, input, textarea");
+    return (campo ? campo.value : td.innerText).trim().toLowerCase();
+  };
+  ths.forEach((th, k) => {
+    th.style.cursor = "pointer";
+    th.title = "Ordenar";
+    th.addEventListener("click", () => {
+      const asc = th.dataset.dir !== "asc";
+      ths.forEach(x => { delete x.dataset.dir; x.classList.remove("ord-asc", "ord-desc"); });
+      th.dataset.dir = asc ? "asc" : "desc";
+      th.classList.add(asc ? "ord-asc" : "ord-desc");
+      const linhas = [...corpo.rows];
+      linhas.sort((a, b) => {
+        const c = chave(a, k).localeCompare(chave(b, k), "pt-BR", {numeric: true});
+        return asc ? c : -c;
+      });
+      linhas.forEach(tr => corpo.appendChild(tr));
+    });
+  });
+  // "o que houve" cresce conforme o texto
+  tab.querySelectorAll("textarea.ap").forEach(t => {
+    const ajusta = () => { t.style.height = "auto"; t.style.height = t.scrollHeight + "px"; };
+    t.addEventListener("input", ajusta); ajusta();
+  });
+})();
+</script>{% endblock %}
