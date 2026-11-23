@@ -374,6 +374,11 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         pistas={d.isoformat(): p for d, p in pista_do_dia.items()},
         dias_extra=[d.isoformat() for d in extra],
         remanejadas=sum(1 for i in nova.itens if "Remanejada" in (i.obs or "")),
+        mudaram=sorted([dict(obra=i.obra, peca=i.peca, codigo=i.codigo, antes=f"{d0.data0:%d/%m} {d0.forma0}", depois=f"{i.data:%d/%m} {i.forma}",
+                             dias=(i.data - d0.data0).days)
+                        for i in nova.itens if i.codigo and i.data >= inicio and (d0 := fila.get(i.codigo)) and d0.classe == 1
+                        and (i.data != d0.data0 or not fm.item_e_da_forma(d0.forma0, next((f for f in formas if f.nome_completo == i.forma), formas[0])))],
+                       key=lambda x: (-x["dias"], x["obra"], x["peca"]))[:400],
         bloqueadas=[dict(obra=d.p.obra.nome, peca=d.p.peca, codigo=d.p.codigo) for d in bloqueadas][:200],
         sem_forma=[dict(obra=o, produto=pr, secao=s, motivo=m, n=n) for (o, pr, s, m), n in
                    sorted(sem_f.items(), key=lambda x: (-x[1], x[0]))],

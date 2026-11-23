@@ -54,6 +54,12 @@
 <tbody>{% for x in rel.sem_forma %}<tr><td>{{ x.obra }}</td><td>{{ x.produto }}</td><td>{{ x.secao }}</td><td>{{ x.motivo }}</td><td class="n">{{ x.n }}</td></tr>{% endfor %}</tbody></table>
 {% else %}<p class="meta">Nenhuma.</p>{% endif %}
 
+<h2>Peças já programadas que mudaram de dia ou de fôrma</h2>
+{% if rel.mudaram %}<p class="meta">{{ rel.mudaram|length }} peça(s); as que foram mais para frente primeiro.</p>
+<table class="tabela"><thead><tr><th>Obra</th><th>Peça</th><th>Código</th><th>Antes</th><th>Depois</th><th class="n">Dias</th></tr></thead>
+<tbody>{% for x in rel.mudaram %}<tr><td>{{ x.obra }}</td><td>{{ x.peca }}</td><td>{{ x.codigo }}</td><td>{{ x.antes }}</td><td>{{ x.depois }}</td><td class="n{{ ' difere' if x.dias > 0 }}">{{ '%+d'|format(x.dias) }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="meta">Nenhuma.</p>{% endif %}
+
 <h2>Atrasadas que não couberam no período</h2>
 {% if rel.sobra_atrasadas %}<table class="tabela"><thead><tr><th>Obra</th><th>Peça</th><th>Código</th><th>Prog. antes</th><th>Fôrma antes</th></tr></thead>
 <tbody>{% for x in rel.sobra_atrasadas %}<tr><td>{{ x.obra }}</td><td>{{ x.peca }}</td><td>{{ x.codigo }}</td><td>{{ x.data0[8:10] }}/{{ x.data0[5:7] }}</td><td>{{ x.forma0 }}</td></tr>{% endfor %}</tbody></table>
