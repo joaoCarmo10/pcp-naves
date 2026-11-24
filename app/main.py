@@ -57,6 +57,12 @@ with SessionLocal() as _db:
 
 def ultima_base(db: Session) -> str:
     imp = db.scalar(select(Importacao).where(Importacao.tipo != "programacao").order_by(Importacao.criada_em.desc()))
+    try:   # o PC da fábrica atualiza de hora em hora: mostra a hora da última mudança que ele mandou
+        sync = datetime.fromisoformat(_cfg(db, "sync_mudanca"))
+    except ValueError:
+        sync = None
+    if sync and (not imp or sync.date() >= imp.criada_em.date()):
+        return sync.strftime("%d/%m/%Y %H:%M")
     return imp.criada_em.strftime("%d/%m/%Y") if imp else "sem importação"
 
 
@@ -191,7 +197,8 @@ def importar_form(request: Request, db: Session = Depends(get_db)):
     imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
     u = request.state.usuario
     return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "msg": request.query_params.get("msg"), "erro": request.query_params.get("erro"),
-                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin, "ad": _autodoc_status(db)})
+                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin, "ad": _autodoc_status(db),
+                                                           "base": ultima_base(db)})
 
 
 def _autodoc_status(db: Session) -> dict:

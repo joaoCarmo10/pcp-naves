@@ -11,7 +11,11 @@
 </form>
 <h2 id="autodoc">Autodoc automático</h2>
 <div class="sync{% if ad.erro and not ad.rodando %} sync-alerta{% endif %}">
-  {% if not ad.configurado %}
+  {% if not ad.configurado and ad.ultima %}
+  <p>Lido pelo PC da fábrica de hora em hora. Última leitura: <b>{{ ad.ultima.strftime('%d/%m %H:%M') }}</b>
+     · {{ ad.desenhos }} desenhos no app, {{ ad.bloqueados }} não aprovados.</p>
+  {% if ad.msg %}<p class="meta">{{ ad.msg }}</p>{% endif %}
+  {% elif not ad.configurado %}
   <p>Desligado. Para ligar, crie no Railway (serviço do app, aba <b>Variables</b>) as variáveis <code>AUTODOC_EMAIL</code> e
      <code>AUTODOC_SENHA</code> com um usuário do Autodoc que enxergue a pasta "1-OBRAS ATIVAS". De preferência um usuário só para o robô, sem verificação em duas etapas.</p>
   {% else %}
