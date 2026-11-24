@@ -1,0 +1,2 @@
+-- Consulta que gera o "all data". Cada coluna sai com o MESMO nome da exportação do Plannix (AS [Nome]).
+-- Ainda vazia: vai ser montada a partir do plannix_esquema.txt (comando "descobrir").

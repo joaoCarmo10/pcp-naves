@@ -6,10 +6,11 @@
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 agora     (roda já, fora do horário também)
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 testar    (confere acessos, não grava nada no app)
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 status    (último envio)
+#   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 descobrir [código]  (mapa do banco do Plannix, só nomes)
 #
 # Autodoc: lê só as pastas das obras ATIVAS no app e envia SÓ quando algo mudou.
 # Plannix (modo pasta): envia as exportações all_data / a_realizar salvas na pasta vigiada, só as novas ou alteradas.
-param([string]$Comando = "rodar")
+param([string]$Comando = "rodar", [string]$Valor = "")
 
 $ErrorActionPreference = "Stop"
 $AQUI = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -270,7 +271,24 @@ function Rodada-Autodoc($cfg, $e, [bool]$testar = $false) {
 # ------------------------------------------------------------ Plannix (modo pasta)
 function Rodada-Plannix($cfg, $e, [bool]$testar = $false) {
     $modo = (V $cfg "plannix" "modo" "desligado").ToLower()
-    if ($modo -ne "pasta") { Log ("Plannix: modo '{0}' (só o modo pasta roda neste script)." -f $modo); return }
+    if ($modo -eq "sql") {
+        $r = Plannix-Sql-Ler $cfg
+        $falta = @($OBRIGATORIAS | Where-Object { $r.cols -notcontains $_ })
+        if ($testar) { Log ("Plannix (banco) OK: {0} linhas, {1} colunas." -f $r.linhas, $r.cols.Count); if ($falta.Count) { Log ("Faltam colunas: " + ($falta -join ", ")) }; return }
+        if ($falta.Count) { throw ("a consulta não traz: " + ($falta -join ", ")) }
+        $h = Sha256Hex $r.corpo
+        $ult = $e["plannix"]; if (-not $ult) { $ult = @{} }
+        $agora = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+        if ($ult["hash"] -eq $h -and ($agora - [long]$ult["contato"]) -lt $BATIMENTO_H * 3600) { Log "Plannix (banco): sem mudança, nada enviado." }
+        else {
+            $x = App $cfg "/api/plannix" $r.corpo "text/tab-separated-values; charset=latin-1"
+            if ($x.sem_mudanca) { Log "Plannix (banco): o app já tinha esses dados." } else { Log ("Plannix (banco): enviado, {0} linhas, {1} peças novas." -f $x.resumo.linhas, $x.resumo.novas) }
+            $ult["hash"] = $h; $ult["contato"] = $agora; $ult["enviado"] = (Get-Date).ToString("yyyy-MM-ddTHH:mm")
+        }
+        $e["plannix"] = $ult
+        return
+    }
+    if ($modo -ne "pasta") { Log ("Plannix: desligado (modo '{0}')." -f $modo); return }
     $pasta = [Environment]::ExpandEnvironmentVariables((V $cfg "plannix" "pasta" "%USERPROFILE%\Downloads"))
     $padroes = (V $cfg "plannix" "arquivos" "all_data*.xls, *a_realizar*.xls").Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
     if (-not (Test-Path $pasta)) { Log ("Plannix: pasta não existe: " + $pasta); return }
@@ -296,6 +314,100 @@ function Rodada-Plannix($cfg, $e, [bool]$testar = $false) {
     foreach ($n in @($enviados.Keys)) { if (-not (Test-Path (Join-Path $pasta $n))) { $enviados.Remove($n) } }
     if ($novos -eq 0) { Log "Plannix (pasta): nenhuma exportação nova." }
     $ult["arquivos"] = $enviados; $e["plannix"] = $ult
+}
+
+# ------------------------------------------------------------ Plannix (modo sql: banco PrecastControl, só leitura)
+$OBRIGATORIAS = @("Peça", "Código", "Nome Obra", "Produto")
+$PISTAS = @("fabric", "concret", "peca", "peça", "obra", "protens", "armac", "teoric", "traco", "traço", "forma", "volume", "secao", "seção", "codigo", "código")
+
+function Sql-Conectar($cfg) {
+    $srv = V $cfg "plannix" "servidor"; $banco = V $cfg "plannix" "banco"
+    if (-not $srv -or -not $banco) { throw "Preencha servidor e banco na seção [plannix] do pcp_sync.ini." }
+    $cs = "Server=$srv;Database=$banco;Connect Timeout=20;Application Name=PCP-Sync;ApplicationIntent=ReadOnly;"
+    if (V $cfg "plannix" "usuario") { $cs += "User Id=" + (V $cfg "plannix" "usuario") + ";Password=" + (V $cfg "plannix" "senha") + ";" }
+    else { $cs += "Integrated Security=True;" }
+    $cx = New-Object System.Data.SqlClient.SqlConnection($cs)
+    $cx.Open()
+    return $cx
+}
+
+function Sql-Tabela($cx, [string]$sql, [int]$timeout = 120) {
+    $cmd = $cx.CreateCommand(); $cmd.CommandText = $sql; $cmd.CommandTimeout = $timeout
+    $da = New-Object System.Data.SqlClient.SqlDataAdapter($cmd)
+    $ds = New-Object System.Data.DataSet
+    [void]$da.Fill($ds)
+    foreach ($t in $ds.Tables) { if ($t.Columns.Count -gt 0) { return ,$t } }   # primeira tabela com colunas
+    throw "A consulta não devolveu nenhuma tabela."
+}
+
+function Celula($v) {
+    if ($null -eq $v -or $v -is [DBNull]) { return "" }
+    if ($v -is [DateTime]) { if ($v.Hour -or $v.Minute) { return $v.ToString("dd/MM/yyyy HH:mm") }; return $v.ToString("dd/MM/yyyy") }
+    if ($v -is [decimal] -or $v -is [double] -or $v -is [single]) { return ([double]$v).ToString("0.######", [Globalization.CultureInfo]::GetCultureInfo("pt-BR")) }
+    return ([string]$v).Replace("`t", " ").Replace("`r", " ").Replace("`n", " ")
+}
+
+function Plannix-Sql-Ler($cfg) {
+    $arq = Join-Path $AQUI "consulta.sql"
+    if (-not (Test-Path $arq)) { throw "Falta consulta.sql (rode descobrir.bat e me mande o plannix_esquema.txt)." }
+    $sql = [IO.File]::ReadAllText($arq, $UTF8)
+    if ($sql -notmatch '(?i)\bselect\b') { throw "consulta.sql ainda vazia (rode descobrir.bat e me mande o plannix_esquema.txt)." }
+    $cx = Sql-Conectar $cfg
+    try { $t = Sql-Tabela $cx $sql ([int](V $cfg "plannix" "timeout_consulta" "180")) } finally { $cx.Close() }
+    $cols = @($t.Columns | ForEach-Object { $_.ColumnName })
+    $sb = New-Object Text.StringBuilder
+    [void]$sb.Append(($cols -join "`t")).Append("`n")
+    foreach ($r in $t.Rows) { [void]$sb.Append((@($r.ItemArray | ForEach-Object { Celula $_ }) -join "`t")).Append("`n") }
+    return @{ cols = $cols; linhas = $t.Rows.Count; corpo = [Text.Encoding]::GetEncoding(28591).GetBytes($sb.ToString()) }
+}
+
+function Descobrir($cfg, [string]$procurar) {
+    $cx = Sql-Conectar $cfg
+    $out = New-Object Collections.ArrayList
+    try {
+        $v = Sql-Tabela $cx "SELECT @@VERSION AS v, DB_NAME() AS b"
+        [void]$out.Add("Banco: " + $v.Rows[0].b); [void]$out.Add("Versão: " + ([string]$v.Rows[0].v).Split("`n")[0]); [void]$out.Add("")
+        $tab = Sql-Tabela $cx "SELECT s.name AS esquema, t.name AS tabela, SUM(p.rows) AS linhas FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1) GROUP BY s.name, t.name ORDER BY SUM(p.rows) DESC"
+        [void]$out.Add("== TABELAS (" + $tab.Rows.Count + ") : linhas aproximadas")
+        foreach ($r in $tab.Rows) { [void]$out.Add(("{0,10}  {1}.{2}" -f [long]$r.linhas, $r.esquema, $r.tabela)) }
+        $col = Sql-Tabela $cx "SELECT TABLE_SCHEMA AS s, TABLE_NAME AS t, COLUMN_NAME AS c, DATA_TYPE AS tipo FROM INFORMATION_SCHEMA.COLUMNS ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+        $por = [ordered]@{}
+        foreach ($r in $col.Rows) { $k = $r.s + "." + $r.t; if (-not $por.Contains($k)) { $por[$k] = New-Object Collections.ArrayList }; [void]$por[$k].Add(@($r.c, $r.tipo)) }
+        [void]$out.Add(""); [void]$out.Add("== COLUNAS QUE PARECEM DE PEÇA / OBRA / FABRICAÇÃO")
+        foreach ($k in $por.Keys) {
+            $ach = @($por[$k] | Where-Object { $c = ([string]$_[0]).ToLower(); @($PISTAS | Where-Object { $c.Contains($_) }).Count -gt 0 } | ForEach-Object { $_[0] + " (" + $_[1] + ")" })
+            if ($ach.Count) { [void]$out.Add($k + ": " + ($ach -join ", ")) }
+        }
+        $mods = Sql-Tabela $cx "SELECT s.name AS s, o.name AS n, o.type_desc AS tipo, m.definition AS d FROM sys.sql_modules m JOIN sys.objects o ON o.object_id = m.object_id JOIN sys.schemas s ON s.schema_id = o.schema_id"
+        $rel = @($mods.Rows | Where-Object { $d = ([string]$_.d).ToLower(); $d -and @($PISTAS | Where-Object { $d.Contains($_) }).Count -ge 3 })
+        [void]$out.Add(""); [void]$out.Add("== VIEWS E PROCEDURES COM CARA DE RELATÓRIO DE PRODUÇÃO (" + $rel.Count + " de " + $mods.Rows.Count + ")")
+        foreach ($m in $rel) { [void]$out.Add(""); [void]$out.Add("--- " + $m.tipo + " " + $m.s + "." + $m.n); [void]$out.Add(([string]$m.d).Trim()) }
+        if ($procurar) {
+            [void]$out.Add(""); [void]$out.Add("== ONDE APARECE O VALOR '" + $procurar + "' (só colunas de código/peça)")
+            $num = $procurar -match '^\d+$'
+            foreach ($r in $tab.Rows) {
+                if ([long]$r.linhas -eq 0) { continue }
+                $k = $r.esquema + "." + $r.tabela
+                foreach ($c in $por[$k]) {
+                    $nome = ([string]$c[0]).ToLower()
+                    if ($nome -notmatch 'cod|pe[cç]a|ident|etiq|num|marca|nome') { continue }
+                    $txt = @("varchar", "nvarchar", "char", "nchar") -contains $c[1]
+                    $int = @("int", "bigint", "numeric", "decimal") -contains $c[1]
+                    if (-not $txt -and -not ($num -and $int)) { continue }
+                    $val = "N'" + $procurar.Replace("'", "''") + "'"; if (-not $txt) { $val = $procurar }
+                    try {
+                        $q = Sql-Tabela $cx ("SELECT TOP 1 1 AS x FROM [" + $r.esquema + "].[" + $r.tabela + "] WITH (NOLOCK) WHERE [" + $c[0] + "] = " + $val) 30
+                        if ($q.Rows.Count) { [void]$out.Add($k + "." + $c[0]) }
+                    } catch {}
+                }
+            }
+        }
+        [void]$out.Add(""); [void]$out.Add("== TODAS AS COLUNAS")
+        foreach ($k in $por.Keys) { [void]$out.Add($k + ": " + ((@($por[$k] | ForEach-Object { $_[0] + " (" + $_[1] + ")" })) -join ", ")) }
+    } finally { $cx.Close() }
+    $arq = Join-Path $AQUI "plannix_esquema.txt"
+    [IO.File]::WriteAllLines($arq, [string[]]$out, $UTF8)
+    Log ("Mapa do banco salvo em plannix_esquema.txt ({0} tabelas, {1} consultas candidatas). Só nomes de tabelas e colunas, nenhum dado de peça. Mande esse arquivo." -f $tab.Rows.Count, $rel.Count)
 }
 
 # ------------------------------------------------------------ comandos
@@ -334,6 +446,7 @@ try {
             }
         }
         "status" { if (Test-Path $ESTADO) { Get-Content $ESTADO } else { "Nada enviado ainda." } }
+        "descobrir" { Descobrir $cfg $Valor }
         default { Write-Host "Comandos: rodar | agora | testar | status" }
     }
 } catch { Log ("ERRO: " + $_.Exception.Message); exit 1 }
