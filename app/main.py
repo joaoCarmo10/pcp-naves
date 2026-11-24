@@ -257,6 +257,37 @@ async def importar_aco_frouxo(request: Request, db: Session = Depends(get_db)):
     return {"atualizadas": n, "recebidas": len(dados)}
 
 
+@app.post("/autodoc/linhas")
+async def autodoc_linhas(request: Request, db: Session = Depends(get_db)):
+    """Desenhos lidos do Autodoc pelo navegador do usuário logado (mesmo formato do robô). Árvore inteira = completo."""
+    dados = await request.json()
+    linhas = dados.get("linhas") if isinstance(dados, dict) else None
+    if not isinstance(linhas, list) or not linhas:
+        raise HTTPException(400, "Envie {linhas: [...]}.")
+    r = autodoc.importar_linhas(db, linhas, completo=bool(dados.get("completo")))
+    _cfg_grava(db, "autodoc_ultima", datetime.now().isoformat(timespec="seconds"))
+    _cfg_grava(db, "autodoc_msg", f"Lido pelo navegador: {len(linhas)} arquivo(s).")
+    db.commit()
+    return {"ok": True, **r}
+
+
+@app.get("/autodoc/receber", response_class=HTMLResponse)
+def autodoc_receber():
+    """Ponte: a aba do Autodoc (logada) abre esta página e manda os desenhos por postMessage."""
+    return HTMLResponse("""<!doctype html><meta charset="utf-8"><title>Autodoc → PCP Naves</title>
+<body style="font:14px sans-serif;padding:24px">Aguardando os desenhos do Autodoc…<script>
+window.addEventListener('message', async e => {
+  if (!/(^|\.)autodoc\.com\.br$/.test(new URL(e.origin).hostname) || !e.data || !e.data.linhas) return;
+  document.body.textContent = 'Gravando ' + e.data.linhas.length + ' arquivos…';
+  const r = await fetch('/autodoc/linhas', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(e.data)});
+  const j = await r.json();
+  document.body.textContent = r.ok ? ('Pronto: ' + JSON.stringify(j)) : ('Erro: ' + JSON.stringify(j));
+  e.source.postMessage({resultado: j, ok: r.ok}, e.origin);
+});
+if (window.opener) window.opener.postMessage({pronto: true}, '*');
+</script>""")
+
+
 @app.post("/api/autodoc")
 async def autodoc_automatico(request: Request, db: Session = Depends(get_db)):
     """Recebe o relatório 'Exportar' do Autodoc enviado por automação (mesmo token do Plannix automático)."""
