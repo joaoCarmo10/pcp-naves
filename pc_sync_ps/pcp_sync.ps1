@@ -407,6 +407,7 @@ function Comparar($cfg) {
     [void]$out.Add("Colunas só na exportação: " + ((@($B.cab | Where-Object { $_ -and -not $iA.ContainsKey($_) })) -join " | "))
     [void]$out.Add(""); [void]$out.Add("== COLUNA: % igual nas peças em comum (exemplos de diferença: código banco / exportação)")
     foreach ($c in $A.cab) {
+        if (-not $c) { continue }
         if (-not $iB.ContainsKey($c)) { [void]$out.Add(("{0,-42} (não existe na exportação)" -f $c)); continue }
         $ok = 0; $ex = New-Object Collections.ArrayList
         foreach ($k in $comuns) {
