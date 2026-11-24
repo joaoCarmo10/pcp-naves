@@ -7,6 +7,7 @@
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 testar    (confere acessos, não grava nada no app)
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 status    (último envio)
 #   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 descobrir [código]  (mapa do banco do Plannix, só nomes)
+#   powershell -ExecutionPolicy Bypass -File pcp_sync.ps1 comparar  (banco x última exportação all_data da pasta)
 #
 # Autodoc: lê só as pastas das obras ATIVAS no app e envia SÓ quando algo mudou.
 # Plannix (modo pasta): envia as exportações all_data / a_realizar salvas na pasta vigiada, só as novas ou alteradas.
@@ -342,7 +343,7 @@ function Sql-Tabela($cx, [string]$sql, [int]$timeout = 120) {
 
 function Celula($v) {
     if ($null -eq $v -or $v -is [DBNull]) { return "" }
-    if ($v -is [DateTime]) { if ($v.Hour -or $v.Minute) { return $v.ToString("dd/MM/yyyy HH:mm") }; return $v.ToString("dd/MM/yyyy") }
+    if ($v -is [DateTime]) { if ($v.Hour -or $v.Minute -or $v.Second) { return $v.ToString("dd/MM/yyyy HH:mm:ss") }; return $v.ToString("dd/MM/yyyy") }
     if ($v -is [decimal] -or $v -is [double] -or $v -is [single]) { return ([double]$v).ToString("0.######", [Globalization.CultureInfo]::GetCultureInfo("pt-BR")) }
     return ([string]$v).Replace("`t", " ").Replace("`r", " ").Replace("`n", " ")
 }
@@ -351,6 +352,11 @@ function Plannix-Sql-Ler($cfg) {
     $arq = Join-Path $AQUI "consulta.sql"
     if (-not (Test-Path $arq)) { throw "Falta consulta.sql (rode descobrir.bat e me mande o plannix_esquema.txt)." }
     $sql = [IO.File]::ReadAllText($arq, $UTF8)
+    if ($sql.Contains("{SIGLAS}")) {
+        $sg = @((App $cfg "/api/autodoc/obras").siglas | ForEach-Object { "'" + ([string]$_).Replace("'", "") + "'" })
+        if (-not $sg.Count) { throw "o app não tem obra ativa" }
+        $sql = $sql.Replace("{SIGLAS}", ($sg -join ","))
+    }
     if ($sql -notmatch '(?i)\bselect\b') { throw "consulta.sql ainda vazia (rode descobrir.bat e me mande o plannix_esquema.txt)." }
     $cx = Sql-Conectar $cfg
     try { $t = Sql-Tabela $cx $sql ([int](V $cfg "plannix" "timeout_consulta" "180")) } finally { $cx.Close() }
@@ -359,6 +365,60 @@ function Plannix-Sql-Ler($cfg) {
     [void]$sb.Append(($cols -join "`t")).Append("`n")
     foreach ($r in $t.Rows) { [void]$sb.Append((@($r.ItemArray | ForEach-Object { Celula $_ }) -join "`t")).Append("`n") }
     return @{ cols = $cols; linhas = $t.Rows.Count; corpo = [Text.Encoding]::GetEncoding(28591).GetBytes($sb.ToString()) }
+}
+
+function Ler-Tsv([byte[]]$b) {
+    $txt = [Text.Encoding]::GetEncoding(28591).GetString($b)
+    $ls = $txt -split "`r?`n" | Where-Object { $_ -ne "" }
+    $cab = $ls[0].Split("`t") | ForEach-Object { $_.Trim() }
+    $idx = @{}
+    $ic = [array]::IndexOf($cab, "Código")
+    foreach ($l in $ls[1..($ls.Count - 1)]) { $c = $l.Split("`t"); if ($c.Count -gt $ic -and $c[$ic].Trim()) { $idx[$c[$ic].Trim()] = $c } }
+    return @{ cab = $cab; idx = $idx }
+}
+
+function Norm([string]$v) {
+    $v = $v.Trim()
+    if ($v -eq "-" -or $v -eq "N/A" -or $v -eq "nan") { return "" }
+    if ($v -match '^(\d{2}/\d{2}/\d{4})( (\d{2}:\d{2}))?') { if ($Matches[3]) { return $Matches[1] + " " + $Matches[3] }; return $Matches[1] }
+    $n = 0.0
+    $t = $v; if ($t.Contains(",")) { $t = $t.Replace(".", "").Replace(",", ".") }
+    if ([double]::TryParse($t, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) { return [Math]::Round($n, 2).ToString([Globalization.CultureInfo]::InvariantCulture) }
+    return $v.ToUpper()
+}
+
+function Comparar($cfg) {
+    $pasta = [Environment]::ExpandEnvironmentVariables((V $cfg "plannix" "pasta" "%USERPROFILE%\Downloads"))
+    $exp = Get-ChildItem -LiteralPath $pasta -File -Filter "all_data*.xls" | Sort-Object LastWriteTime | Select-Object -Last 1
+    if (-not $exp) { throw "Exporte o 'all data' do Plannix e salve em $pasta antes de comparar." }
+    Log ("Lendo o banco do Plannix...")
+    $r = Plannix-Sql-Ler $cfg
+    $A = Ler-Tsv $r.corpo; $B = Ler-Tsv ([IO.File]::ReadAllBytes($exp.FullName))
+    $out = New-Object Collections.ArrayList
+    [void]$out.Add("Comparação banco x exportação " + $exp.Name + " (" + $exp.LastWriteTime.ToString("dd/MM HH:mm") + ")")
+    [void]$out.Add(("Banco: {0} peças | Exportação: {1} peças" -f $A.idx.Count, $B.idx.Count))
+    $soA = @($A.idx.Keys | Where-Object { -not $B.idx.ContainsKey($_) }); $soB = @($B.idx.Keys | Where-Object { -not $A.idx.ContainsKey($_) })
+    $iA = @{}; for ($i = 0; $i -lt $A.cab.Count; $i++) { $iA[$A.cab[$i]] = $i }
+    $iB = @{}; for ($i = 0; $i -lt $B.cab.Count; $i++) { $iB[$B.cab[$i]] = $i }
+    [void]$out.Add(("Só no banco: {0} (ex.: {1})" -f $soA.Count, (($soA | Select-Object -First 8 | ForEach-Object { $_ + " " + $A.idx[$_][$iA["Peça"]] + " " + $A.idx[$_][$iA["Nome Obra"]] + " fab=" + $A.idx[$_][$iA["Data Fabricação"]] + " st=" + $A.idx[$_][$iA["Status Projeto"]] }) -join " | ")))
+    [void]$out.Add(("Só na exportação: {0} (ex.: {1})" -f $soB.Count, (($soB | Select-Object -First 8 | ForEach-Object { $_ + " " + $B.idx[$_][$iB["Peça"]] + " " + $B.idx[$_][$iB["Nome Obra"]] }) -join " | ")))
+    $comuns = @($A.idx.Keys | Where-Object { $B.idx.ContainsKey($_) })
+    [void]$out.Add("Em comum: " + $comuns.Count); [void]$out.Add("")
+    [void]$out.Add("Colunas só na exportação: " + ((@($B.cab | Where-Object { $_ -and -not $iA.ContainsKey($_) })) -join " | "))
+    [void]$out.Add(""); [void]$out.Add("== COLUNA: % igual nas peças em comum (exemplos de diferença: código banco / exportação)")
+    foreach ($c in $A.cab) {
+        if (-not $iB.ContainsKey($c)) { [void]$out.Add(("{0,-42} (não existe na exportação)" -f $c)); continue }
+        $ok = 0; $ex = New-Object Collections.ArrayList
+        foreach ($k in $comuns) {
+            $va = Norm ([string]$A.idx[$k][$iA[$c]]); $vb = Norm ([string]$B.idx[$k][$iB[$c]])
+            if ($va -eq $vb) { $ok++ } elseif ($ex.Count -lt 4) { [void]$ex.Add($k + ": [" + $A.idx[$k][$iA[$c]] + "] / [" + $B.idx[$k][$iB[$c]] + "]") }
+        }
+        $pct = 0; if ($comuns.Count) { $pct = [Math]::Round(100.0 * $ok / $comuns.Count, 1) }
+        [void]$out.Add(("{0,-42} {1,6}%  {2}" -f $c, $pct, ($ex -join " ; ")))
+    }
+    $arq = Join-Path $AQUI "plannix_comparacao.txt"
+    [IO.File]::WriteAllLines($arq, [string[]]$out, $UTF8)
+    Log ("Comparação salva em plannix_comparacao.txt. Mande esse arquivo.")
 }
 
 function Descobrir($cfg, [string]$procurar) {
@@ -447,6 +507,7 @@ try {
         }
         "status" { if (Test-Path $ESTADO) { Get-Content $ESTADO } else { "Nada enviado ainda." } }
         "descobrir" { Descobrir $cfg $Valor }
+        "comparar" { Comparar $cfg }
         default { Write-Host "Comandos: rodar | agora | testar | status" }
     }
 } catch { Log ("ERRO: " + $_.Exception.Message); exit 1 }
