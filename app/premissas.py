@@ -126,6 +126,12 @@ def fura_fila(prs: list[Premissa], p: Peca) -> bool:
     return any(pr.tipo == "primeiro" and casa(pr, p) for pr in prs)
 
 
+def entra_em(prs: list[Premissa], p: Peca) -> date | None:
+    """Fura-fila com data ("De"): o PCP garante a armação; a peça pode entrar a partir dessa data, inclusive no 1º dia."""
+    ds = [pr.de for pr in prs if pr.tipo == "primeiro" and pr.de and casa(pr, p)]
+    return min(ds) if ds else None
+
+
 def forma_parada(prs: list[Premissa], codigo: str, d: date) -> bool:
     return any(pr.tipo == "parar_forma" and _n(pr.forma) == _n(codigo) and (not pr.de or pr.de <= d) and (not pr.ate or d <= pr.ate)
                for pr in prs)

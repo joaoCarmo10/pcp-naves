@@ -33,6 +33,7 @@ class Dem:
     arranjo: str | None = None
     fura: bool = False
     pend: bool = False             # Plannix diz fabricada, mas está pendente (premissa)
+    garantida: date | None = None  # fura-fila com data: armação garantida pelo PCP a partir desse dia
     lims: list = field(default_factory=list)   # (id da premissa, máximo por fôrma por dia)
     desde: date | None = None      # premissa "só a partir de"
     feito: bool = False
@@ -134,7 +135,8 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         pend = pm.pendente(prs, p)
         return Dem(p=p, classe=classe, prio=prio[p.obra_id], armada=bool(p.hora_armacao or p.codigo in armadas_app),
                    arm=p.hora_armacao, data0=i.data if i else None, forma0=i.forma if i else "", tipo0=i.tipo if i else "",
-                   ordem0=k, fura=pend or pm.fura_fila(prs, p), pend=pend, lims=pm.limites(prs, p), desde=pm.nao_antes(prs, p))
+                   ordem0=k, fura=pend or pm.fura_fila(prs, p), pend=pend, lims=pm.limites(prs, p), desde=pm.nao_antes(prs, p),
+                   garantida=pm.entra_em(prs, p))
 
     def pegar(cod: str, i: ItemProg, k: int):
         p = nf[cod]
@@ -255,7 +257,9 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         def pode(d: Dem) -> bool:
             if d.feito or (d.desde and dia < d.desde) or (so_compromisso and d.classe == 2 and not d.fura):
                 return False
-            return not (dia == inicio and not (d.armada or d.pend or d.data0 == inicio or _laje(d)))
+            if d.garantida and dia < d.garantida:
+                return False
+            return not (dia == inicio and not (d.armada or d.pend or d.garantida or d.data0 == inicio or _laje(d)))
 
         # seção do dia em cada fôrma de seção única: continua a de ontem se ainda tiver peça; senão a da 1ª da fila
         par = {a: b for x in MESMA_MONTAGEM for a, b in (x, x[::-1])}
