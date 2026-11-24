@@ -895,3 +895,17 @@ def test_premissa_pendente_e_limite(cliente):
     for i in vs:
         por_dia[(i.data, i.forma)] = por_dia.get((i.data, i.forma), 0) + 1
     assert max(por_dia.values()) <= 5 and min(i.data for i in vs) == date(2026, 11, 24)
+
+
+def test_aco_frouxo_herda_pelo_nome(cliente):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Peca
+    cab = COLS + "\tPeso Aço Frouxo(kg)"
+    linhas = ["\t".join(["VR1", "1001", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "10/11/2026", "5,000", "-", "36,02"]),
+              "\t".join(["VR1", "1002", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "-", "5,000", "-", ""])]
+    arq = (cab + "\n" + "\n".join(linhas) + "\n").encode("latin-1")
+    cliente.post("/importar", files={"arquivo": ("all_data.xls", arq)})
+    db = SessionLocal()
+    p = {x.codigo: x.peso_aco_frouxo for x in db.scalars(select(Peca))}
+    assert p["1001"] == 36.02 and p["1002"] == 36.02

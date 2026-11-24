@@ -147,6 +147,18 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
                     p.data_baixa = baixa
                     p.atualizada_em = datetime.now()
                     saiu_lista += 1
+    # aço frouxo é do projeto da peça: unidades com o mesmo nome na obra herdam o peso das que já têm
+    if any(str(c).startswith("Peso Aço Frouxo") for c in df.columns):
+        from statistics import median
+        for obra in obras_no_arquivo.values():
+            ps = list(db.scalars(select(Peca).where(Peca.obra_id == obra.id)))
+            pesos: dict[str, list[float]] = {}
+            for p in ps:
+                if p.peso_aco_frouxo:
+                    pesos.setdefault(p.peca, []).append(p.peso_aco_frouxo)
+            for p in ps:
+                if not p.peso_aco_frouxo and p.peca in pesos:
+                    p.peso_aco_frouxo = round(median(pesos[p.peca]), 2)
     imp = Importacao(arquivo=arquivo, tipo=tipo, resumo=dict(
         linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista,
         obras=sorted(o.nome for o in obras_no_arquivo.values()), data=hoje.isoformat()))
