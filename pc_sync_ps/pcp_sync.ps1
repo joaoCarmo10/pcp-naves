@@ -290,13 +290,14 @@ function Rodada-Plannix($cfg, $e, [bool]$testar = $false) {
         return
     }
     if ($modo -ne "pasta") { Log ("Plannix: desligado (modo '{0}')." -f $modo); return }
-    $pasta = [Environment]::ExpandEnvironmentVariables((V $cfg "plannix" "pasta" "%USERPROFILE%\Downloads"))
+    $pastas = Pastas-Downloads $cfg
+    $pasta = $pastas -join " | "
     $padroes = (V $cfg "plannix" "arquivos" "all_data*.xls, *a_realizar*.xls").Split(",") | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-    if (-not (Test-Path $pasta)) { Log ("Plannix: pasta não existe: " + $pasta); return }
     $limite = (Get-Date).AddDays(-3)
     $arqs = @()
-    foreach ($f in (Get-ChildItem -LiteralPath $pasta -File | Sort-Object LastWriteTime)) {
+    foreach ($f in (@(foreach ($pp in $pastas) { Get-ChildItem -LiteralPath $pp -File -ErrorAction SilentlyContinue }) | Sort-Object LastWriteTime)) {
         if ($f.LastWriteTime -le $limite) { continue }
+        if ($f.Name -match '(?i)(all.?data|a.?realizar)' -and $f.Extension -match '(?i)^\.(xls|txt|csv|tsv)$') { $arqs += $f; continue }
         foreach ($pd in $padroes) { if ($f.Name -like $pd) { $arqs += $f; break } }
     }
     if ($testar) { Log ("Plannix (pasta) OK: {0} · {1} exportação(ões) recentes: {2}" -f $pasta, $arqs.Count, (($arqs | Select-Object -Last 5 | ForEach-Object { $_.Name }) -join ", ")); return }
@@ -312,7 +313,7 @@ function Rodada-Plannix($cfg, $e, [bool]$testar = $false) {
         $enviados[$a.Name] = $h; $novos++
         $ult["enviado"] = (Get-Date).ToString("yyyy-MM-ddTHH:mm")
     }
-    foreach ($n in @($enviados.Keys)) { if (-not (Test-Path (Join-Path $pasta $n))) { $enviados.Remove($n) } }
+    foreach ($n in @($enviados.Keys)) { if (-not @($arqs | Where-Object { $_.Name -eq $n }).Count) { $enviados.Remove($n) } }
     if ($novos -eq 0) { Log "Plannix (pasta): nenhuma exportação nova." }
     $ult["arquivos"] = $enviados; $e["plannix"] = $ult
 }
@@ -387,10 +388,37 @@ function Norm([string]$v) {
     return $v.ToUpper()
 }
 
-function Comparar($cfg) {
-    $pasta = [Environment]::ExpandEnvironmentVariables((V $cfg "plannix" "pasta" "%USERPROFILE%\Downloads"))
-    $exp = Get-ChildItem -LiteralPath $pasta -File -Filter "all_data*.xls" | Sort-Object LastWriteTime | Select-Object -Last 1
-    if (-not $exp) { throw "Exporte o 'all data' do Plannix e salve em $pasta antes de comparar." }
+function Pastas-Downloads($cfg) {
+    # a pasta do ini e a pasta Downloads de verdade (pode estar no OneDrive ou em outro disco)
+    $ps = New-Object Collections.ArrayList
+    [void]$ps.Add([Environment]::ExpandEnvironmentVariables((V $cfg "plannix" "pasta" "%USERPROFILE%\Downloads")))
+    try { [void]$ps.Add((New-Object -ComObject Shell.Application).NameSpace("shell:Downloads").Self.Path) } catch {}
+    try { $k = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders" -ErrorAction Stop
+          [void]$ps.Add([Environment]::ExpandEnvironmentVariables($k."{374DE290-123F-4565-9164-39C4925E467B}")) } catch {}
+    foreach ($o in @($env:OneDrive, $env:OneDriveCommercial)) { if ($o) { [void]$ps.Add((Join-Path $o "Downloads")) } }
+    if ($env:USERPROFILE) { [void]$ps.Add((Join-Path $env:USERPROFILE "Desktop")) }
+    return @($ps | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)
+}
+
+function Achar-Exportacao($cfg, [string]$caminho) {
+    if ($caminho -and (Test-Path -LiteralPath $caminho)) { return Get-Item -LiteralPath $caminho }
+    $achados = @()
+    foreach ($p in (Pastas-Downloads $cfg)) {
+        $achados += @(Get-ChildItem -LiteralPath $p -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)all.?data' -and $_.Extension -match '(?i)^\.(xls|txt|csv|tsv)$' })
+    }
+    return $achados | Sort-Object LastWriteTime | Select-Object -Last 1
+}
+
+function Comparar($cfg, [string]$caminho) {
+    $exp = Achar-Exportacao $cfg $caminho
+    if (-not $exp) {
+        $onde = Pastas-Downloads $cfg
+        $rec = @(foreach ($p in $onde) { Get-ChildItem -LiteralPath $p -File -ErrorAction SilentlyContinue }) | Sort-Object LastWriteTime | Select-Object -Last 6
+        Log ("Procurei em: " + ($onde -join " | "))
+        Log ("Arquivos mais recentes: " + (($rec | ForEach-Object { $_.Name }) -join " | "))
+        throw "Não achei a exportação 'all data'. Arraste o arquivo exportado em cima do comparar.bat."
+    }
+    Log ("Exportação: " + $exp.FullName)
     Log ("Lendo o banco do Plannix...")
     $r = Plannix-Sql-Ler $cfg
     $A = Ler-Tsv $r.corpo; $B = Ler-Tsv ([IO.File]::ReadAllBytes($exp.FullName))
@@ -508,7 +536,7 @@ try {
         }
         "status" { if (Test-Path $ESTADO) { Get-Content $ESTADO } else { "Nada enviado ainda." } }
         "descobrir" { Descobrir $cfg $Valor }
-        "comparar" { Comparar $cfg }
+        "comparar" { Comparar $cfg $Valor }
         default { Write-Host "Comandos: rodar | agora | testar | status" }
     }
 } catch { Log ("ERRO: " + $_.Exception.Message); exit 1 }
