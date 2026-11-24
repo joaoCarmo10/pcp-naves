@@ -423,7 +423,9 @@ function Comparar($cfg, [string]$caminho) {
         throw "Não achei a exportação 'all data'. Arraste o arquivo exportado em cima do comparar.bat."
     }
     Log ("Exportação: " + $exp.FullName)
-    $q = "consulta.sql"; if (Test-Path (Join-Path $AQUI "candidatos.sql")) { $q = "candidatos.sql" }
+    # candidatos.sql (teste de colunas) só vale se for mais novo que a consulta.sql
+    $q = "consulta.sql"; $cd = Join-Path $AQUI "candidatos.sql"; $cs = Join-Path $AQUI "consulta.sql"
+    if ((Test-Path $cd) -and (Test-Path $cs) -and (Get-Item $cd).LastWriteTime -gt (Get-Item $cs).LastWriteTime) { $q = "candidatos.sql" }
     Log ("Lendo o banco do Plannix (" + $q + ")...")
     $r = Plannix-Sql-Ler $cfg $q
     $A = Ler-Tsv $r.corpo; $B = Ler-Tsv ([IO.File]::ReadAllBytes($exp.FullName))
