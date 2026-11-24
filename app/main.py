@@ -238,13 +238,21 @@ async def importar_aco_frouxo(request: Request, db: Session = Depends(get_db)):
     Só grava esse campo; não mexe em fabricação nem em nada mais."""
     dados = await request.json()
     if not isinstance(dados, dict):
-        raise HTTPException(400, "Envie {código: kg}.")
+        raise HTTPException(400, "Envie {código: kg} ou {\"sigla|peça\": kg}.")
     n = 0
-    for p in db.scalars(select(Peca).where(Peca.codigo.in_([str(c) for c in dados]))):
-        v = dados.get(p.codigo)
-        if isinstance(v, (int, float)) and v > 0:
-            p.peso_aco_frouxo = float(v)
-            n += 1
+    if any("|" in str(k) for k in dados):
+        # por nome: o peso é do projeto da peça, igual em todas as unidades com o mesmo nome na obra
+        for p in db.scalars(select(Peca).join(Obra)):
+            v = dados.get(f"{p.obra.sigla}|{p.peca}")
+            if isinstance(v, (int, float)) and v > 0 and not p.peso_aco_frouxo:
+                p.peso_aco_frouxo = float(v)
+                n += 1
+    else:
+        for p in db.scalars(select(Peca).where(Peca.codigo.in_([str(c) for c in dados]))):
+            v = dados.get(p.codigo)
+            if isinstance(v, (int, float)) and v > 0:
+                p.peso_aco_frouxo = float(v)
+                n += 1
     db.commit()
     return {"atualizadas": n, "recebidas": len(dados)}
 
