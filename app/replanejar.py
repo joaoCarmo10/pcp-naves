@@ -83,6 +83,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
     nf: dict[str, Peca] = {}
     excluidas = Counter()
     excl_lista = []
+    pend_lista: list[tuple[str, Peca, str]] = []   # (motivo, peça, observação) do que não entra
     todas = list(db.scalars(select(Peca)))
     existe_cod = {p.codigo for p in todas}
     existe_nome = {(p.obra.nome, p.peca) for p in todas}
@@ -91,11 +92,13 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             continue
         if p.codigo in fora:
             excluidas["Fora da área de atuação (outra empresa)"] += 1
+            pend_lista.append(("Fora da área de atuação", p, "Outra empresa (área de atuação da obra)"))
             continue
         m = pm.motivo_fora(prs, p)
         if m:
             excluidas[m] += 1
             excl_lista.append(p.codigo)
+            pend_lista.append(("Premissa", p, m))
             continue
         nf[p.codigo] = p
     excl_set = set(excl_lista)
@@ -386,6 +389,15 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             return f"Comprimento {d.p.comprimento or 0:g} m maior que a fôrma"
         return "Nenhuma fôrma com essa seção/produto"
     sem_f = Counter((d.p.obra.nome, d.p.produto, d.p.secao or "-", motivo_sem_forma(d)) for d in sem_forma)
+    for d in sem_forma:
+        pend_lista.append(("Sem fôrma", d.p, motivo_sem_forma(d)))
+    for d in bloqueadas:
+        pend_lista.append(("Desenho bloqueado", d.p, "Autodoc"))
+    for d in sobra:
+        pend_lista.append(("Capacidade", d.p, f"Não coube até {fim:%d/%m}" + (" (atrasada)" if d.classe == 0 else "")))
+    ORD_MOT = ["Premissa", "Desenho bloqueado", "Sem fôrma", "Capacidade", "Fora da área de atuação"]
+    pend_lista.sort(key=lambda x: (ORD_MOT.index(x[0]), prio.get(x[1].obra_id, 99), x[1].obra.nome, x[1].produto,
+                                   chave_natural(x[1].peca), x[1].codigo))
     nova.relatorio = dict(
         inicio=inicio.isoformat(), fim=fim.isoformat(), base=base.nome, base_id=base.id, sabado=sabado,
         fila=len(ordem) + len(bloqueadas), programadas=sum(d.feito for d in ordem),
@@ -407,6 +419,8 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         sem_forma=[dict(obra=o, produto=pr, secao=s, motivo=m, n=n) for (o, pr, s, m), n in
                    sorted(sem_f.items(), key=lambda x: (-x[1], x[0]))],
         sobra=grupos(sobra),
+        pendencias=[dict(motivo=m, obra=p.obra.nome, peca=p.peca, codigo=p.codigo, produto=p.produto, secao=p.secao,
+                         comp=p.comprimento, obs=o) for m, p, o in pend_lista],
         sobra_atrasadas=[dict(obra=d.p.obra.nome, peca=d.p.peca, codigo=d.p.codigo, data0=d.data0.isoformat(), forma0=d.forma0)
                          for d in sobra if d.classe == 0][:300],
         por_obra=[dict(obra=o, prio=prio[nome_obra[o].id] if o in nome_obra else 99, **dict(c)) for o, c in

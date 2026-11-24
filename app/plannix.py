@@ -130,6 +130,8 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         p.modelo_protensao = _texto(r.get("Modelo de Protensão")) or p.modelo_protensao or ""
         taxa = next((r[c] for c in r if str(c).startswith("Taxa Aço Protendido")), "")
         p.taxa_aco_prot = _num(taxa) if _num(taxa) else p.taxa_aco_prot
+        frouxo = next((r[c] for c in r if str(c).startswith("Peso Aço Frouxo")), "")
+        p.peso_aco_frouxo = _num(frouxo) if _num(frouxo) else p.peso_aco_frouxo
         df_ = _data(r.get("Data Fabricação", ""))
         if df_:
             p.fabricada, p.data_fabricacao, p.origem_fabricacao = True, df_, "plannix"

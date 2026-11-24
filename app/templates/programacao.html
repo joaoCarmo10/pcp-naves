@@ -65,6 +65,15 @@
   {% else %}<tr><td colspan="24" class="vazio">Nada programado neste dia{{ ' com esses filtros' if f.obra or f.nave or f.produto or f.peca or f.situacao }}.</td></tr>{% endfor %}
   </tbody>
 </table></div>
+<h2 style="margin-top:22px">Fabricadas em {{ d.strftime('%d/%m') }} sem estar programadas para o dia</h2>
+{% if fora %}
+<p class="meta">Pelo Plannix: {{ fora|length }} peça(s), {{ fora_vol|num(1) }} m³. Adiantadas = estavam programadas para outro dia; fora da programação = não estavam na revisão.</p>
+<div class="rolagem"><table class="tabela"><thead><tr><th>Obra</th><th>Peça</th><th>Código</th><th>Produto</th><th>Seção</th><th class="n">Comp.</th><th class="n">Vol.</th><th>Situação</th></tr></thead><tbody>
+{% for x in fora %}<tr><td>{{ x.obra }}</td><td>{{ x.p.peca }}</td><td class="meta">{{ x.p.codigo }}</td><td>{{ x.p.produto }}</td><td>{{ x.p.secao }}</td>
+<td class="n">{{ x.p.comprimento|num(2) if x.p.comprimento else '' }}</td><td class="n">{{ x.p.volume|num(3) if x.p.volume else '' }}</td>
+<td>{% if x.prog %}Adiantada (prog. {{ x.prog.strftime('%d/%m') }} · {{ x.forma }}){% else %}<b>Fora da programação</b>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>
+{% else %}<p class="meta">Nenhuma.</p>{% endif %}
 <form method="post" action="/programacao/revisoes/{{ r.id }}/excluir" style="margin-top:24px" onsubmit="return confirm('Excluir esta revisão e os apontamentos dela?')">
   <button class="perigo" type="submit">Excluir esta revisão</button>
 </form>

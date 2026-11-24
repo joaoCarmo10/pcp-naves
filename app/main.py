@@ -232,6 +232,23 @@ def importar_token(request: Request, db: Session = Depends(get_db)):
                                                            "ad": _autodoc_status(db)})
 
 
+@app.post("/importar/aco-frouxo")
+async def importar_aco_frouxo(request: Request, db: Session = Depends(get_db)):
+    """Peso do aço frouxo por código (kg), vindo de uma exportação do Plannix com a coluna "Peso Aço Frouxo(kg)".
+    Só grava esse campo; não mexe em fabricação nem em nada mais."""
+    dados = await request.json()
+    if not isinstance(dados, dict):
+        raise HTTPException(400, "Envie {código: kg}.")
+    n = 0
+    for p in db.scalars(select(Peca).where(Peca.codigo.in_([str(c) for c in dados]))):
+        v = dados.get(p.codigo)
+        if isinstance(v, (int, float)) and v > 0:
+            p.peso_aco_frouxo = float(v)
+            n += 1
+    db.commit()
+    return {"atualizadas": n, "recebidas": len(dados)}
+
+
 @app.post("/api/autodoc")
 async def autodoc_automatico(request: Request, db: Session = Depends(get_db)):
     """Recebe o relatório 'Exportar' do Autodoc enviado por automação (mesmo token do Plannix automático)."""
@@ -633,9 +650,20 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
     seg = d - timedelta(days=d.weekday())
     semana = [seg + timedelta(days=k) for k in range(6)]
     i = dias.index(d)
+    # fabricadas no dia (Plannix) que não estavam programadas para o dia: adiantadas ou fora da programação
+    usados = {l.item.codigo for l in todas if l.item.codigo} | {l.troca for l in todas if l.troca}
+    prog_rev = {it.codigo: it for it in r.itens if it.codigo}
+    fora = []
+    for p in db.scalars(select(Peca).where(Peca.data_fabricacao == d).order_by(Peca.peca)):
+        if p.codigo in usados:
+            continue
+        it = prog_rev.get(p.codigo)
+        fora.append({"p": p, "obra": p.obra.nome, "prog": it.data if it else None, "forma": it.forma if it else ""})
+    fora.sort(key=lambda x: (x["prog"] is None, x["obra"], chave_natural(x["p"].peca)))
     return tpl.TemplateResponse(request, "programacao.html", {
         "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
-        "ls": ls, "tot": tot, "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db)})
+        "ls": ls, "tot": tot, "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db),
+        "fora": fora, "fora_vol": sum(x["p"].volume or 0 for x in fora)})
 
 
 @app.get("/programacao/quadro", response_class=HTMLResponse)
@@ -1042,7 +1070,8 @@ def replanejamento_planilha(rid: int, db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, rid) or _404()
     ini = _data((r.relatorio or {}).get("inicio")) or r.inicio
     nome = f"Programacao_Producao_{ini:%d-%m}_a_{r.fim:%d-%m}_replanejada.xlsx"
-    return Response(rp.planilha(r, ini, db), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    from . import planilha_prog
+    return Response(planilha_prog.gerar(db, r, ini), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 

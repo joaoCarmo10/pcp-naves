@@ -806,7 +806,9 @@ def test_replanejamento_automatico(cliente):
     import io as _io
     from openpyxl import load_workbook
     cab = [c.value for c in load_workbook(_io.BytesIO(x.content))["N1 + N3"][3]]
-    assert "PROTENSÃO" in cab and "AÇO ATIVO (KG)" in cab
+    assert {"ARMAÇÃO", "AÇO FROUXO (kg)", "PROTENSÃO", "AÇO ATIVO (kg)", "Realizado", "O que houve"} <= set(cab)
+    wbx = load_workbook(_io.BytesIO(x.content))
+    assert wbx.sheetnames == ["RESUMO", "N1 + N3", "N2", "GANTT FÔRMAS", "REMANEJAMENTO", "PENDÊNCIAS", "FÔRMAS", "PREMISSAS"]
     imp = pg.importar_programacao(db, x.content, "replanejada.xlsx")          # a planilha volta para o app
     assert imp.resumo["linhas"] == sum(1 for i in nova.itens if i.data >= date(2026, 11, 24))
     cliente.post(f"/planejar/replanejamento/{rid}/publicar")

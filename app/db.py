@@ -99,6 +99,7 @@ def migrar():
             if "vol_projeto" not in cols:
                 cx.execute(text("ALTER TABLE pecas ADD COLUMN vol_projeto FLOAT"))
             for col, tipo in (("hora_corte_dobra", "TIMESTAMP"), ("traco", "VARCHAR(40) DEFAULT ''"),
-                              ("taxa_aco_prot", "FLOAT"), ("modelo_protensao", "VARCHAR(60) DEFAULT ''")):
+                              ("taxa_aco_prot", "FLOAT"), ("modelo_protensao", "VARCHAR(60) DEFAULT ''"),
+                              ("peso_aco_frouxo", "FLOAT")):
                 if col not in cols:
                     cx.execute(text(f"ALTER TABLE pecas ADD COLUMN {col} {tipo}"))

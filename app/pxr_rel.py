@@ -41,7 +41,7 @@ def segunda(d: date) -> date:
 
 def revisao_para(db: Session, dia: date) -> RevisaoProg | None:
     """Revisão mais recente que cobre o dia."""
-    return db.scalar(select(RevisaoProg).where(RevisaoProg.inicio <= dia, RevisaoProg.fim >= dia)
+    return db.scalar(select(RevisaoProg).where(RevisaoProg.inicio <= dia, RevisaoProg.fim >= dia, RevisaoProg.rascunho.is_not(True))
                      .order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
 
 

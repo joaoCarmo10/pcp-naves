@@ -39,6 +39,7 @@ class Peca(Base):
     traco: Mapped[str] = mapped_column(String(40), default="")                 # traço real do concreto (Plannix)
     taxa_aco_prot: Mapped[float | None] = mapped_column(Float, nullable=True)  # kg/m³ (Plannix)
     modelo_protensao: Mapped[str] = mapped_column(String(60), default="")
+    peso_aco_frouxo: Mapped[float | None] = mapped_column(Float, nullable=True)  # kg por peça (Plannix)
     atualizada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="pecas")
 
