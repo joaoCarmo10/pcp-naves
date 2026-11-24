@@ -909,3 +909,21 @@ def test_aco_frouxo_herda_pelo_nome(cliente):
     db = SessionLocal()
     p = {x.codigo: x.peso_aco_frouxo for x in db.scalars(select(Peca))}
     assert p["1001"] == 36.02 and p["1002"] == 36.02
+
+
+def test_relatorio_ocupacao(cliente):
+    from datetime import date
+    from app.db import SessionLocal
+    from app.models import ItemProg, RevisaoProg
+    db = SessionLocal()
+    r = RevisaoProg(nome="Rev teste", inicio=date(2026, 11, 23), fim=date(2026, 11, 28))
+    r.itens += [ItemProg(data=date(2026, 11, 24), nave="N1", forma="N1 - F4 40x40 (16m)", obra="X", peca="P1", produto="PILAR",
+                         secao="40x40", comprimento=8, qtd=1, volume=1),
+                ItemProg(data=date(2026, 11, 24), nave="N1", forma="N1 - F4 40x40 (16m)", obra="X", peca="P2", produto="PILAR",
+                         secao="40x40", comprimento=7.8, qtd=1, volume=1)]
+    db.add(r)
+    db.commit()
+    h = cliente.get(f"/programacao/ocupacao?rev={r.id}&de=2026-11-24&ate=2026-11-28").text
+    assert "Ocupação das fôrmas por dia" in h and "100%" in h          # 8 + 0,2 + 7,8 = 16 m de 16 m
+    x = cliente.get(f"/programacao/ocupacao.xlsx?rev={r.id}&de=2026-11-24&ate=2026-11-28")
+    assert x.status_code == 200 and len(x.content) > 3000

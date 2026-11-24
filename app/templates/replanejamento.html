@@ -12,6 +12,7 @@
 <div class="filtros" style="margin-bottom:12px">
   <a class="botao" href="/planejar/replanejamento/{{ r.id }}/planilha">Baixar planilha (layout da programação)</a>
   <a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ ini }}">Abrir no quadro para ajustar</a>
+  <a class="botao-sec" href="/programacao/ocupacao?rev={{ r.id }}">Ocupação das fôrmas</a>
   {% if r.rascunho %}
   <form method="post" action="/planejar/replanejamento/{{ r.id }}/publicar" style="margin:0" onsubmit="return confirm('Publicar como programação vigente?')">
     <button class="botao-sec" type="submit">Publicar como programação vigente</button></form>

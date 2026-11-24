@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block titulo %}Ocupação das fôrmas | PCP Naves{% endblock %}
+{% block corpo %}
+<style>
+.ocup td.c{min-width:46px;text-align:center;font-size:12px;padding:4px 2px;border:1px solid #e3e6ea}
+.ocup td.c small{display:block;color:#5b6470;font-size:10px}
+.ocup td.mot{color:#9aa1a9;font-style:italic;font-size:11px}
+.ocup th{font-size:11px}
+.ocup tr.grupo td{background:#d9e1f2;font-weight:700}
+.ocup td.media{font-weight:700;text-align:center}
+.leg span{display:inline-block;width:14px;height:12px;border:1px solid #ccc;vertical-align:middle;margin:0 4px 0 10px}
+@media print{.nao-imprime,nav,header,.topo{display:none!important}.rolagem-x{max-height:none!important;overflow:visible!important}
+  @page{size:A4 landscape;margin:8mm} body{font-size:10px}.ocup td.c{min-width:0;font-size:9px}}
+</style>
+<p class="sub nao-imprime" style="margin-bottom:4px"><a href="/programacao?rev={{ r.id }}">Programação</a> ›</p>
+<div class="filtros">
+  <div style="flex:1"><h1>Ocupação das fôrmas por dia</h1>
+    <p class="sub" style="margin:0">{{ r.nome }}{{ ' (rascunho)' if r.rascunho }} · {{ c.dias[0]|dm if c.dias }} a {{ c.dias[-1]|dm if c.dias }} · emitido {{ agora.strftime('%d/%m/%Y %H:%M') }}</p></div>
+  <form method="get" class="nao-imprime" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+    <label>Revisão<select name="rev" onchange="this.form.submit()">{% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ '[RASCUNHO] ' if x.rascunho }}{{ x.nome[:70] }}</option>{% endfor %}</select></label>
+    <label>De<input type="date" name="de" value="{{ c.dias[0] if c.dias }}"></label>
+    <label>Até<input type="date" name="ate" value="{{ c.dias[-1] if c.dias }}"></label>
+    <button class="botao-sec" type="submit">Aplicar</button>
+    <a class="botao" href="/programacao/ocupacao.xlsx?rev={{ r.id }}&de={{ c.dias[0] if c.dias }}&ate={{ c.dias[-1] if c.dias }}">Excel</a>
+    <button class="botao-sec" type="button" onclick="window.print()">Imprimir</button>
+  </form>
+</div>
+
+<div class="kpis" style="margin:8px 0">
+  <div class="kpi"><b>{{ c.media_geral|pct if c.media_geral is not none else '-' }}</b><span>ocupação média das fôrmas no período</span></div>
+  {% for nv, nome in NAVES.items() %}{% set ps = [] %}{% for d in c.dias %}{% if c.nave_dia[(nv, d)].pct is not none %}{% set _ = ps.append(c.nave_dia[(nv, d)].pct) %}{% endif %}{% endfor %}
+  <div class="kpi"><b>{{ ((ps|sum) / (ps|length))|pct if ps else '-' }}</b><span>{{ nome }}</span></div>{% endfor %}
+  <div class="kpi"><b>{{ c.acima|length }}</b><span>fôrma-dia acima da capacidade</span></div>
+  <div class="kpi"><b>{{ c.ociosas|length }}</b><span>fôrmas com média abaixo de 30%</span></div>
+</div>
+<p class="meta leg">% = comprimento programado (com 0,20 m de folga entre peças) ÷ comprimento útil; fôrma por unidade = peças ÷ capacidade do dia. Passe o mouse para ver as peças.
+  <span style="background:#f2f2f2"></span>ociosa <span style="background:#c3d1ea"></span>parcial <span style="background:#8ea9db"></span>cheia <span style="background:#f8cbad"></span>acima · <i>alt</i> = pista do outro dia, <i>par</i> = parada</p>
+
+<div class="rolagem-x" style="max-height:calc(100vh - 300px)">
+<table class="t ocup">
+<thead><tr><th>Fôrma</th>{% for d in c.dias %}<th class="n">{{ DIAS[d.weekday()] }}<br>{{ d|dm }}</th>{% endfor %}<th class="n">Média</th><th class="n">Dias<br>ociosos</th></tr></thead>
+<tbody>
+{% set ns = namespace(nave='') %}
+{% for lf in c.linhas_forma %}{% set f = lf.f %}
+  {% if f.nave != ns.nave %}{% set ns.nave = f.nave %}<tr class="grupo"><td colspan="{{ c.dias|length + 3 }}">{{ NAVES.get(f.nave, f.nave)|upper }}</td></tr>{% endif %}
+  <tr><td style="white-space:nowrap">{{ f.nome_completo }}</td>
+  {% for d in c.dias %}{% set x = c.cel[(f.id, d)] %}
+    {% if x.cap %}<td class="c" style="background:{{ cor(x.pct) }}" title="{{ x.pecas|join(' · ') or 'Ociosa' }}{% if x.secoes %} | seções: {{ x.secoes|sort|join(', ') }}{% endif %}">
+      <b>{{ x.pct|pct }}</b><small>{% if f.tipo == 'unidade' %}{{ x.n }}/{{ x.cap|int }} pç{% else %}{{ x.uso|round(1) }}/{{ x.cap|round(0)|int }} m{% endif %}</small></td>
+    {% else %}<td class="c mot" title="{{ x.motivo }}">{{ {'alterna': 'alt', 'parada': 'par'}.get(x.motivo, '') }}</td>{% endif %}
+  {% endfor %}
+  <td class="media" style="background:{{ cor(lf.media) }}">{{ lf.media|pct if lf.media is not none else '-' }}</td>
+  <td class="n">{{ lf.ociosos or '' }}</td></tr>
+{% endfor %}
+</tbody>
+<tfoot>
+{% for nv, nome in NAVES.items() %}
+<tr><td><b>{{ nome }}</b> · % médio / peças / m³</td>{% for d in c.dias %}{% set z = c.nave_dia[(nv, d)] %}
+  <td class="c" style="background:{{ cor(z.pct) }}"><b>{{ z.pct|pct if z.pct is not none else '-' }}</b><small>{{ z.n }} pç · {{ z.vol|num(1) }}</small></td>{% endfor %}<td></td><td></td></tr>
+{% endfor %}
+<tr><td><b>Total da fábrica</b> · peças / m³</td>{% for d in c.dias %}<td class="c"><b>{{ c.dia_tot[d].n }}</b><small>{{ c.dia_tot[d].vol|num(1) }} m³</small></td>{% endfor %}<td></td><td></td></tr>
+</tfoot>
+</table>
+</div>
+
+{% if c.acima %}<h2>Acima da capacidade</h2><ul class="meta">{% for f, d, x in c.acima %}<li>{{ DIAS[d.weekday()] }} {{ d|dm }} · {{ f.nome_completo }}: {{ x.pct|pct }} ({{ x.pecas|join(', ') }})</li>{% endfor %}</ul>{% endif %}
+{% if c.ociosas %}<h2>Fôrmas pouco usadas no período (média abaixo de 30%)</h2>
+<p class="meta">{% for x in c.ociosas %}{{ x.f.nome_completo }} ({{ x.media|pct }}, {{ x.ociosos }} de {{ x.dias_disp }} dias sem peça){{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+{% if c.sem_forma %}<p class="meta">{{ c.sem_forma|length }} linha(s) da programação com fôrma que não está no cadastro não entram no cálculo.</p>{% endif %}
+{% endblock %}

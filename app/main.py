@@ -23,6 +23,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
+from . import ocupacao as ocup
 from . import premissas as pm
 from . import replanejar as rp
 from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pecas_tab as ptab, pxr_rel as pxr, planejar as pl, plannix, plantas, programacao as pg
@@ -274,7 +275,7 @@ async def autodoc_linhas(request: Request, db: Session = Depends(get_db)):
 @app.get("/autodoc/receber", response_class=HTMLResponse)
 def autodoc_receber():
     """Ponte: a aba do Autodoc (logada) abre esta página e manda os desenhos por postMessage."""
-    return HTMLResponse("""<!doctype html><meta charset="utf-8"><title>Autodoc → PCP Naves</title>
+    return HTMLResponse(r"""<!doctype html><meta charset="utf-8"><title>Autodoc → PCP Naves</title>
 <body style="font:14px sans-serif;padding:24px">Aguardando os desenhos do Autodoc…<script>
 window.addEventListener('message', async e => {
   if (!/(^|\.)autodoc\.com\.br$/.test(new URL(e.origin).hostname) || !e.data || !e.data.linhas) return;
@@ -703,6 +704,37 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
         "r": r, "revs": _revisoes(db), "dias": dias, "d": d, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
         "ls": ls, "tot": tot, "acum": acum, "semana": semana, "f": f, "opcoes": opcoes, "hoje": date.today(), "base": ultima_base(db),
         "fora": fora, "fora_vol": sum(x["p"].volume or 0 for x in fora)})
+
+
+def _ocup_ctx(db: Session, rev: int | None, de: str | None, ate: str | None):
+    r = db.get(RevisaoProg, rev) if rev else db.scalar(select(RevisaoProg).order_by(RevisaoProg.criada_em.desc(), RevisaoProg.id.desc()))
+    if not r:
+        return None, None
+    datas = list(db.scalars(select(ItemProg.data).where(ItemProg.revisao_id == r.id)))
+    ult = max(datas) if datas else r.fim
+    ini = _data(de) or max(min(date.today(), ult), r.inicio)
+    fim = _data(ate) or ult
+    return r, ocup.calcular(db, r, ini, max(fim, ini))
+
+
+@app.get("/programacao/ocupacao", response_class=HTMLResponse)
+def ocupacao_tela(request: Request, rev: int | None = None, de: str | None = None, ate: str | None = None,
+                  db: Session = Depends(get_db)):
+    r, c = _ocup_ctx(db, rev, de, ate)
+    if not r:
+        return RedirectResponse("/programacao", status_code=303)
+    return tpl.TemplateResponse(request, "ocupacao.html", {"r": r, "revs": _revisoes(db), "c": c, "cor": ocup.cor, "NAVES": ocup.NAVES,
+                                                          "base": ultima_base(db), "agora": datetime.now()})
+
+
+@app.get("/programacao/ocupacao.xlsx")
+def ocupacao_planilha(rev: int | None = None, de: str | None = None, ate: str | None = None, db: Session = Depends(get_db)):
+    r, c = _ocup_ctx(db, rev, de, ate)
+    if not r:
+        raise HTTPException(404)
+    d0, d1 = (c["dias"][0], c["dias"][-1]) if c["dias"] else (date.today(), date.today())
+    return Response(ocup.planilha(c, r), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="Ocupacao_formas_{d0:%d-%m}_a_{d1:%d-%m}.xlsx"'})
 
 
 @app.get("/programacao/quadro", response_class=HTMLResponse)

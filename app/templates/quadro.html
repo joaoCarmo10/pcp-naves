@@ -4,7 +4,8 @@
 <p class="sub" style="margin-bottom:4px"><a href="/programacao?rev={{ r.id }}">Programação</a> ›</p>
 <div class="filtros">
   <div style="flex:1"><h1>Quinzena por fôrma</h1>
-    <p class="sub" style="margin:0">Peças programadas por fôrma e dia. Cor dos dias já passados: verde = tudo feito, amarelo = parte, vermelho = nada.</p></div>
+    <p class="sub" style="margin:0">Peças programadas por fôrma e dia. Cor dos dias já passados: verde = tudo feito, amarelo = parte, vermelho = nada.
+      <a href="/programacao/ocupacao?rev={{ r.id }}">Ver ocupação (%) das fôrmas</a></p></div>
   <form method="get"><label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
     {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }}</option>{% endfor %}</select></label></form>
 </div>
