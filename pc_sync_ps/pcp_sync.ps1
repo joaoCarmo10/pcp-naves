@@ -349,8 +349,8 @@ function Celula($v) {
     return ([string]$v).Replace("`t", " ").Replace("`r", " ").Replace("`n", " ")
 }
 
-function Plannix-Sql-Ler($cfg) {
-    $arq = Join-Path $AQUI "consulta.sql"
+function Plannix-Sql-Ler($cfg, [string]$nome = "consulta.sql") {
+    $arq = Join-Path $AQUI $nome
     if (-not (Test-Path $arq)) { throw "Falta consulta.sql (rode descobrir.bat e me mande o plannix_esquema.txt)." }
     $sql = [IO.File]::ReadAllText($arq, $UTF8)
     if ($sql.Contains("{SIGLAS}")) {
@@ -382,11 +382,12 @@ function Norm([string]$v) {
     $v = $v.Trim()
     if ($v -eq "-" -or $v -eq "N/A" -or $v -eq "nan") { return "" }
     if ($v -match '^(\d{2}/\d{2}/\d{4})( (\d{2}:\d{2}))?') { if ($Matches[3] -and $Matches[3] -ne "00:00") { return $Matches[1] + " " + $Matches[3] }; return $Matches[1] }
-    $n = 0.0
+    $n = [decimal]0
     $t = $v; if ($t.Contains(",")) { $t = $t.Replace(".", "").Replace(",", ".") }
-    if ([double]::TryParse($t, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) {
+    if ([decimal]::TryParse($t, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) {
         if ($n -eq 0) { return "" }   # vazio e zero são a mesma coisa para o app
-        return [Math]::Round($n, 2, [MidpointRounding]::AwayFromZero).ToString([Globalization.CultureInfo]::InvariantCulture)
+        # decimal (não double): 1,265 arredonda para 1,27 como no Excel
+        return [decimal]::Round($n, 2, [MidpointRounding]::AwayFromZero).ToString("0.##", [Globalization.CultureInfo]::InvariantCulture)
     }
     return $v.ToUpper()
 }
@@ -422,8 +423,9 @@ function Comparar($cfg, [string]$caminho) {
         throw "Não achei a exportação 'all data'. Arraste o arquivo exportado em cima do comparar.bat."
     }
     Log ("Exportação: " + $exp.FullName)
-    Log ("Lendo o banco do Plannix...")
-    $r = Plannix-Sql-Ler $cfg
+    $q = "consulta.sql"; if (Test-Path (Join-Path $AQUI "candidatos.sql")) { $q = "candidatos.sql" }
+    Log ("Lendo o banco do Plannix (" + $q + ")...")
+    $r = Plannix-Sql-Ler $cfg $q
     $A = Ler-Tsv $r.corpo; $B = Ler-Tsv ([IO.File]::ReadAllBytes($exp.FullName))
     $out = New-Object Collections.ArrayList
     [void]$out.Add("Comparação banco x exportação " + $exp.Name + " (" + $exp.LastWriteTime.ToString("dd/MM HH:mm") + ")")
@@ -437,8 +439,21 @@ function Comparar($cfg, [string]$caminho) {
     [void]$out.Add("Em comum: " + $comuns.Count); [void]$out.Add("")
     [void]$out.Add("Colunas só na exportação: " + ((@($B.cab | Where-Object { $_ -and -not $iA.ContainsKey($_) })) -join " | "))
     [void]$out.Add(""); [void]$out.Add("== COLUNA: % igual nas peças em comum (exemplos de diferença: código banco / exportação)")
+    $cand = New-Object Collections.ArrayList
     foreach ($c in $A.cab) {
         if (-not $c) { continue }
+        if ($c.Contains("~")) {   # coluna candidata: compara com a coluna da exportação antes do "~"
+            $alvo = $c.Split("~")[0]
+            if (-not $iB.ContainsKey($alvo)) { continue }
+            $ok = 0; $ex = New-Object Collections.ArrayList
+            foreach ($k in $comuns) {
+                $va = Norm ([string]$A.idx[$k][$iA[$c]]); $vb = Norm ([string]$B.idx[$k][$iB[$alvo]])
+                if ($va -eq $vb) { $ok++ } elseif ($ex.Count -lt 3) { [void]$ex.Add($k + ": [" + $A.idx[$k][$iA[$c]] + "] / [" + $B.idx[$k][$iB[$alvo]] + "]") }
+            }
+            $pct = 0; if ($comuns.Count) { $pct = [Math]::Round(100.0 * $ok / $comuns.Count, 1) }
+            [void]$cand.Add([pscustomobject]@{ alvo = $alvo; nome = $c.Split("~")[1]; pct = $pct; ex = ($ex -join " ; ") })
+            continue
+        }
         if (-not $iB.ContainsKey($c)) { [void]$out.Add(("{0,-42} (não existe na exportação)" -f $c)); continue }
         $ok = 0; $ex = New-Object Collections.ArrayList
         foreach ($k in $comuns) {
@@ -447,6 +462,13 @@ function Comparar($cfg, [string]$caminho) {
         }
         $pct = 0; if ($comuns.Count) { $pct = [Math]::Round(100.0 * $ok / $comuns.Count, 1) }
         [void]$out.Add(("{0,-42} {1,6}%  {2}" -f $c, $pct, ($ex -join " ; ")))
+    }
+    if ($cand.Count) {
+        [void]$out.Add(""); [void]$out.Add("== CANDIDATAS (de onde a exportação tira a coluna), melhor primeiro")
+        foreach ($g in ($cand | Group-Object alvo)) {
+            [void]$out.Add(""); [void]$out.Add($g.Name)
+            foreach ($x in ($g.Group | Sort-Object pct -Descending)) { [void]$out.Add(("  {0,-34} {1,6}%  {2}" -f $x.nome, $x.pct, $x.ex)) }
+        }
     }
     $arq = Join-Path $AQUI "plannix_comparacao.txt"
     [IO.File]::WriteAllLines($arq, [string[]]$out, $UTF8)
