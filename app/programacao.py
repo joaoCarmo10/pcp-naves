@@ -116,7 +116,9 @@ def codigos_programados(db: Session) -> dict[str, date]:
     rev = revisao_atual(db)
     if not rev:
         return {}
-    return {c: d for c, d in db.execute(select(ItemProg.codigo, ItemProg.data).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    # só o que está no plano de hoje em diante: dia passado sem fabricação já foi reprogramado ou saiu do plano
+    return {c: d for c, d in db.execute(select(ItemProg.codigo, ItemProg.data).where(
+        ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None), ItemProg.data >= date.today()))}
 
 
 # ---------------------------------------------------------------- programado x realizado

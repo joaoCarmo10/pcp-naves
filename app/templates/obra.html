@@ -9,6 +9,7 @@
   <div class="kpi"><b>{{ r.pct_vol|pct }}</b><span>do volume ({{ r.volume_fab|num }} de {{ r.volume|num }} m³)</span></div>
   <div class="kpi"><b>{{ r.programadas }}</b><span>programadas</span></div>
   <div class="kpi"><b>{{ r.falta }}</b><span>sem programação</span></div>
+  {% if r.bloqueadas %}<div class="kpi"><b style="color:#7030a0">{{ r.bloqueadas }}</b><span>desenho bloqueado no Autodoc</span></div>{% endif %}
 </div>
 {% if fora %}<p class="meta">Fora da área de atuação (outra empresa), não entram no avanço: <b>{{ fora.values()|sum }}</b> unidade(s) do Plannix
   ({% for n, k in fora|dictsort %}{{ n }}{% if k > 1 %} ×{{ k }}{% endif %}{{ ', ' if not loop.last }}{% endfor %}).</p>{% endif %}

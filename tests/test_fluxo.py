@@ -948,3 +948,19 @@ def test_premissa_data_fixa(cliente):
     p2 = [i for i in nova.itens if i.codigo == "1004"]
     assert len(p2) == 1 and p2[0].data == date(2026, 11, 26) and p2[0].forma.startswith("N1 - F5") and "Data fixa" in p2[0].obs
     assert nova.relatorio["fixas"][0]["n"] == 1
+
+
+def test_api_autodoc_token(cliente):
+    import gzip
+    import hashlib
+    import json
+    from app.db import SessionLocal
+    from app.models import Config
+    db = SessionLocal()
+    db.add(Config(chave="sync_token", valor=hashlib.sha256(b"tk").hexdigest()))
+    db.commit()
+    cab = {"Authorization": "Bearer tk", "Content-Encoding": "gzip", "Content-Type": "application/json"}
+    assert cliente.get("/api/autodoc/obras", headers={"Authorization": "Bearer x"}).status_code == 401
+    assert cliente.get("/api/autodoc/obras", headers={"Authorization": "Bearer tk"}).json()["ok"]
+    r = cliente.post("/api/autodoc/linhas", headers=cab, content=gzip.compress(json.dumps({"linhas": []}).encode()))
+    assert r.json()["sem_mudanca"]

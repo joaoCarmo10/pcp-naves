@@ -1,0 +1,30 @@
+PCP NAVES - SINCRONIZAÇÃO DO PC DA FÁBRICA (AUTODOC + PLANNIX)
+
+O que faz
+- De hora em hora (6h às 20h, segunda a sábado), escondido:
+  1. Autodoc: lê os desenhos só das obras ATIVAS no app e manda status e revisão (Aprovado, Bloqueado...).
+     O replanejamento já tira as peças com desenho bloqueado e as plantas mostram essas peças em roxo.
+  2. Plannix: manda o "all data" para o app (modo pasta: as exportações que você salvar na pasta configurada;
+     modo sql: lido direto do banco, quando a consulta estiver pronta).
+- Só envia quando algo mudou. Sem mudança, é uma chamada pequena a cada 6 h só para o app saber que o PC está vivo.
+  Isso mantém o custo do servidor (Railway) praticamente igual ao de hoje.
+
+Instalar (uma vez)
+1. Copie esta pasta para C:\PCP-Sync (ou outro lugar fixo).
+2. No app: Importar dados > Plannix automático > Gerar token. Copie o token.
+3. Dê dois cliques em instalar.bat. Ele instala o Python se faltar, abre o pcp_sync.ini para você preencher
+   (token, e-mail e senha do Autodoc), testa os acessos e cria a tarefa no Agendador do Windows.
+
+Uso
+- Rodar agora:      py -3 pcp_sync.py agora
+- Testar acessos:   py -3 pcp_sync.py testar
+- Último envio:     py -3 pcp_sync.py status
+- Log:              pcp_sync.log (fica nesta pasta; passa de 1 MB e vira .log.1)
+- Remover:          desinstalar.bat
+
+Observações
+- A tarefa roda enquanto o usuário estiver logado no PC (o PC pode ficar com a tela bloqueada).
+- A senha do Autodoc fica só no pcp_sync.ini deste PC e é usada só no primeiro acesso; depois o script renova
+  o acesso sozinho (.autodoc_sessao.json). Prefira um usuário do Autodoc só para isso.
+- Modo sql do Plannix: rode "py -3 pcp_sync.py descobrir", mande o plannix_esquema.txt gerado e eu monto a consulta.sql.
+- A leitura do Autodoc usa o mesmo serviço do site (não é integração oficial). Se o site mudar, o log avisa.

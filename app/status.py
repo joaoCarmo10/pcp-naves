@@ -26,6 +26,7 @@ class StatusPeca:
     total: int = 0
     fabricadas: int = 0
     programadas: int = 0
+    bloqueadas: int = 0
     volume: float = 0.0
     volume_fab: float = 0.0
     datas: list[date] = field(default_factory=list)
@@ -79,6 +80,8 @@ def status_de_unidades(un: dict[str, list[dict]]) -> dict[str, StatusPeca]:
             if u["st"] == "FAB":
                 s.fabricadas += 1
                 s.volume_fab += u["vol"]
+            elif u["st"] == "BLOQ":
+                s.bloqueadas += 1
             elif u["st"] == "PROG":
                 s.programadas += 1
                 if u["data"]:
@@ -128,7 +131,8 @@ def resumo(status: dict[str, StatusPeca], nomes: set[str] | None = None) -> dict
     p = sum(s.programadas for s in itens)
     v = sum(s.volume for s in itens)
     vf = sum(s.volume_fab for s in itens)
-    return dict(pecas=t, fabricadas=f, programadas=p, falta=t - f - p, volume=v, volume_fab=vf,
+    b = sum(getattr(s, "bloqueadas", 0) for s in itens)
+    return dict(pecas=t, fabricadas=f, programadas=p, falta=t - f - p - b, bloqueadas=b, volume=v, volume_fab=vf,
                 pct=(f / t if t else 0), pct_vol=(vf / v if v else 0))
 
 
@@ -144,7 +148,9 @@ def por_produto(status: dict[str, StatusPeca]) -> list[dict]:
 # ------------------------------------------------------------------ uma etiqueta = uma unidade (código do Plannix)
 
 CORES["SEM"] = ((0.62, 0.62, 0.62), "#9e9e9e")
-LEGENDA_UNID = [("FAB", "Fabricada"), ("PROG", "Programada"), ("FALTA", "Sem programação"), ("SEM", "Sem peça no Plannix")]
+CORES["BLOQ"] = ((0.44, 0.19, 0.63), "#7030a0")
+LEGENDA_UNID = [("FAB", "Fabricada"), ("PROG", "Programada"), ("FALTA", "Sem programação"), ("BLOQ", "Desenho bloqueado (Autodoc)"),
+                ("SEM", "Sem peça no Plannix")]
 
 
 def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str, list[dict]]:
@@ -155,18 +161,23 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
     vol_nome = {p.peca: p.volume for p in pecas if p.volume}
     from . import premissas as pm
     prs = [pr for pr in pm.ativas(db) if pr.tipo == "pendente"]
+    from . import autodoc
+    ad = autodoc.indice(db)
     out: dict[str, list[dict]] = defaultdict(list)
     for p in pecas:
         pend = bool(prs) and pm.pendente(prs, p)
+        x = autodoc.de(ad, p.obra_id, p.peca)
         if p.fabricada and not pend:
             st, d = "FAB", p.data_fabricacao
+        elif x and x.bloqueado:
+            st, d = "BLOQ", None        # desenho bloqueado no Autodoc: não pode estar programada
         elif p.codigo in prog:
             st, d = "PROG", prog[p.codigo]
         else:
             st, d = "FALTA", None
         out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome),
                             "produto": p.produto, "secao": p.secao, "pend": pend})
-    ordem = {"FAB": 0, "PROG": 1, "FALTA": 2}
+    ordem = {"FAB": 0, "PROG": 1, "FALTA": 2, "BLOQ": 3}
     for us in out.values():   # pendente (premissa) vem antes das outras não feitas: é peça nossa, não sai na área
         us.sort(key=lambda u: (ordem[u["st"]], 0 if u["pend"] else 1, u["data"] or date.max, u["cod"] or ""))
     if escopo:

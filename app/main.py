@@ -1,4 +1,5 @@
 import hashlib
+import json
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import hmac
@@ -300,6 +301,44 @@ async def autodoc_automatico(request: Request, db: Session = Depends(get_db)):
     if not autodoc.detectar(conteudo):
         return JSONResponse({"ok": False, "erro": "Não é um relatório de arquivos do Autodoc."}, status_code=422)
     return {"ok": True, **autodoc.importar(db, conteudo)}
+
+
+def _token_valido(request: Request, db: Session) -> bool:
+    tok = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    guardado = _cfg(db, "sync_token")
+    return bool(tok and guardado and hmac.compare_digest(hashlib.sha256(tok.encode()).hexdigest(), guardado))
+
+
+@app.get("/api/autodoc/obras")
+def api_autodoc_obras(request: Request, db: Session = Depends(get_db)):
+    """Para o script do PC da fábrica: siglas das obras ativas (só essas pastas do Autodoc são lidas)."""
+    if not _token_valido(request, db):
+        return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
+    return {"ok": True, "siglas": sorted(o.sigla for o in db.scalars(select(Obra).where(Obra.ativa.is_(True))) if o.sigla)}
+
+
+@app.post("/api/autodoc/linhas")
+async def api_autodoc_linhas(request: Request, db: Session = Depends(get_db)):
+    """Desenhos lidos do Autodoc pelo script do PC da fábrica (gzip + JSON {linhas, completo}). Só chega quando mudou."""
+    import gzip
+    if not _token_valido(request, db):
+        return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
+    corpo = await request.body()
+    if request.headers.get("content-encoding", "") == "gzip":
+        corpo = gzip.decompress(corpo)
+    dados = json.loads(corpo or b"{}")
+    linhas = dados.get("linhas") or []
+    agora = datetime.now(plannix.BAHIA).replace(tzinfo=None).isoformat(timespec="seconds")
+    _cfg_grava(db, "autodoc_ultima", agora)
+    if not linhas:
+        _cfg_grava(db, "autodoc_msg", "PC da fábrica: sem mudança no Autodoc.")
+        db.commit()
+        return {"ok": True, "sem_mudanca": True}
+    r = autodoc.importar_linhas(db, linhas, completo=False)
+    _cfg_grava(db, "autodoc_msg", f"PC da fábrica: {len(linhas)} arquivo(s) lidos; bloqueadas: {', '.join(r.get('bloqueadas', [])[:30])}"[:480])
+    _cfg_grava(db, "autodoc_erro", "")
+    db.commit()
+    return {"ok": True, **r}
 
 
 @app.post("/api/plannix")

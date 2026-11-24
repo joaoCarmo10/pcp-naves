@@ -141,7 +141,7 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
     pg.draw_rect(caixa, color=(0.75, 0.75, 0.75), width=0.6)
     y += 14
     por_linha = max(1, int((x1 - x0 - 16) // 200))
-    legenda = LEGENDA + [("SEM", "Sem peça no Plannix")]
+    legenda = LEGENDA + [("BLOQ", "Desenho bloqueado (Autodoc)"), ("SEM", "Sem peça no Plannix")]
     for k, (s, lab) in enumerate(legenda):
         xx, yy = x0 + 8 + (k % por_linha) * 200, y + (k // por_linha) * 14
         pg.draw_rect(pymupdf.Rect(xx, yy - 8, xx + 10, yy + 1), color=CORES[s][0], fill=CORES[s][0], fill_opacity=0.6)
