@@ -712,8 +712,9 @@ def _ocup_ctx(db: Session, rev: int | None, de: str | None, ate: str | None):
         return None, None
     datas = list(db.scalars(select(ItemProg.data).where(ItemProg.revisao_id == r.id)))
     ult = max(datas) if datas else r.fim
+    fim_plano = date.fromisoformat(r.relatorio["fim"]) if (r.relatorio or {}).get("fim") else (r.fim or ult)
     ini = _data(de) or max(min(date.today(), ult), r.inicio)
-    fim = _data(ate) or ult
+    fim = _data(ate) or min(ult, fim_plano)   # rascunho: o período planejado (sem os dias do remanejamento)
     return r, ocup.calcular(db, r, ini, max(fim, ini))
 
 
