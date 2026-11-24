@@ -381,10 +381,13 @@ function Ler-Tsv([byte[]]$b) {
 function Norm([string]$v) {
     $v = $v.Trim()
     if ($v -eq "-" -or $v -eq "N/A" -or $v -eq "nan") { return "" }
-    if ($v -match '^(\d{2}/\d{2}/\d{4})( (\d{2}:\d{2}))?') { if ($Matches[3]) { return $Matches[1] + " " + $Matches[3] }; return $Matches[1] }
+    if ($v -match '^(\d{2}/\d{2}/\d{4})( (\d{2}:\d{2}))?') { if ($Matches[3] -and $Matches[3] -ne "00:00") { return $Matches[1] + " " + $Matches[3] }; return $Matches[1] }
     $n = 0.0
     $t = $v; if ($t.Contains(",")) { $t = $t.Replace(".", "").Replace(",", ".") }
-    if ([double]::TryParse($t, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) { return [Math]::Round($n, 2).ToString([Globalization.CultureInfo]::InvariantCulture) }
+    if ([double]::TryParse($t, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$n)) {
+        if ($n -eq 0) { return "" }   # vazio e zero são a mesma coisa para o app
+        return [Math]::Round($n, 2, [MidpointRounding]::AwayFromZero).ToString([Globalization.CultureInfo]::InvariantCulture)
+    }
     return $v.ToUpper()
 }
 

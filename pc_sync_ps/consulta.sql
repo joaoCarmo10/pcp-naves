@@ -1,7 +1,8 @@
 -- PCP Naves: "all data" lido direto do banco do Plannix (PrecastControl), só leitura.
 -- Uma linha por peça física (código de controle), com os mesmos nomes de coluna da exportação do Plannix.
 -- {SIGLAS} é trocado pelo script pela lista das obras ativas no app (ex.: '8243','8249').
--- Versão 1 (24/11): montada pelo mapa do banco; conferir com "comparar.bat" antes de ligar o modo sql.
+-- Versão 2 (24/11): ajustada pela comparação com a exportação (volume do lançamento final, taxa protendida,
+-- data sem hora, traço só da fabricação, sem peças com status D).
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
@@ -23,11 +24,12 @@ cdo AS (
     SELECT c.CODIGOCONTROLE, MAX(c.DATAHORA) AS DATAHORA
     FROM FBCORTEDOBRA c JOIN obras ob ON ob.CODOBRA = c.CODOBRA GROUP BY c.CODIGOCONTROLE
 ),
-aco AS (            -- aço frouxo do projeto da peça (sem o aço protendido)
-    SELECT ap.CODPECA, SUM(ap.PESO) AS FROUXO
+aco AS (            -- aço do projeto da peça: frouxo e protendido separados
+    SELECT ap.CODPECA,
+           SUM(CASE WHEN ISNULL(a.PROTENDIDA, 'N') IN ('S', '1') THEN 0 ELSE ap.PESO END) AS FROUXO,
+           SUM(CASE WHEN ISNULL(a.PROTENDIDA, 'N') IN ('S', '1') THEN ap.PESO ELSE 0 END) AS PROTENDIDO
     FROM PJACOPECA ap JOIN obras ob ON ob.CODOBRA = ap.CODOBRA
     LEFT JOIN PJACO a ON a.CODACO = ap.CODACO
-    WHERE ISNULL(a.PROTENDIDA, 'N') NOT IN ('S', '1')
     GROUP BY ap.CODPECA
 )
 SELECT
@@ -40,11 +42,11 @@ SELECT
     g.GRUPOPRODUTO                                      AS [Produto],
     s.SECAO                                             AS [Seção],
     1                                                   AS [Qtde de Peças (Lanç. Final)],
-    pp.VOLUME                                           AS [Volume (m³) Total de Peças (Lanç. Final)],
-    f.DATA                                              AS [Data Fabricação],
+    COALESCE(pp.VOLUMELF, pp.VOLUME)                    AS [Volume (m³) Total de Peças (Lanç. Final)],
+    CONVERT(date, f.DATA)                               AS [Data Fabricação],
     f.VOLUMEREAL                                        AS [Vol. (m³) Real da Peça Fabricada],
     aco.FROUXO                                          AS [Peso Aço Frouxo(kg)],
-    it.TAXAPROTENDIDA                                   AS [Taxa Aço Protendido(kg/m³)],
+    CAST(ISNULL(aco.PROTENDIDO, 0) / NULLIF(COALESCE(pp.VOLUMELF, pp.VOLUME), 0) AS decimal(12, 2)) AS [Taxa Aço Protendido(kg/m³)],
     pp.COMPRIMENTO                                      AS [Comprimento (m)],
     t.NOMETRACO                                         AS [Traço Real],
     arm.DATAHORA                                        AS [Hora da Armação],
@@ -61,10 +63,11 @@ LEFT JOIN PGRUPOPRODUTO g ON g.CODGRUPOPRODUTO = gp.CODGRUPO
 LEFT JOIN PSECAO s        ON s.CODSECAO = gp.CODSECAO
 LEFT JOIN PITENSOBRASFINAL it ON it.CODITEM = pp.CODITEM
 LEFT JOIN fab f           ON f.CODIGOCONTROLE = rp.CODIGOCONTROLE AND f.n = 1
-LEFT JOIN PTRACO t        ON t.CODTRACO = COALESCE(f.CODTRACO, pp.CODTRACO)
+LEFT JOIN PTRACO t        ON t.CODTRACO = f.CODTRACO
 LEFT JOIN PJMODELOPROTENCAO mp ON mp.CODIGOMODELOPROTENCAO = pp.CODIGOMODELOPROTENCAO
 LEFT JOIN PSUBFORMAS sf   ON sf.CODSUBFORMA = f.CODSUBFORMA
 LEFT JOIN arm             ON arm.CODIGOCONTROLE = rp.CODIGOCONTROLE
 LEFT JOIN cdo             ON cdo.CODIGOCONTROLE = rp.CODIGOCONTROLE
 LEFT JOIN aco             ON aco.CODPECA = pp.CODPECA
+WHERE ISNULL(rp.STATUS, '') <> 'D'      -- D: peça desativada no projeto (não sai na exportação)
 ORDER BY ob.SIGLA, pp.NOMEPECA, rp.CODIGOCONTROLE;
