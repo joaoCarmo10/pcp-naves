@@ -1,0 +1,26 @@
+PCP NAVES - SINCRONIZAÇÃO DO PC DA FÁBRICA (AUTODOC + PLANNIX)
+Versão sem Python: usa só o PowerShell que já vem no Windows. Não instala nada.
+
+O que faz (de hora em hora, das 6h às 20h, segunda a sábado, sem abrir janela)
+1. Autodoc: lê os desenhos só das obras ATIVAS no app e manda status e revisão (Aprovado, Bloqueado...).
+   O replanejamento tira as peças com desenho bloqueado e as plantas mostram essas peças em roxo.
+2. Plannix: manda para o app as exportações "all_data" e "a_realizar" que você salvar em Downloads.
+Só envia quando algo mudou. Sem mudança, uma chamada pequena a cada 6 h avisa o app que o PC está vivo.
+
+Instalar (uma vez)
+1. Descompacte esta pasta em C:\PCP-Sync (ou outro lugar fixo).
+2. No app: Importar dados > Plannix automático > Gerar token. Copie o token.
+3. Dois cliques em instalar.bat: abre o pcp_sync.ini para você colar o token e o e-mail e a senha do Autodoc,
+   testa os acessos e cria a tarefa no Agendador do Windows.
+
+Uso
+- Rodar agora:  rodar_agora.bat
+- Log:          pcp_sync.log (nesta pasta)
+- Remover:      desinstalar.bat
+
+Observações
+- A tarefa roda enquanto seu usuário estiver logado no PC (a tela pode ficar bloqueada).
+- A senha do Autodoc fica só no pcp_sync.ini deste PC e é usada só no primeiro acesso; depois o script renova
+  o acesso sozinho. Prefira um usuário do Autodoc só para isso, sem verificação em duas etapas.
+- Se o teste disser que scripts estão bloqueados no PC (política da empresa), me avise: dá para contornar.
+- A leitura do Autodoc usa o mesmo serviço do site (não é integração oficial). Se o site mudar, o log avisa.
