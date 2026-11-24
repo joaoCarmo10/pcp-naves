@@ -927,3 +927,24 @@ def test_relatorio_ocupacao(cliente):
     assert "Ocupação das fôrmas por dia" in h and "100%" in h          # 8 + 0,2 + 7,8 = 16 m de 16 m
     x = cliente.get(f"/programacao/ocupacao.xlsx?rev={r.id}&de=2026-11-24&ate=2026-11-28")
     assert x.status_code == 200 and len(x.content) > 3000
+
+
+def test_premissa_data_fixa(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    db.scalar(select(Obra)).ativa = True
+    base = RevisaoProg(nome="b", inicio=date(2026, 11, 16), fim=date(2026, 11, 28))
+    db.add(base)
+    db.commit()
+    cliente.get("/planejar/premissas")
+    cliente.post("/planejar/premissas", data={"tipo": "fixar", "obra": "OBRA-TESTE", "pecas": "P2", "forma": "N1F5", "de": "2026-11-26"})
+    r = cliente.post("/planejar/replanejar", data={"rev": base.id, "inicio": "2026-11-24", "fim": "2026-11-28"}, follow_redirects=False)
+    db.expire_all()
+    nova = db.get(RevisaoProg, int(r.headers["location"].rsplit("/", 1)[1]))
+    p2 = [i for i in nova.itens if i.codigo == "1004"]
+    assert len(p2) == 1 and p2[0].data == date(2026, 11, 26) and p2[0].forma.startswith("N1 - F5") and "Data fixa" in p2[0].obs
+    assert nova.relatorio["fixas"][0]["n"] == 1

@@ -17,6 +17,7 @@ TIPOS = {
     "avulsa": "Peça avulsa (fora do Plannix)",
     "pendente": "Plannix diz fabricada, mas está pendente",
     "max_por_dia": "Máximo por fôrma por dia",
+    "fixar": "Data fixa (dia e fôrma)",
 }
 
 REGRAS_FIXAS = [

@@ -34,6 +34,7 @@ class Dem:
     fura: bool = False
     pend: bool = False             # Plannix diz fabricada, mas está pendente (premissa)
     garantida: date | None = None  # fura-fila com data: armação garantida pelo PCP a partir desse dia
+    reservada: bool = False        # premissa "data fixa": já tem dia e fôrma
     lims: list = field(default_factory=list)   # (id da premissa, máximo por fôrma por dia)
     desde: date | None = None      # premissa "só a partir de"
     feito: bool = False
@@ -231,6 +232,21 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
             return 0
         return capacidade(f, dia)
 
+    # premissa "data fixa": peças do Plannix com dia e fôrma definidos pelo PCP (passam por cima das outras regras)
+    fixas: dict[tuple, list[Dem]] = defaultdict(list)
+    fix_rel = []
+    for pr in prs:
+        if pr.tipo != "fixar" or not pr.de:
+            continue
+        f = por_cod.get(pr.forma)
+        cands = [d for d in ordem if not d.reservada and not d.feito and pm.casa(pr, d.p)] if f else []
+        if pr.limite:
+            cands = cands[:pr.limite]
+        for d in cands:
+            d.reservada = True
+            fixas[(pr.de, f.id)].append(d)
+        fix_rel.append(dict(obra=pr.obra, pecas=pr.pecas, forma=f.nome_completo if f else pr.forma, dia=pr.de.isoformat(),
+                            n=len(cands), obs="" if cands else ("fôrma não encontrada" if not f else "nenhuma peça pendente com esse nome")))
     ocup_forma: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
     # montagem de cada fôrma na programação base: a do dia (alinhamento) e a da véspera do início (continuidade)
     sec_base: dict[tuple, str] = {}
@@ -254,8 +270,34 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
                 est[f.id]["usado"] += (i.qtd or 1) if f.tipo == "unidade" else (i.comprimento or 0) + (FOLGA if est[f.id]["n"] else 0)
                 est[f.id]["n"] += i.qtd or 1
 
+        # peças com data fixa entram primeiro e definem a montagem da fôrma no dia
+        for f in formas:
+            for d in fixas.get((dia, f.id), []):
+                e = est.setdefault(f.id, {"cap": cap_dia(f, dia), "usado": 0.0, "n": 0, "arr": None, "sec": None, "lim": Counter()})
+                u = 1 if f.tipo == "unidade" else (d.p.comprimento or 0) + (FOLGA if e["n"] and f.tipo == "linear" and not _laje(d) else 0)
+                e["usado"] += u
+                e["n"] += 1
+                for pid, _ in d.lims:
+                    e["lim"][pid] += 1
+                if f.tipo != "pista" and not e["sec"]:
+                    e["sec"] = d.sec
+                d.feito, d.reservada = True, False
+                obs = ["Data fixa (PCP)"]
+                if d.pend:
+                    obs.append(f"pendente: Plannix aponta {d.p.data_fabricacao:%d/%m}")
+                if d.classe == 0:
+                    obs.append(f"atrasada (prog. {d.data0:%d/%m})")
+                if not d.armada and not _laje(d):
+                    obs.append("armar D-1")
+                p = d.p
+                nova.itens.append(ItemProg(data=dia, nave=f.nave, forma=f.nome_completo, obra=p.obra.nome, peca=p.peca,
+                                           codigo=p.codigo, produto=p.produto, secao=p.secao, comprimento=p.comprimento,
+                                           qtd=1, volume=p.volume, tipo=d.tipo0 or "FIXA", obs="; ".join(obs)[:300]))
+            if (dia, f.id) in fixas and f not in vig and est.get(f.id):
+                vig.append(f)
+
         def pode(d: Dem) -> bool:
-            if d.feito or (d.desde and dia < d.desde) or (so_compromisso and d.classe == 2 and not d.fura):
+            if d.feito or d.reservada or (d.desde and dia < d.desde) or (so_compromisso and d.classe == 2 and not d.fura):
                 return False
             if d.garantida and dia < d.garantida:
                 return False
@@ -264,7 +306,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         # seção do dia em cada fôrma de seção única: continua a de ontem se ainda tiver peça; senão a da 1ª da fila
         par = {a: b for x in MESMA_MONTAGEM for a, b in (x, x[::-1])}
         for f in vig:
-            if f.codigo in MISTAS and f.codigo not in par or f.tipo == "pista" or not fm.secoes(f):
+            if f.codigo in MISTAS and f.codigo not in par or f.tipo == "pista" or not fm.secoes(f) or est[f.id]["sec"]:
                 continue
             if f.codigo in par and est.get(next((g.id for g in vig if g.codigo == par[f.codigo]), -1), {}).get("sec"):
                 est[f.id]["sec"] = est[next(g.id for g in vig if g.codigo == par[f.codigo])]["sec"]
@@ -423,6 +465,7 @@ def replanejar(db: Session, base: RevisaoProg, inicio: date, fim: date, sabado: 
         sem_forma=[dict(obra=o, produto=pr, secao=s, motivo=m, n=n) for (o, pr, s, m), n in
                    sorted(sem_f.items(), key=lambda x: (-x[1], x[0]))],
         sobra=grupos(sobra),
+        fixas=fix_rel,
         pendencias=[dict(motivo=m, obra=p.obra.nome, peca=p.peca, codigo=p.codigo, produto=p.produto, secao=p.secao,
                          comp=p.comprimento, obs=o) for m, p, o in pend_lista],
         sobra_atrasadas=[dict(obra=d.p.obra.nome, peca=d.p.peca, codigo=d.p.codigo, data0=d.data0.isoformat(), forma0=d.forma0)
