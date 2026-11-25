@@ -42,6 +42,23 @@
         <p class="meta" style="margin:4px 0 0">O app lê os números dos eixos nos balões da planta. Fora da área fica cinza e não conta.</p>
       </details>
     </form>
+    {% if tipos %}
+    <form method="post" action="/plantas/{{ p.id }}/tipos" class="area-atuacao">
+      <span class="meta">Peças de mesmo nome em outra estrutura:</span>
+      {% set fora_n = tipos|rejectattr('dentro')|list|length %}
+      {% if fora_n %}<b>{{ fora_n }} tipo(s) fora desta folha</b>{% else %}<b class="difere">todos entram, confira</b>{% endif %}
+      <details{{ ' open' if not fora_n }}><summary class="meta">conferir</summary>
+        <p class="meta" style="margin:4px 0">O Plannix tem estes nomes em mais de um tipo (item do contrato, produto e seção). Deixe marcado só o que é desta folha: o resto não é pintado nem contado aqui.</p>
+        <table class="t"><thead><tr><th></th><th>Item</th><th>Produto</th><th>Seção</th><th>Compr. (m)</th><th class="n">Qtd</th><th>Peças</th></tr></thead><tbody>
+        {% for t in tipos %}<tr><td><input type="hidden" name="todos" value="{{ t.chave }}"><input type="checkbox" name="dentro" value="{{ t.chave }}" {{ 'checked' if t.dentro }} style="width:auto" aria-label="Tipo é desta folha"></td>
+          <td>{{ t.item or '-' }}</td><td>{{ t.produto }}</td><td>{{ t.secao }}</td>
+          <td>{% for c in t.comps[:3] %}{{ c|num(2) }}{{ ', ' if not loop.last }}{% endfor %}{{ '…' if t.comps|length > 3 }}</td>
+          <td class="n">{{ t.qtd }}</td><td>{{ t.pecas[:8]|join(', ') }}{{ '…' if t.pecas|length > 8 }}</td></tr>{% endfor %}
+        </tbody></table>
+        <button type="submit" style="margin-top:6px">Salvar</button>
+      </details>
+    </form>
+    {% endif %}
     <div class="linha" style="display:flex;gap:8px">
       <input type="search" id="busca" placeholder="Buscar peça" aria-label="Buscar peça" style="flex:1">
       <select id="filtro" aria-label="Filtrar por status"><option value="">Todos os status</option>{% for k, lab in LEGENDA %}<option value="{{ k }}">{{ lab }}</option>{% endfor %}</select>

@@ -755,6 +755,21 @@ def test_pilar_em_varias_folhas_repete_codigo():
     assert desenhadas(ao) == {"P1": 2}
 
 
+def test_tipo_de_outra_estrutura_nao_entra_na_folha():
+    """LE1 do Farol (item 1) e LE1 do Barracão (item 7) têm o mesmo nome: na folha do Farol só entra o item 1."""
+    from app.status import atribuir_obra, tipos_da_folha
+    u = lambda c, it, st: {"cod": c, "st": st, "data": None, "vol": 1.0, "item": it, "produto": "ESCADA", "secao": "VARIAVEL", "comp": 3.2}
+    un = {"LE1": [u("B1", "7", "FAB"), u("F1", "1", "FAB"), u("F2", "1", "FALTA")]}
+    mk = lambda x: {"t": "LE1", "r": [x, 0, x + 10, 5]}
+    ao = atribuir_obra([(1, [mk(0), mk(50), mk(100)])], un)
+    assert [m["cod"] for m in ao[1]] == ["B1", "F1", "F2"]                     # sem filtro mistura as estruturas
+    ts = tipos_da_folha(ao[1], un)
+    assert [(t["item"], t["qtd"], t["dentro"]) for t in ts] == [("1", 2, True), ("7", 1, True)]
+    ao = atribuir_obra([(1, [mk(0), mk(50), mk(100)])], un, {1: {"7|ESCADA|VARIAVEL"}})
+    assert [m["cod"] for m in ao[1]] == ["F1", "F2", None]                     # o do Barracão sai; etiqueta a mais fica cinza
+    assert not tipos_da_folha(ao[1], un, {"7|ESCADA|VARIAVEL"})[1]["dentro"]
+
+
 def test_fora_da_area_sai_do_avanco():
     from types import SimpleNamespace as NS
     from app.status import fora_da_area

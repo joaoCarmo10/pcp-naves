@@ -126,6 +126,7 @@ class Planta(Base):
     marcas: Mapped[list] = mapped_column(JSON, default=list)              # [{"peca": "VR13", "r": [x0,y0,x1,y1]}, ...]
     eixos: Mapped[list | None] = mapped_column(JSON, nullable=True)       # [[número, x], ...] lidos dos balões da planta
     area: Mapped[dict | None] = mapped_column(JSON, nullable=True)        # {"de": 1, "ate": 25, "x0": .., "x1": ..}: só isso é nosso
+    tipos_fora: Mapped[list | None] = mapped_column(JSON, nullable=True)  # tipos "item|produto|seção" de outra estrutura com o mesmo nome
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     obra: Mapped[Obra] = relationship(back_populates="plantas")
 

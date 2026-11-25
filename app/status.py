@@ -176,7 +176,8 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
         else:
             st, d = "FALTA", None
         out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome),
-                            "produto": p.produto, "secao": p.secao, "pend": pend})
+                            "produto": p.produto, "secao": p.secao, "pend": pend, "item": p.item or "",
+                            "comp": p.comprimento})
     ordem = {"FAB": 0, "PROG": 1, "FALTA": 2, "BLOQ": 3}
     for us in out.values():   # pendente (premissa) vem antes das outras não feitas: é peça nossa, não sai na área
         us.sort(key=lambda u: (ordem[u["st"]], 0 if u["pend"] else 1, u["data"] or date.max, u["cod"] or ""))
@@ -212,12 +213,21 @@ def atribuir(marcas: list, unidades: dict[str, list[dict]]) -> list[dict]:
     return out
 
 
-def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]]) -> dict[int, list[dict]]:
+def tipo(u: dict) -> str:
+    """Tipo da unidade no Plannix: item (linha do contrato) + produto + seção. Separa peças de mesmo nome que são de
+    estruturas diferentes da obra (ex.: LE1 do Farol x LE1 do Barracão)."""
+    return f"{u.get('item', '')}|{u.get('produto', '')}|{u.get('secao', '')}"
+
+
+def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]],
+                  fora: dict[int, set] | None = None) -> dict[int, list[dict]]:
     """Distribui as unidades pelas folhas da obra, por nome:
     - unidades diferentes em folhas diferentes (V1 no pav 1 e V1 no pav 2): a folha seguinte continua de onde a
       anterior parou, então nenhum código se repete;
     - a mesma peça desenhada em várias folhas (pilar que atravessa os pavimentos): a soma das etiquetas passa muito do
-      Plannix (>= 1,5x); aí cada folha mostra os MESMOS códigos, e a peça continua contando uma vez só na obra."""
+      Plannix (>= 1,5x); aí cada folha mostra os MESMOS códigos, e a peça continua contando uma vez só na obra.
+    fora[folha]: tipos (item|produto|seção) que não são da estrutura desenhada na folha; não entram nela."""
+    fora = fora or {}
     por_folha = {fid: defaultdict(list) for fid, _ in folhas}
     soma: dict[str, int] = defaultdict(int)
     for fid, marcas in folhas:
@@ -225,14 +235,45 @@ def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]
             por_folha[fid][m["t"]].append(m)
             soma[m["t"]] += 1
     repetida = {n for n, q in soma.items() if q >= 1.5 * max(1, len(unidades.get(n, [])))}
-    usadas: dict[str, int] = defaultdict(int)
+    usados: dict[str, set] = defaultdict(set)
     out: dict[int, list[dict]] = {}
     for fid, marcas in folhas:
-        resto = {n: unidades.get(n, []) if n in repetida else unidades.get(n, [])[usadas[n]:] for n in por_folha[fid]}
+        tf = fora.get(fid) or set()
+        resto = {}
+        for n in por_folha[fid]:
+            us = [u for u in unidades.get(n, []) if tipo(u) not in tf]
+            resto[n] = us if n in repetida else [u for u in us if u["cod"] not in usados[n]]
         out[fid] = atribuir(marcas, resto)
-        for n, ms in por_folha[fid].items():
-            usadas[n] += len(ms)
+        for m in out[fid]:
+            if m["st"] != "SEM":
+                usados[m["t"]].add(m["cod"])
     return out
+
+
+def tipos_da_folha(atribuidas: list[dict], unidades: dict[str, list[dict]], fora: set | None = None) -> list[dict]:
+    """Tipos do Plannix das peças desta folha cujo nome aparece em mais de um tipo (estruturas diferentes com o mesmo
+    nome). Cada um com as peças, quantidade e comprimentos, para o usuário marcar o que é desta folha."""
+    fora = fora or set()
+    nomes = {m["t"] for m in atribuidas}
+    g: dict[str, dict] = {}
+    for n in nomes:
+        us = unidades.get(n, [])
+        if len({tipo(u) for u in us}) < 2:
+            continue
+        for u in us:
+            k = tipo(u)
+            x = g.setdefault(k, {"chave": k, "item": u.get("item", ""), "produto": u.get("produto", ""),
+                                 "secao": u.get("secao", ""), "pecas": set(), "qtd": 0, "comps": set(), "dentro": k not in fora})
+            x["pecas"].add(n)
+            x["qtd"] += 1
+            if u.get("comp"):
+                x["comps"].add(round(u["comp"], 2))
+    out = []
+    for x in g.values():
+        x["pecas"] = sorted(x["pecas"], key=chave_natural)
+        x["comps"] = sorted(x["comps"])
+        out.append(x)
+    return sorted(out, key=lambda x: (x["produto"], chave_natural(x["item"]), x["secao"]))
 
 
 def desenhadas(atrib_obra: dict[int, list[dict]]) -> dict[str, int]:

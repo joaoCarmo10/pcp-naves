@@ -32,7 +32,7 @@ from . import acesso, armacao as arm, autodoc, cadastro as cad, formas as fm, pe
 from .db import DADOS_EFEMEROS, DATA_DIR, Base, SessionLocal, engine, get_db, migrar
 from .models import Apontamento, Auditoria, CadastroPeca, Config, DesenhoAutodoc, Divulgacao, Forma, Perfil, Usuario, Importacao, ItemProg, Obra, Peca, Planta, Premissa, RevisaoProg
 from .status import (CORES, LEGENDA, LEGENDA_UNID, atribuir_obra, chave_natural, desenhadas, por_produto, resumo,
-                     status_da_obra, status_folha, unidades_da_obra)
+                     status_da_obra, status_folha, tipos_da_folha, unidades_da_obra)
 
 BASE = Path(__file__).parent
 SENHA = os.getenv("APP_PASSWORD", "")
@@ -556,7 +556,8 @@ def _atrib_obra(db: Session, obra: Obra) -> dict[int, list[dict]]:
     fs = sorted(obra.plantas, key=lambda p: (chave_natural(p.titulo or ""), p.id))
     for p in fs:
         _garantir_marcas(db, p)
-    return atribuir_obra([(p.id, plantas.dentro(p.marcas, p.area)) for p in fs], unidades_da_obra(db, obra.id))
+    return atribuir_obra([(p.id, plantas.dentro(p.marcas, p.area)) for p in fs], unidades_da_obra(db, obra.id),
+                         {p.id: set(p.tipos_fora or []) for p in fs})
 
 
 @app.get("/obras/{obra_id}", response_class=HTMLResponse)
@@ -627,7 +628,23 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
     return tpl.TemplateResponse(request, "planta.html", {
         "p": p, "o": p.obra, "marcas": marcas, "w": round(p.largura * zoom), "h": round(p.altura * zoom), "linhas": [stf[k] for k in nomes],
         "r": resumo(stf), "base": ultima_base(db), "fora": fora, "flash": request.session.pop("flash", None),
-        "sem": sum(s.sem for s in stf.values()), "nao_desenhadas": sum(s.nao_desenhadas for s in stf.values()), "LEGENDA": LEGENDA_UNID})
+        "sem": sum(s.sem for s in stf.values()), "nao_desenhadas": sum(s.nao_desenhadas for s in stf.values()), "LEGENDA": LEGENDA_UNID,
+        "tipos": tipos_da_folha(atrib, unidades_da_obra(db, p.obra_id), set(p.tipos_fora or []))})
+
+
+@app.post("/plantas/{pid}/tipos")
+async def planta_tipos(request: Request, pid: int, db: Session = Depends(get_db)):
+    """Quais tipos do Plannix (item|produto|seção) são da estrutura desenhada nesta folha. Os desmarcados não entram."""
+    p = db.get(Planta, pid) or _404()
+    form = await request.form()
+    todos = set(form.getlist("todos"))
+    dentro = set(form.getlist("dentro"))
+    antes = set(p.tipos_fora or [])
+    p.tipos_fora = sorted((antes - todos) | (todos - dentro)) or None
+    db.commit()
+    n = len(todos - dentro)
+    _flash(request, f"Peças desta folha ajustadas: {n} tipo(s) de outra estrutura não entram mais." if n else "Peças desta folha: todos os tipos entram.")
+    return RedirectResponse(f"/plantas/{pid}", status_code=303)
 
 
 @app.post("/plantas/{pid}/area")

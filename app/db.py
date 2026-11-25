@@ -63,7 +63,7 @@ def migrar():
     if "plantas" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("plantas")}
         with engine.begin() as cx:
-            for col in ("eixos", "area"):
+            for col in ("eixos", "area", "tipos_fora"):
                 if col not in cols:
                     cx.execute(text(f"ALTER TABLE plantas ADD COLUMN {col} JSON"))
     if "desenhos_autodoc" in insp.get_table_names():
