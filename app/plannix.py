@@ -94,22 +94,36 @@ def _obra_da_etapa(db: Session, nome_plannix: str, etapa: str, principal: str, m
     velha = next((x for x in obras if not x.etapa), None)
     if velha and etapa == principal:
         velha.etapa = etapa
-        if multi and _sem_acento(etapa) not in _sem_acento(velha.nome):
-            velha.nome = f"{velha.nome} · {etapa.title()}"[:80]
         return velha
     base = velha or (obras[0] if obras else _obra(db, nome_plannix))
     if not base.etapa and base is not velha:
         base.etapa = principal
-    nome_base = base.nome
-    m = re.search(r"\(([^)]+)\)", nome_base)
-    if m and _sem_acento(base.etapa or principal) in _sem_acento(nome_base):
-        nome_base = m.group(1)                                   # "Farol (Hot Park)" -> "Hot Park"
-    nome = f"{etapa.title()} ({nome_base})" if m else f"{nome_base} · {etapa.title()}"
-    o = Obra(sigla=sigla, etapa=etapa, nome_plannix=nome_plannix.strip(), nome=nome[:80], ativa=base.ativa,
-             prioridade=base.prioridade)
+    o = Obra(sigla=sigla, etapa=etapa, nome_plannix=nome_plannix.strip(), nome=f"{etapa.title()} ({base.nome})"[:80],
+             ativa=base.ativa, prioridade=base.prioridade)
     db.add(o)
     db.flush()
     return o
+
+
+def nomes_das_etapas(db: Session) -> None:
+    """Sigla com várias etapas: cada obra se chama "Etapa (Obra)", ex.: "Barracão (Hot Park)". O nome que já cita a
+    própria etapa (ex.: "Farol (Hot Park)") fica como está."""
+    por: dict[str, list] = {}
+    for o in db.scalars(select(Obra).order_by(Obra.id)):
+        por.setdefault(o.sigla, []).append(o)
+    for os_ in por.values():
+        if len(os_) < 2:
+            continue
+        orig = os_[0].nome.split(" · ")[0]
+        m = re.search(r"\(([^)]+)\)\s*$", orig)
+        base = m.group(1) if m else orig
+        for o in os_:
+            if not o.etapa:
+                continue
+            if _sem_acento(o.etapa.split("-")[0].strip()) in _sem_acento(o.nome) and " · " not in o.nome and "((" not in o.nome \
+                    and not re.search(r"\([^)]*\([^)]*\)\)", o.nome):
+                continue
+            o.nome = f"{o.etapa.title()} ({base})"[:80]
 
 
 def _obra(db: Session, nome_plannix: str) -> Obra:
@@ -204,6 +218,12 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         elif tipo in ("a_realizar", "geral"):   # sem data no Plannix = pendente (o Plannix manda)
             p.fabricada, p.data_fabricacao, p.origem_fabricacao, p.data_baixa = False, None, None, None
         p.atualizada_em = datetime.now()
+    if tem_etapa:
+        nomes_das_etapas(db)
+        for o in db.scalars(select(Obra).where(Obra.id.not_in(list(obras_id) or [0]))):   # etapa nova já toda feita: fora do painel
+            ps = [p for p in existentes.values() if p.obra_id == o.id]
+            if ps and all(p.fabricada for p in ps):
+                o.ativa = False
     saiu_lista = removidas = 0
     if tipo == "geral":
         # retrato completo da obra: peça que sumiu do Plannix (desativada, trocada de código) sai do app

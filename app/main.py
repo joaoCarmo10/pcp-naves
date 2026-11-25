@@ -683,7 +683,22 @@ def planta_ver(request: Request, pid: int, db: Session = Depends(get_db)):
         "p": p, "o": p.obra, "marcas": marcas, "w": round(p.largura * zoom), "h": round(p.altura * zoom), "linhas": [stf[k] for k in nomes],
         "r": resumo(stf), "base": ultima_base(db), "fora": fora, "flash": request.session.pop("flash", None),
         "sem": sum(s.sem for s in stf.values()), "nao_desenhadas": sum(s.nao_desenhadas for s in stf.values()), "LEGENDA": LEGENDA_UNID,
-        "tipos": tipos_da_folha(atrib, unidades_da_obra(db, p.obra_id), set(p.tipos_fora or []))})
+        "tipos": tipos_da_folha(atrib, unidades_da_obra(db, p.obra_id), set(p.tipos_fora or [])),
+        "irmas": list(db.scalars(select(Obra).where(Obra.sigla == p.obra.sigla, Obra.id != p.obra_id).order_by(Obra.nome)))})
+
+
+@app.post("/plantas/{pid}/obra")
+def planta_mover(request: Request, pid: int, obra_id: int = Form(...), db: Session = Depends(get_db)):
+    """Planta de uma etapa do Plannix: passa para a obra (etapa) certa da mesma sigla."""
+    p = db.get(Planta, pid) or _404()
+    o = db.get(Obra, obra_id) or _404()
+    if o.sigla != p.obra.sigla:
+        _flash(request, "Erro: só dá para mover entre etapas da mesma obra do Plannix.")
+    else:
+        p.obra_id, p.tipos_fora = o.id, None
+        db.commit()
+        _flash(request, f"Planta passou para {o.nome}.")
+    return RedirectResponse(f"/plantas/{pid}", status_code=303)
 
 
 @app.post("/plantas/{pid}/tipos")
