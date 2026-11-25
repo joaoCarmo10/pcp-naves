@@ -1,5 +1,6 @@
 """Tabela do módulo Peças: um tipo por linha (obra + nome + etapa), dados do Plannix completados pela prancha.
 Usada pela tela e pela planilha baixada, para as duas mostrarem exatamente o mesmo."""
+import io
 import re
 from collections import Counter
 
@@ -269,3 +270,57 @@ def lista(db: Session, qp) -> dict:
            "fab": sum(t["fab"] for t in linhas), "com": sum(1 for t in linhas if t["c"]),
            "bloq": sum(1 for t in linhas if t["ad"] and t["ad"].bloqueado)}
     return {"linhas": linhas, "f": f, "opcoes": opcoes, "tot": tot}
+
+
+def pdf_lista(dados: dict, base: str = "") -> bytes:
+    """A tabela da lista enxuta, com os mesmos filtros da tela, em PDF A4 deitado (para mandar ou arquivar)."""
+    import html
+    from datetime import datetime
+    import pymupdf
+    f = dados["f"]
+    filtros = [f"Obra: {f['obra'] or 'todas'}", f"Tipo: {f['tipo'] or 'todos'}",
+               "Status: " + {"a_realizar": "a realizar", "realizado": "realizado"}.get(f["status"], "todos")]
+    if f["q"]:
+        filtros.append(f"Peça: {f['q']}")
+    e = lambda v: html.escape(str(v)) if v not in (None, "") else ""
+    num = lambda v, d: (f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")) if v else ""
+    linhas = []
+    for t in dados["linhas"]:
+        ad = t["ad"]
+        st_ad = f"{ad.status} R{ad.revisao}" if ad else "sem desenho"
+        cor = "#a4161a" if ad and ad.bloqueado else "#333"
+        formas = ", ".join(t["formas"]) if t["formas"] else "nenhuma"
+        linhas.append(f"<tr><td>{e(t['o'].nome)}</td><td><b>{e(t['nome'])}</b></td><td>{e(t['produto'])}</td>"
+                      f"<td class='n'>{t['fab']}/{t['n']}</td><td style='color:{cor}'>{e(st_ad)}</td><td>{e(t['secao'])}</td>"
+                      f"<td class='n'>{num(t['alt'], 0)}</td><td class='n'>{num(t['comp'], 2)}</td>"
+                      f"<td class='n'>{e(t['cabos'])}</td><td>{e(t['bitola'])}</td><td>{e(formas)}</td></tr>")
+    tot = dados["tot"]
+    corpo = f"""
+<h1>Peças</h1>
+<p class="meta">{' · '.join(e(x) for x in filtros)} · {tot['tipos']} tipos · realizado/planejado {tot['fab']}/{tot['n']} ·
+{tot['pend']} a realizar{(' · Base Plannix ' + e(base)) if base else ''} · emitido em {datetime.now():%d/%m/%Y %H:%M}</p>
+<table><thead><tr><th>Obra</th><th>Peça</th><th>Tipo</th><th>Real./plan.</th><th>Autodoc</th><th>Seção</th><th>Alt. (cm)</th>
+<th>Compr. (m)</th><th>Cabos</th><th>Bitola</th><th>Fôrmas onde cabe</th></tr></thead><tbody>{''.join(linhas)}</tbody></table>"""
+    css = """* {font-family: sans-serif;} h1 {font-size: 14pt; color: #1f3864; margin: 0 0 2pt 0;}
+.meta {font-size: 7.5pt; color: #555; margin: 0 0 6pt 0;}
+table {border-collapse: collapse; width: 100%;} th {background-color: #1f3864; color: #fff; font-size: 7pt; text-align: left; padding: 2pt 3pt;}
+td {font-size: 7pt; padding: 1.5pt 3pt; border-bottom: 0.5pt solid #ccc;} .n {text-align: right;}"""
+    story = pymupdf.Story(html=corpo, user_css=css)
+    buf = pymupdf.open()
+    w, h = pymupdf.paper_size("a4-l")
+    caixa = pymupdf.Rect(28, 28, w - 28, h - 34)
+    out = io.BytesIO()
+    escritor = pymupdf.DocumentWriter(out)
+    mais, pg = True, 0
+    while mais:
+        pg += 1
+        dev = escritor.begin_page(pymupdf.Rect(0, 0, w, h))
+        mais, _ = story.place(caixa)
+        story.draw(dev)
+        escritor.end_page()
+    escritor.close()
+    doc = pymupdf.open("pdf", out.getvalue())
+    for i, p in enumerate(doc):
+        p.insert_text((28, h - 16), f"PCP Naves · Peças · página {i + 1} de {len(doc)}", fontsize=7, color=(0.45, 0.45, 0.45))
+    buf.close()
+    return doc.tobytes(garbage=3, deflate=True)

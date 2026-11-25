@@ -15,7 +15,13 @@
     <option value="{{ v }}" {{ 'selected' if v == f.status }}>{{ n }}</option>{% endfor %}</select></label>
   <label for="q">Peça<input id="q" name="q" value="{{ f.q }}" placeholder="ex.: VS1-2" size="10"></label>
   <button type="submit" class="sec">Filtrar</button>
+  <span style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
+    <a class="botao-sec" href="/pecas/pdf?{{ request.query_params }}" target="_blank" rel="noopener">Exportar PDF</a>
+    <button type="button" class="sec" onclick="window.print()">Imprimir</button></span>
 </form>
+<p class="so-imprime meta">Filtros: obra {{ f.obra or 'todas' }} · tipo {{ f.tipo or 'todos' }} · status {{ {'a_realizar':'a realizar','realizado':'realizado'}.get(f.status, 'todos') }}{{ ' · peça ' ~ f.q if f.q }}{% if base %} · Base Plannix {{ base }}{% endif %}</p>
+<style>@media print{form.filtros{display:none!important}.sub a{display:none}@page{size:A4 landscape;margin:8mm}
+  table.compacta td,table.compacta th{font-size:9px}.rolagem-x{overflow:visible!important}thead{display:table-header-group}tr{break-inside:avoid}}</style>
 
 <div class="kpis">
   <div class="kpi"><b>{{ tot.tipos }}</b><span>tipos de peça</span></div>
@@ -31,7 +37,7 @@
     <th>Autodoc</th><th>Seção</th><th class="n" title="Altura da seção (h da laje, maior medida da viga)">Altura (cm)</th><th class="n">Compr. (m)</th>
     <th class="n" title="Cordoalhas, da prancha">Nº de cabos</th><th title="Cordoalha quando protendida; senão as bitolas do aço frouxo">Bitola</th>
     <th title="Fôrmas ativas que aceitam a seção, o produto e o comprimento">Fôrmas onde cabe</th><th>PDF</th></tr></thead>
-  <tbody>{% for t in linhas[:1500] %}{% set c = t.c %}{% set ad = t.ad %}
+  <tbody>{% for t in linhas[:3000] %}{% set c = t.c %}{% set ad = t.ad %}
     <tr>
       <td class="meta" style="white-space:nowrap">{{ t.o.nome }}</td>
       <td style="white-space:nowrap">{% if c %}<a href="/cadastro/{{ c.id }}"><b>{{ t.nome }}</b></a>{% else %}<b>{{ t.nome }}</b>{% endif %}</td>
@@ -49,7 +55,7 @@
         {% elif ad %}<span class="meta" title="O PC da fábrica baixa algumas pranchas por hora">na fila</span>{% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div>
-{% if linhas|length > 1500 %}<p class="meta">Mostrando 1500 de {{ linhas|length }} tipos. Use os filtros.</p>{% endif %}
+{% if linhas|length > 3000 %}<p class="meta">Mostrando 3000 de {{ linhas|length }} tipos. Use os filtros.</p>{% endif %}
 {% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
 <p class="meta" style="margin-top:8px">PDF, cabos e bitolas aparecem quando a prancha da peça já foi baixada do Autodoc e lida. O PC da fábrica baixa até 60 por hora (primeiro as das peças a realizar) até completar; revisão nova no Autodoc é baixada e lida de novo sozinha.</p>
 {% endblock %}

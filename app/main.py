@@ -1559,6 +1559,16 @@ def pecas_modulo(request: Request, db: Session = Depends(get_db)):
         "flash": request.session.pop("flash", None)})
 
 
+@app.get("/pecas/pdf")
+def pecas_pdf(request: Request, db: Session = Depends(get_db)):
+    """A lista de peças filtrada, em PDF."""
+    d = ptab.lista(db, request.query_params)
+    nome = "pecas" + (f"_{d['f']['obra']}" if d["f"]["obra"] else "") + f"_{date.today():%d-%m-%Y}.pdf"
+    nome = re.sub(r"[^\w.\-]+", "_", unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode())
+    return Response(ptab.pdf_lista(d, ultima_base(db)), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{nome}"'})
+
+
 @app.get("/pecas/planilha")
 def pecas_planilha(request: Request, db: Session = Depends(get_db)):
     d = ptab.montar(db, request.query_params)

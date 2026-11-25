@@ -1024,6 +1024,11 @@ def test_pranchas_pelo_pc_e_lista_de_pecas(cliente):
     r = cliente.get(f"/autodoc/desenho/{d.id}/pdf")
     assert r.status_code == 200 and r.content.startswith(b"%PDF") and "inline" in r.headers["content-disposition"]
     assert cliente.get("/pecas?status=realizado&q=PP1").status_code == 200
+    r = cliente.get(f"/pecas/pdf?obra={o.nome}&status=todos")
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+    import pymupdf
+    assert "PP1" in pymupdf.open("pdf", r.content)[0].get_text()
+    assert "Imprimir" in h and "/pecas/pdf?" in h
 
 
 def test_cada_etapa_do_plannix_vira_uma_obra(cliente):
