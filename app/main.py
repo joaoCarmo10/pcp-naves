@@ -1272,6 +1272,32 @@ def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str 
         "DIAS": ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"], "base": ultima_base(db)})
 
 
+@app.post("/planejar/setup")
+def planejar_setup(dados: dict = Body(...), db: Session = Depends(get_db)):
+    """Período de setup/ajuste/manutenção da fôrma: vira premissa 'parar fôrma' (o quadro bloqueia e o
+    replanejamento automático respeita)."""
+    f = db.get(Forma, int(dados["forma"])) or _404()
+    de, ate = _data(dados.get("de")), _data(dados.get("ate"))
+    if not de or not ate or ate < de:
+        return {"ok": False, "erro": "Informe o período (de e até)."}
+    motivo = (dados.get("motivo") or "Setup").strip()[:30]
+    obs = (dados.get("obs") or "").strip()[:200]
+    pr = Premissa(tipo="parar_forma", forma=f.codigo, de=de, ate=ate, ativa=True,
+                  obs=f"{motivo} da fôrma" + (f": {obs}" if obs else ""))
+    db.add(pr)
+    db.commit()
+    return {"ok": True, "id": pr.id}
+
+
+@app.post("/planejar/setup/remover")
+def planejar_setup_remover(dados: dict = Body(...), db: Session = Depends(get_db)):
+    pr = db.get(Premissa, int(dados["id"]))
+    if pr and pr.tipo == "parar_forma":
+        db.delete(pr)
+        db.commit()
+    return {"ok": True}
+
+
 @app.post("/planejar/mover")
 def planejar_mover(dados: dict = Body(...), db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, int(dados["rev"])) or _404()

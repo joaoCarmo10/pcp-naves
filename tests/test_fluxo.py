@@ -1147,3 +1147,12 @@ def test_quadro_de_planejamento(cliente):
     h = cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
     assert f'data-ids="{it.id}"' in h
     assert cliente.get(f"/planejar?visao=dia&rev={rev.id}").status_code == 200
+    j = cliente.post("/planejar/setup", json={"forma": f.id, "de": d0.isoformat(), "ate": d0.isoformat(), "motivo": "Setup", "obs": "troca de seção"}).json()
+    assert j["ok"]
+    h = cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
+    assert 'class="pq-setup"' in h and "Setup da fôrma: troca de seção" in h
+    p2 = SessionLocal().scalar(select(Peca).where(Peca.fabricada.is_(False), Peca.codigo != p.codigo))
+    j = cliente.post("/planejar/alocar", json={"rev": rev.id, "forma": f.id, "dia": d0.isoformat(), "codigos": [p2.codigo]}).json()
+    assert not j["ok"] and "parada" in j["problemas"][0]
+    cliente.post("/planejar/setup/remover", json={"id": j and SessionLocal().scalar(select(__import__("app.models", fromlist=["Premissa"]).Premissa).where(__import__("app.models", fromlist=["Premissa"]).Premissa.tipo == "parar_forma", __import__("app.models", fromlist=["Premissa"]).Premissa.forma == "N1-FT")).id})
+    assert 'class="pq-setup"' not in cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text

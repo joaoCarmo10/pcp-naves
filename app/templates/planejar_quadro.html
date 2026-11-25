@@ -58,9 +58,10 @@
       {% for n in q.naves %}{% if n.linhas %}
       <tbody><tr class="pq-nave"><th colspan="{{ dias|length + 1 }}">{{ n.nome }}</th></tr>
       {% for l in n.linhas %}<tr>
-        <th class="pq-f">{% if l.f %}<b>{{ l.f.nome }}</b><small>{{ l.f.secao or '' }}{{ (' · ' ~ l.f.comprimento|num(0) ~ ' m') if l.f.comprimento and l.f.tipo != 'unidade' else '' }}{{ (' · ' ~ l.f.capacidade|num(0) ~ ' pç/dia') if l.f.tipo == 'unidade' else '' }}</small>{% else %}<b>Sem fôrma no cadastro</b>{% endif %}</th>
+        <th class="pq-f">{% if l.f %}<button type="button" class="pq-setup-btn" data-forma="{{ l.f.id }}" data-nome="{{ l.f.nome }}" title="Programar setup, ajuste ou manutenção desta fôrma" aria-label="Setup ou ajuste da {{ l.f.nome }}">⚙</button><b>{{ l.f.nome }}</b><small>{{ l.f.secao or '' }}{{ (' · ' ~ l.f.comprimento|num(0) ~ ' m') if l.f.comprimento and l.f.tipo != 'unidade' else '' }}{{ (' · ' ~ l.f.capacidade|num(0) ~ ' pç/dia') if l.f.tipo == 'unidade' else '' }}</small>{% else %}<b>Sem fôrma no cadastro</b>{% endif %}</th>
         {% for c in l.cels %}{% set pct = (c.uso / c.cap) if c.cap else 0 %}
-        <td class="pq-c{{ ' off' if l.f and not c.cap }}{{ ' cheio' if c.cap and c.uso > c.cap + 0.001 }}{{ ' hoje' if c.d == hoje }}" {% if l.f %}data-forma="{{ l.f.id }}" data-dia="{{ c.d.isoformat() }}" data-nome="{{ l.f.nome }}"{% endif %}>
+        <td class="pq-c{{ ' off' if l.f and not c.cap and not c.parada }}{{ ' parada' if c.parada }}{{ ' cheio' if c.cap and c.uso > c.cap + 0.001 }}{{ ' hoje' if c.d == hoje }}" {% if l.f %}data-forma="{{ l.f.id }}" data-dia="{{ c.d.isoformat() }}" data-nome="{{ l.f.nome }}"{% endif %}>
+          {% if c.parada %}<div class="pq-setup" title="{{ c.parada.obs }} · {{ c.parada.de.strftime('%d/%m') if c.parada.de else '' }} a {{ c.parada.ate.strftime('%d/%m') if c.parada.ate else '' }}">{{ (c.parada.obs or 'Parada').split(' da fôrma')[0].split(':')[0] }}<button type="button" class="pq-sx" data-pr="{{ c.parada.id }}" aria-label="Remover período de {{ c.parada.obs }}">×</button></div>{% endif %}
           {% if l.f and c.cap %}<div class="pq-bar" title="{{ c.uso|num(1) }} de {{ c.cap|num(0) }} {{ l.un }}"><i style="width:{{ [pct * 100, 100]|min }}%"></i></div>{% endif %}
           {% for g in c.g %}<div class="pq-chip{{ ' feito' if g.fab >= g.qtd }}{{ ' forcado' if g.obs.startswith('Forçado') }}" draggable="true" data-ids="{{ g.ids|join(',') }}" title="{{ g.obra }} · {{ g.peca }} · {{ g.secao }}{{ (' · ' ~ g.comp|num(2) ~ ' m') if g.comp }}{{ ' · ' ~ g.fab ~ ' feita(s)' if g.fab }}{{ ' · ' ~ g.obs if g.obs }}">
             <span class="pq-o">{{ g.obra.split(' | ')[0][:10] }}</span><b>{{ g.peca }}</b>{% if g.qtd > 1 %}<span class="pq-q">×{{ g.qtd }}</span>{% endif %}
@@ -70,6 +71,18 @@
     </table>
   </div>
 </div>
+<dialog id="dlg-setup" class="pop"><form class="pop-corpo" id="f-setup" method="dialog">
+  <div class="pop-cab"><h2 style="margin:0">Parar fôrma <span id="s-nome"></span></h2><button type="button" class="sec" onclick="this.closest('dialog').close()">Fechar</button></div>
+  <p class="meta">A fôrma fica bloqueada no período: o quadro não aceita peça sem confirmação e o replanejamento automático pula esses dias.</p>
+  <div class="filtros">
+    <label>Motivo<select name="motivo"><option>Setup</option><option>Ajuste</option><option>Manutenção</option><option>Limpeza</option><option>Outro</option></select></label>
+    <label>De<input type="date" name="de" required></label>
+    <label>Até<input type="date" name="ate" required></label>
+    <label style="flex:1">Observação<input name="obs" placeholder="ex.: troca de seção para 40x70"></label>
+  </div>
+  <p id="s-erro" style="color:#a4161a;font-size:13px" hidden></p>
+  <button type="submit">Bloquear período</button>
+</form></dialog>
 <div id="pq-msg" class="pq-msg" role="status" aria-live="polite" hidden></div>
 
 <script>
@@ -127,6 +140,27 @@ const FALT = {{ falt|tojson }};
       arrasto = null;
     });
   });
+  const dlg = document.getElementById("dlg-setup"), fs = document.getElementById("f-setup");
+  document.addEventListener("click", e => {
+    const b = e.target.closest(".pq-setup-btn"); if (!b) return;
+    fs.dataset.forma = b.dataset.forma; document.getElementById("s-nome").textContent = b.dataset.nome;
+    fs.de.value = fs.ate.value = "{{ de.isoformat() }}"; document.getElementById("s-erro").hidden = true; dlg.showModal();
+  });
+  fs.addEventListener("submit", async e => {
+    e.preventDefault();
+    const er = document.getElementById("s-erro");
+    if (!fs.de.value || !fs.ate.value || fs.ate.value < fs.de.value) { er.textContent = "Informe o período: o fim não pode ser antes do início."; er.hidden = false; return; }
+    const r = await fetch("/planejar/setup", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({forma: +fs.dataset.forma, de: fs.de.value, ate: fs.ate.value, motivo: fs.motivo.value, obs: fs.obs.value})});
+    const j = await r.json().catch(() => ({ok: false}));
+    if (j.ok) recarrega(); else { er.textContent = j.erro || "Não deu para salvar."; er.hidden = false; }
+  });
+  document.addEventListener("click", async e => {
+    const b = e.target.closest(".pq-sx"); if (!b) return;
+    if (!confirm("Remover este período de parada inteiro (todos os dias dele)?")) return;
+    const r = await fetch("/planejar/setup/remover", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({id: +b.dataset.pr})});
+    if (r.ok) recarrega();
+  });
   document.addEventListener("click", async e => {
     const x = e.target.closest(".pq-x"); if (!x) return;
     const ch = x.closest(".pq-chip");
@@ -163,6 +197,10 @@ const FALT = {{ falt|tojson }};
 .pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
 .pq-o{color:#667;font-size:9.5px;max-width:42px;overflow:hidden;text-overflow:ellipsis}.pq-q{color:var(--azul);font-weight:700}
 .pq-x{margin-left:auto;border:none;background:none;color:#889;cursor:pointer;padding:0 2px;font-size:13px;line-height:1}.pq-x:hover{color:#a4161a}
+.pq-setup-btn{border:none;background:none;color:#778;cursor:pointer;padding:0 4px 0 0;font-size:13px;float:right}.pq-setup-btn:hover{color:var(--azul)}
+.pq-c.parada{background:repeating-linear-gradient(45deg,#fff7e0,#fff7e0 6px,#ffeeba 6px,#ffeeba 12px)}
+.pq-setup{display:flex;align-items:center;justify-content:space-between;background:#e0a100;color:#3b2a00;font-weight:700;border-radius:4px;padding:1px 5px;margin-bottom:2px;font-size:10.5px;text-transform:uppercase}
+.pq-sx{border:none;background:none;color:#3b2a00;cursor:pointer;padding:0 2px;font-size:13px}
 .pq-msg{position:fixed;bottom:16px;right:16px;background:#1f3864;color:#fff;padding:10px 14px;border-radius:8px;max-width:420px;z-index:50;font-size:13px}
 .pq-msg.ruim{background:#a4161a}
 @media (max-width:900px){.pq{flex-direction:column}.pq-lista{width:100%;position:static;max-height:300px}}

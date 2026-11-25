@@ -118,7 +118,7 @@ def alocar(db: Session, rev: RevisaoProg, f: Forma, d: date, codigos: list[str],
         return {"ok": False, "problemas": ["Essas peças já estão nesta revisão."], "pode_forcar": False}
     vig = [x for x in db.scalars(select(Forma)) if x.vigente(d)]
     por, _ = itens_por_forma(db, rev, d, vig)
-    probs = validar(f, d, pecas, uso(f, por.get(f.id, [])))
+    probs = aviso_parada(db, f, d) + validar(f, d, pecas, uso(f, por.get(f.id, [])))
     probs += conflito_protensao(db, f, pecas, por.get(f.id, []))
     probs += desenho_bloqueado(db, pecas)
     if probs and not forcar:
@@ -218,6 +218,8 @@ def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
             x["qtd"] += i.qtd
             x["fab"] += i.qtd if i.codigo in fab else 0
         return sorted(g.values(), key=lambda x: (x["obra"], chave_natural(x["peca"])))
+    from . import premissas as pm
+    paradas = [pr for pr in pm.ativas(db) if pr.tipo == "parar_forma"]
     naves = []
     for n, nome in fm.NAVES.items():
         linhas = []
@@ -225,8 +227,9 @@ def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
             cs = []
             for d in dias:
                 its = cel.get((f.id, d), [])
-                cap = capacidade(f, d)
-                cs.append({"d": d, "g": grupos(its), "uso": uso(f, its), "cap": cap})
+                pr = parada(paradas, f, d)
+                cap = 0 if pr else capacidade(f, d)
+                cs.append({"d": d, "g": grupos(its), "uso": uso(f, its), "cap": cap, "parada": pr})
             linhas.append({"f": f, "cels": cs, "un": "pç" if f.tipo == "unidade" else "m"})
         if any(sem.get((n, d)) for d in dias):
             linhas.append({"f": None, "un": "", "cels": [{"d": d, "g": grupos(sem.get((n, d), [])), "uso": 0, "cap": 0} for d in dias]})
@@ -234,6 +237,18 @@ def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
     tot = {d: sum(i.qtd for i in itens if i.data == d) for d in dias}
     vol = {d: sum((i.volume or 0) for i in itens if i.data == d) for d in dias}
     return {"naves": naves, "tot": tot, "vol": vol}
+
+
+def parada(paradas: list, f: Forma, d: date):
+    """Premissa 'parar fôrma' (setup, ajuste, manutenção) que vale para esta fôrma neste dia."""
+    from . import premissas as pm
+    return next((pr for pr in paradas if pm.forma_parada([pr], f.codigo, d)), None)
+
+
+def aviso_parada(db: Session, f: Forma, d: date) -> list[str]:
+    from . import premissas as pm
+    pr = parada([x for x in pm.ativas(db) if x.tipo == "parar_forma"], f, d)
+    return [f"{f.nome} parada em {d:%d/%m}: {pr.obs or 'parar fôrma'}."] if pr else []
 
 
 def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forcar: bool = False) -> dict:
@@ -245,7 +260,7 @@ def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forc
     vig = [x for x in db.scalars(select(Forma)) if x.vigente(d)]
     por, _ = itens_por_forma(db, rev, d, vig)
     ja = [i for i in por.get(f.id, []) if i.id not in ids]
-    probs = validar(f, d, pecas, uso(f, ja))
+    probs = aviso_parada(db, f, d) + validar(f, d, pecas, uso(f, ja))
     probs += conflito_protensao(db, f, pecas, ja)
     if probs and not forcar:
         return {"ok": False, "problemas": probs, "pode_forcar": True}
