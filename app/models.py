@@ -9,7 +9,8 @@ from .db import Base
 class Obra(Base):
     __tablename__ = "obras"
     id: Mapped[int] = mapped_column(primary_key=True)
-    sigla: Mapped[str] = mapped_column(String(10), unique=True)          # código Plannix, ex.: 8246
+    sigla: Mapped[str] = mapped_column(String(10), index=True)           # código Plannix, ex.: 8246
+    etapa: Mapped[str] = mapped_column(String(80), default="")            # etapa do Plannix: cada etapa é uma obra no app
     nome_plannix: Mapped[str] = mapped_column(String(200))
     nome: Mapped[str] = mapped_column(String(80))                         # nome curto, editável
     prioridade: Mapped[int | None] = mapped_column(Integer, nullable=True)

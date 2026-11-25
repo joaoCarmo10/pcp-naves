@@ -1022,3 +1022,29 @@ def test_pranchas_pelo_pc_e_lista_de_pecas(cliente):
     h = cliente.get(f"/pecas?obra={o.nome}&status=todos").text
     assert "PP1" in h and "Autodoc ↗" in h and "prancha</a>" in h and "Realizado / planejado" in h
     assert cliente.get("/pecas?status=realizado&q=PP1").status_code == 200
+
+
+def test_cada_etapa_do_plannix_vira_uma_obra(cliente):
+    """8243 Hot Park: etapas FAROL e BARRACÃO viram duas obras; a que já existia ('Farol (Hot Park)') fica com FAROL."""
+    from sqlalchemy import select
+    from app import plannix
+    from app.db import SessionLocal
+    from app.models import Obra, Peca
+    cab = "Peça\tCódigo\tNome Obra\tSigla Obra\tItem\tProduto\tSeção\tQtde de Peças (Lanç. Final)\tData Fabricação\tComprimento (m)\tEtapa\n"
+    lin = lambda n, c, et, d: f"{n}\t{c}\t8243-CILICON-Hot-Park\t8243\t1\tESCADA\tVARIAVEL\t1\t{d}\t3,2\t{et}\n"
+    tsv = cab + lin("LE1", "1", "FAROL", "10/11/2026") + lin("LE1", "2", "FAROL", "") + lin("LE1", "3", "BARRACÃO", "")
+    db = SessionLocal()
+    db.add(Obra(sigla="8243", nome_plannix="8243-CILICON-Hot-Park", nome="Farol (Hot Park)", prioridade=1))
+    db.commit()
+    plannix.importar_exportacao(db, tsv.encode("latin-1"), "auto.tsv")
+    obras = {o.nome: o for o in db.scalars(select(Obra).where(Obra.sigla == "8243"))}
+    assert set(obras) == {"Farol (Hot Park)", "Barracão (Hot Park)"}
+    assert obras["Farol (Hot Park)"].etapa == "FAROL" and obras["Barracão (Hot Park)"].prioridade == 1
+    p3 = db.scalar(select(Peca).where(Peca.codigo == "3"))
+    assert p3.obra_id == obras["Barracão (Hot Park)"].id
+    # arquivo sem a coluna Etapa (exportação manual) não desfaz a separação
+    plannix.importar_exportacao(db, (cab.replace("\tEtapa", "") + lin("LE1", "3", "", "").rsplit("\t", 1)[0] + "\n"
+                                     + lin("LE1", "1", "", "10/11/2026").rsplit("\t", 1)[0] + "\n"
+                                     + lin("LE1", "2", "", "").rsplit("\t", 1)[0] + "\n").encode("latin-1"), "manual.tsv")
+    db.expire_all()
+    assert db.get(Peca, p3.id).obra_id == obras["Barracão (Hot Park)"].id

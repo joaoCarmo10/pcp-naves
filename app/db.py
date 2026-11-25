@@ -53,6 +53,11 @@ def migrar():
     if "pecas" in insp.get_table_names() and "etapa" not in {c["name"] for c in insp.get_columns("pecas")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE pecas ADD COLUMN etapa VARCHAR(80) DEFAULT ''"))
+    if "obras" in insp.get_table_names() and "etapa" not in {c["name"] for c in insp.get_columns("obras")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE obras ADD COLUMN etapa VARCHAR(80) DEFAULT ''"))
+            if engine.dialect.name == "postgresql":   # a mesma sigla passa a ter uma obra por etapa
+                cx.execute(text("ALTER TABLE obras DROP CONSTRAINT IF EXISTS obras_sigla_key"))
     if "apontamentos" in insp.get_table_names() and "ocorrido" not in {c["name"] for c in insp.get_columns("apontamentos")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE apontamentos ADD COLUMN ocorrido VARCHAR(300) DEFAULT ''"))

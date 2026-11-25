@@ -11,6 +11,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import plannix
 from .models import DesenhoAutodoc, Obra
 
 COLUNAS = ("Código", "Revisão", "Título", "Status")
@@ -89,7 +90,29 @@ def importar(db: Session, conteudo: bytes) -> dict:
 
 def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> dict:
     """completo=True (robô, árvore inteira de obras ativas): desenho que não apareceu sai do app."""
-    obras = {o.sigla: o for o in db.scalars(select(Obra))}
+    por_sigla: dict[str, list] = {}
+    for o in db.scalars(select(Obra).order_by(Obra.id)):
+        por_sigla.setdefault(o.sigla, []).append(o)
+    nomes_obra: dict[int, set] = {}
+    if any(len(v) > 1 for v in por_sigla.values()):
+        from .models import Peca
+        for oid, n in db.execute(select(Peca.obra_id, Peca.peca)):
+            nomes_obra.setdefault(oid, set()).add(_canon(n))
+
+    def obra_do_desenho(sigla: str, d: dict):
+        """Obra com várias etapas (ex.: Hot Park: Farol e Barracão): a etapa citada na pasta/arquivo/título;
+        senão a única etapa que tem as peças do título; senão a principal."""
+        os_ = por_sigla.get(sigla) or []
+        if len(os_) <= 1:
+            return os_[0] if os_ else None
+        txt = plannix._sem_acento(" ".join(_txt(d.get(k)) for k in ("Pasta", "Código", "Título", "Projeto")))
+        citadas = sorted((o for o in os_ if o.etapa and plannix._sem_acento(o.etapa) in txt), key=lambda o: -len(o.etapa))
+        if citadas:
+            return citadas[0]
+        ps = {_canon(p) for p in pecas_do_titulo(_txt(d.get("Título")))}
+        com = [o for o in os_ if ps and ps <= nomes_obra.get(o.id, set())]
+        return com[0] if len(com) == 1 else os_[0]
+
     vistos: dict[tuple, set] = {}
     novos = atualizados = 0
     sem_obra = set()
@@ -97,7 +120,7 @@ def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> 
         projeto = _txt(d.get("Projeto"))
         codigo = _txt(d.get("Código"))[:160]
         m = re.match(r"\s*(\d{3,6})", projeto)
-        o = obras.get(m.group(1)) if m else None
+        o = obra_do_desenho(m.group(1), d) if m else None
         if not o:
             sem_obra.add(projeto)
         x = db.scalar(select(DesenhoAutodoc).where(DesenhoAutodoc.projeto == projeto, DesenhoAutodoc.codigo == codigo))

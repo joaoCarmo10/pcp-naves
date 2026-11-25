@@ -73,9 +73,48 @@ def data_da_baixa(agora: datetime | None = None) -> date:
     return d
 
 
+def _sem_acento(s: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().upper()
+
+
+def _sigla(nome_plannix: str) -> str:
+    return nome_plannix.strip().split("-")[0].strip()[:10]
+
+
+def _obra_da_etapa(db: Session, nome_plannix: str, etapa: str, principal: str, multi: bool = True) -> Obra:
+    """Cada etapa do Plannix é uma obra no app (ex.: 8243 Hot Park: Farol e Barracão). A obra que já existia (sem
+    etapa) fica com a etapa principal (a que o nome dela cita, senão a de mais peças); as outras viram obras novas com
+    a mesma prioridade e situação."""
+    sigla = _sigla(nome_plannix)
+    obras = list(db.scalars(select(Obra).where(Obra.sigla == sigla).order_by(Obra.id)))
+    o = next((x for x in obras if x.etapa == etapa), None)
+    if o:
+        return o
+    velha = next((x for x in obras if not x.etapa), None)
+    if velha and etapa == principal:
+        velha.etapa = etapa
+        if multi and _sem_acento(etapa) not in _sem_acento(velha.nome):
+            velha.nome = f"{velha.nome} · {etapa.title()}"[:80]
+        return velha
+    base = velha or (obras[0] if obras else _obra(db, nome_plannix))
+    if not base.etapa and base is not velha:
+        base.etapa = principal
+    nome_base = base.nome
+    m = re.search(r"\(([^)]+)\)", nome_base)
+    if m and _sem_acento(base.etapa or principal) in _sem_acento(nome_base):
+        nome_base = m.group(1)                                   # "Farol (Hot Park)" -> "Hot Park"
+    nome = f"{etapa.title()} ({nome_base})" if m else f"{nome_base} · {etapa.title()}"
+    o = Obra(sigla=sigla, etapa=etapa, nome_plannix=nome_plannix.strip(), nome=nome[:80], ativa=base.ativa,
+             prioridade=base.prioridade)
+    db.add(o)
+    db.flush()
+    return o
+
+
 def _obra(db: Session, nome_plannix: str) -> Obra:
-    sigla = nome_plannix.strip().split("-")[0].strip()[:10]
-    obra = db.scalar(select(Obra).where(Obra.sigla == sigla))
+    sigla = _sigla(nome_plannix)
+    obra = db.scalar(select(Obra).where(Obra.sigla == sigla).order_by(Obra.id))
     if not obra:
         nome = NOMES_CURTOS.get(sigla) or nome_plannix.split("-", 1)[-1].strip()[:80]
         obra = Obra(sigla=sigla, nome_plannix=nome_plannix.strip(), nome=nome, ativa=sigla in NOMES_CURTOS)
@@ -99,16 +138,40 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
     codigos = set()
     novas = atualizadas = 0
     existentes = {p.codigo: p for p in db.scalars(select(Peca))}
-    cache_obras: dict[str, Obra] = {}
+    cache_obras: dict[tuple, Obra] = {}
+    tem_etapa = "Etapa" in df.columns
+    principal: dict[str, str] = {}
+    multi: dict[str, bool] = {}
+    if tem_etapa:   # etapa principal de cada sigla: a que o nome da obra cita, senão a de mais peças
+        from collections import Counter
+        cont: dict[str, Counter] = {}
+        for no, et in zip(df["Nome Obra"].astype(str), df["Etapa"].map(lambda v: (_texto(v) or "").upper())):
+            cont.setdefault(_sigla(no), Counter())[et] += 1
+        for sg, c in cont.items():
+            o0 = db.scalar(select(Obra).where(Obra.sigla == sg, Obra.etapa == "").order_by(Obra.id))
+            citada = [e for e in c if e and o0 and _sem_acento(e) in _sem_acento(o0.nome)]
+            principal[sg] = citada[0] if citada else c.most_common(1)[0][0]
+            multi[sg] = len([e for e in c if e]) > 1
+    obras_id = {o.id: o for o in db.scalars(select(Obra))}
     for r in df.to_dict("records"):
         codigo = str(r["Código"]).strip()
         if not codigo:
             continue
         nome_obra = str(r["Nome Obra"])
-        obra = cache_obras.get(nome_obra) or cache_obras.setdefault(nome_obra, _obra(db, nome_obra))
+        p = existentes.get(codigo)
+        if tem_etapa:
+            et = (_texto(r.get("Etapa")) or "").upper()
+            k = (nome_obra, et)
+            if k not in cache_obras:
+                cache_obras[k] = _obra_da_etapa(db, nome_obra, et, principal.get(_sigla(nome_obra), et), multi.get(_sigla(nome_obra), False)) if et else _obra(db, nome_obra)
+            obra = cache_obras[k]
+        else:   # arquivo sem etapa: a peça fica na obra (etapa) em que já está
+            obra = cache_obras.get((nome_obra, None)) or cache_obras.setdefault((nome_obra, None), _obra(db, nome_obra))
+            atual = obras_id.get(p.obra_id) if p else None
+            if atual and atual.sigla == obra.sigla:
+                obra = atual
         obras_no_arquivo[obra.id] = obra
         codigos.add(codigo)
-        p = existentes.get(codigo)
         if not p:
             p = Peca(obra_id=obra.id, codigo=codigo)
             db.add(p)

@@ -325,7 +325,7 @@ def api_autodoc_obras(request: Request, db: Session = Depends(get_db)):
     """Para o script do PC da fábrica: siglas das obras ativas (só essas pastas do Autodoc são lidas)."""
     if not _token_valido(request, db):
         return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
-    return {"ok": True, "siglas": sorted(o.sigla for o in db.scalars(select(Obra).where(Obra.ativa.is_(True))) if o.sigla)}
+    return {"ok": True, "siglas": sorted({o.sigla for o in db.scalars(select(Obra).where(Obra.ativa.is_(True))) if o.sigla})}
 
 
 @app.post("/api/autodoc/linhas")
