@@ -134,6 +134,8 @@ def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> 
     novos = atualizados = 0
     sem_obra = set()
     for d in linhas:
+        if _txt(d.get("Extensão")).lower() not in ("pdf", ""):
+            continue   # só PDF no banco (DWG e outros não servem para o app e ocupam espaço)
         projeto = _txt(d.get("Projeto"))
         codigo = _txt(d.get("Código"))[:160]
         m = re.match(r"\s*(\d{3,6})", projeto)
@@ -237,6 +239,66 @@ def pranchas_para_baixar(db: Session, linhas: list[dict], todas: bool = False) -
                     "projeto": x.projeto, "data": x.data or datetime.min, "pend": tem_pend})
     out.sort(key=lambda d: (d["pend"], d["data"]), reverse=True)   # pendentes primeiro, as mais recentes primeiro
     return out
+
+
+def limpar_arquivos(db: Session) -> dict:
+    """Economia de espaço no servidor: só PDF no banco e só guarda o arquivo de peças com unidade a fabricar.
+    Apaga do disco o PDF de desenho cujas peças já estão 100% fabricadas (ou obsoleto / obra fora do app), e o
+    cadastro lido continua (fica só sem o arquivo). Desenhos não PDF saem do banco. Arquivos soltos também saem."""
+    from .db import DATA_DIR
+    from .models import CadastroPeca, Peca
+    sig = {o.id: o.sigla for o in db.scalars(select(Obra))}
+    ativas = {o.id for o in db.scalars(select(Obra).where(Obra.ativa.is_(True)))}
+    pend_o, pend_s = set(), set()
+    for oid, nome in db.execute(select(Peca.obra_id, Peca.peca).where(Peca.fabricada.is_(False))):
+        if oid in ativas:
+            pend_o.add((oid, _canon(nome)))
+            pend_s.add((sig.get(oid), _canon(nome)))
+    n_ext = 0
+    for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.extensao != "pdf", DesenhoAutodoc.extensao != "")):
+        db.delete(x)
+        n_ext += 1
+    apagar: set[str] = set()
+    manter: set[str] = set()
+    for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.arquivo != "")):
+        vivo = (not x.obsoleto and x.obra_id in ativas and
+                any((x.obra_id, _canon(p)) in pend_o or (sig.get(x.obra_id), _canon(p)) in pend_s for p in (x.pecas or [])))
+        if vivo:
+            manter.add(x.arquivo)
+        else:
+            apagar.add(x.arquivo)
+            x.arquivo = ""
+    for c in db.scalars(select(CadastroPeca).where(CadastroPeca.arquivo != "")):
+        if c.arquivo in manter:
+            continue
+        vivo = c.obra_id in ativas and ((c.obra_id, _canon(c.peca)) in pend_o or (sig.get(c.obra_id), _canon(c.peca)) in pend_s)
+        if vivo:
+            manter.add(c.arquivo)
+        else:
+            apagar.add(c.arquivo)
+            c.arquivo = ""
+    db.commit()
+    livres = 0
+    for rel in apagar - manter:
+        p = DATA_DIR / rel
+        if p.exists():
+            livres += p.stat().st_size
+            p.unlink()
+    for pasta in ("autodoc", "pranchas"):   # arquivos que nenhum registro usa
+        raiz = DATA_DIR / pasta
+        if raiz.exists():
+            for p in raiz.rglob("*.pdf"):
+                if str(p.relative_to(DATA_DIR)) not in manter:
+                    livres += p.stat().st_size
+                    p.unlink()
+    imp = DATA_DIR / "importacoes"   # cópias de arquivos importados: só os últimos 15 dias
+    if imp.exists():
+        limite = datetime.now().timestamp() - 15 * 86400
+        for p in imp.iterdir():
+            if p.is_file() and p.name != "plannix_automatico_ultimo.tsv" and p.stat().st_mtime < limite:
+                livres += p.stat().st_size
+                p.unlink()
+    return {"nao_pdf": n_ext, "mb_liberados": round(livres / 1e6, 1), "pdfs_mantidos": len(manter)}
 
 
 def marcar_baixada(db: Session, desenho_id: int, h: str) -> None:

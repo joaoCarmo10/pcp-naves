@@ -395,7 +395,8 @@ def api_autodoc_pranchas(request: Request, n: int = 30, db: Session = Depends(ge
     com revisão nova. Peças com unidades a fabricar primeiro. O PC baixa e manda uma a uma em /api/autodoc/prancha."""
     if not _token_valido(request, db):
         return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
-    fila = autodoc.pranchas_para_baixar(db, [], todas=True)
+    autodoc.limpar_arquivos(db)   # de hora em hora, junto com a fila: o disco do servidor só guarda o que vai ser fabricado
+    fila = autodoc.pranchas_para_baixar(db, [], todas=False)
     return {"faltam": len(fila), "pranchas": [{"id": d["id"], "projeto": d["projeto"], "codigo": d["codigo"], "hash": d["hash"]}
                                               for d in fila[:150]]}   # o PC baixa até acabar a lista ou dar 10 min
 
@@ -445,6 +446,12 @@ async def api_autodoc_prancha(request: Request, id: int, hash: str, db: Session 
     autodoc.marcar_baixada(db, x.id, hash)
     db.commit()
     return {"ok": True, "msgs": st["msgs"][-3:]}
+
+
+@app.post("/importar/limpar-arquivos")
+def importar_limpar(request: Request, db: Session = Depends(get_db)):
+    r = autodoc.limpar_arquivos(db)
+    return JSONResponse({"ok": True, **r})
 
 
 @app.post("/importar/reprocessar")

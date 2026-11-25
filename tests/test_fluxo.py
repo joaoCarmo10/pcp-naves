@@ -1169,3 +1169,30 @@ def test_quadro_de_planejamento(cliente):
     r = cliente.get(f"/planejar/exportar?rev={rev.id}&de={d0.isoformat()}")
     assert r.status_code == 200 and r.content[:2] == b"PK"
     assert 'class="pq-setup"' not in cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
+
+
+def test_limpeza_de_arquivos(cliente):
+    """Só PDF no banco; arquivo de desenho de peça 100% fabricada sai do disco; fila só com peças a fabricar."""
+    import hashlib
+    from sqlalchemy import select
+    from app.db import DATA_DIR, SessionLocal
+    from app.models import Config, DesenhoAutodoc, Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    db.add(Peca(obra_id=o.id, codigo="8001", peca="PX1", produto="PILAR", secao="30X30", fabricada=True))
+    db.add(Peca(obra_id=o.id, codigo="8002", peca="PX2", produto="PILAR", secao="30X30"))
+    (DATA_DIR / "autodoc").mkdir(parents=True, exist_ok=True)
+    (DATA_DIR / "autodoc" / "a.pdf").write_bytes(b"%PDF-1")
+    (DATA_DIR / "autodoc" / "b.pdf").write_bytes(b"%PDF-1")
+    db.add_all([DesenhoAutodoc(projeto="P", obra_id=o.id, codigo="X-PX1.pdf", extensao="pdf", pecas=["PX1"], hash="h", arquivo="autodoc/a.pdf"),
+                DesenhoAutodoc(projeto="P", obra_id=o.id, codigo="X-PX2.pdf", extensao="pdf", pecas=["PX2"], hash="h", arquivo="autodoc/b.pdf"),
+                DesenhoAutodoc(projeto="P", obra_id=o.id, codigo="X-PX2.dwg", extensao="dwg", pecas=["PX2"], hash="h"),
+                Config(chave="sync_token", valor=hashlib.sha256(b"tk").hexdigest())])
+    db.commit()
+    r = cliente.post("/importar/limpar-arquivos").json()
+    assert r["nao_pdf"] == 1
+    assert not (DATA_DIR / "autodoc" / "a.pdf").exists() and (DATA_DIR / "autodoc" / "b.pdf").exists()
+    fila = cliente.get("/api/autodoc/pranchas", headers={"Authorization": "Bearer tk"}).json()
+    assert all("PX1" not in p["codigo"] for p in fila["pranchas"])
