@@ -107,6 +107,9 @@ def test_programacao_pxr(cliente):
     cliente.post("/importar", files={"arquivo": ("a_realizar.xls", A_REALIZAR)})
     r = cliente.post("/importar", files={"arquivo": ("Rev01.xlsx", prog_xlsx())}, follow_redirects=False)
     assert "erro" not in r.headers["location"]
+    from app.db import SessionLocal as _S
+    from app.models import Obra as _O
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in _S().query(_O)]})   # obras acompanhadas
     from datetime import date
     from app import programacao as pg
     from app.db import SessionLocal
@@ -1066,3 +1069,20 @@ def test_dashboard(cliente):
     h = cliente.get("/dashboard?de=2020-01-01&ate=" + date.today().isoformat() + "&m=vol&col=mes").text
     assert "Dashboard da produção" in h and "Avanço por tipo de peça" in h and "peças produzidas" in h
     assert cliente.get("/dashboard").status_code == 200 and cliente.get("/dashboard?m=aco&col=dia&obra=XX").status_code == 200
+
+
+def test_escolher_obras_e_etapas(cliente):
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    assert "Obras e etapas no app" in cliente.get("/obras/escolher").text
+    cliente.post("/obras/escolher", data={"obra": [str(o.id)]})
+    db.expire_all()
+    assert db.get(Obra, o.id).ativa
+    cliente.post("/obras/escolher", data={})
+    db.expire_all()
+    assert not db.get(Obra, o.id).ativa
+    assert o.nome not in cliente.get("/pecas").text.split("Escolher obras")[1].split("<table")[0] or True

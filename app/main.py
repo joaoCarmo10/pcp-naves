@@ -158,6 +158,42 @@ def sair(request: Request):
     return RedirectResponse("/login", status_code=303)
 
 
+def _ocultas(db: Session) -> set[str]:
+    """Nomes das obras/etapas desmarcadas em "Escolher obras e etapas": somem de todos os módulos."""
+    return {o.nome for o in db.scalars(select(Obra).where(Obra.ativa.is_(False)))}
+
+
+@app.get("/obras/escolher", response_class=HTMLResponse)
+def obras_escolher(request: Request, db: Session = Depends(get_db)):
+    """Quais obras e etapas aparecem no app (painel, peças, dashboard, planejamento, realizado, PxR e sincronismo)."""
+    from sqlalchemy import case, func
+    cont = {oid: (n, f) for oid, n, f in db.execute(
+        select(Peca.obra_id, func.count(), func.sum(case((Peca.fabricada.is_(True), 1), else_=0))).group_by(Peca.obra_id))}
+    grupos: dict = {}
+    for o in db.scalars(select(Obra).order_by(Obra.nome)):
+        n, fb = cont.get(o.id, (0, 0))
+        base = o.nome.split(" | ")[0]
+        grupos.setdefault((o.sigla, base), []).append({"o": o, "n": n, "fab": fb or 0, "falta": n - (fb or 0)})
+    gs = sorted(({"sigla": k[0], "nome": k[1], "etapas": v, "falta": sum(e["falta"] for e in v),
+                  "ativas": sum(1 for e in v if e["o"].ativa)} for k, v in grupos.items()),
+                key=lambda g: (-g["ativas"], -g["falta"], g["nome"]))
+    return tpl.TemplateResponse(request, "obras_escolher.html", {"grupos": gs, "base": ultima_base(db)})
+
+
+@app.post("/obras/escolher")
+async def obras_escolher_salvar(request: Request, db: Session = Depends(get_db)):
+    form = await request.form()
+    marcadas = {int(x) for x in form.getlist("obra")}
+    n = 0
+    for o in db.scalars(select(Obra)):
+        if o.ativa != (o.id in marcadas):
+            o.ativa = o.id in marcadas
+            n += 1
+    db.commit()
+    _flash(request, f"Obras e etapas salvas: {len(marcadas)} aparecem no app ({n} mudança(s)).")
+    return RedirectResponse("/obras/escolher", status_code=303)
+
+
 @app.get("/", response_class=HTMLResponse)
 def painel(request: Request, db: Session = Depends(get_db)):
     todas = db.scalars(select(Obra).order_by(Obra.prioridade.is_(None), Obra.prioridade, Obra.nome)).all()
@@ -360,7 +396,7 @@ def api_autodoc_pranchas(request: Request, n: int = 30, db: Session = Depends(ge
         return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
     fila = autodoc.pranchas_para_baixar(db, [], todas=True)
     return {"faltam": len(fila), "pranchas": [{"id": d["id"], "projeto": d["projeto"], "codigo": d["codigo"], "hash": d["hash"]}
-                                              for d in fila[:60]]}   # 60 por rodada (o PC para em 10 min)
+                                              for d in fila[:150]]}   # o PC baixa até acabar a lista ou dar 10 min
 
 
 @app.get("/autodoc/desenho/{did}/pdf")
@@ -837,7 +873,8 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
                 and (not f["produto"] or i.produto == f["produto"])
                 and (not busca or busca in (i.peca or "").upper() or busca in (i.codigo or "")))
 
-    todas = pg.linhas(db, r, d, d)
+    oc = _ocultas(db)
+    todas = [l for l in pg.linhas(db, r, d, d) if l.item.obra not in oc]
     opcoes = {"obra": sorted({l.item.obra for l in todas if l.item.obra}), "nave": sorted({l.item.nave for l in todas if l.item.nave}),
               "produto": sorted({l.item.produto for l in todas if l.item.produto})}
     ls = [l for l in todas if passa(l)]
@@ -848,7 +885,7 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
     f["situacao"] = situacao if sit else ""
     if sit:
         ls = [l for l in ls if sit(l.status)]
-    acum = pg.totais([l for l in pg.linhas(db, r, r.inicio, d) if passa(l)])
+    acum = pg.totais([l for l in pg.linhas(db, r, r.inicio, d) if passa(l) and l.item.obra not in oc])
     seg = d - timedelta(days=d.weekday())
     semana = [seg + timedelta(days=k) for k in range(6)]
     i = dias.index(d)
@@ -857,7 +894,7 @@ def programacao_dia(request: Request, rev: int | None = None, dia: str | None = 
     prog_rev = {it.codigo: it for it in r.itens if it.codigo}
     fora = []
     for p in db.scalars(select(Peca).where(Peca.data_fabricacao == d).order_by(Peca.peca)):
-        if p.codigo in usados:
+        if p.codigo in usados or p.obra.nome in oc:
             continue
         it = prog_rev.get(p.codigo)
         fora.append({"p": p, "obra": p.obra.nome, "prog": it.data if it else None, "forma": it.forma if it else ""})
@@ -926,13 +963,14 @@ def _pxr_ctx(request: Request, db: Session) -> dict | None:
     if not r:
         return None
     ini, fim = per["ini"], per["fim"]
-    todas = pg.linhas(db, r, ini, fim)
+    oc = _ocultas(db)
+    todas = [l for l in pg.linhas(db, r, ini, fim) if l.item.obra not in oc]
     f = {k: qp.get(k, "") for k in ("obra", "nave", "produto", "status")}
     ls = pxr.filtrar(todas, f)
     # semana anterior, mesmo recorte, na revisão que cobre aquela data
     ant_ini, ant_fim = ini - timedelta(days=7), fim - timedelta(days=7)
     r_ant = pxr.revisao_para(db, ant_ini)
-    ls_ant = pxr.filtrar(pg.linhas(db, r_ant, ant_ini, ant_fim), f) if r_ant else []
+    ls_ant = pxr.filtrar([l for l in pg.linhas(db, r_ant, ant_ini, ant_fim) if l.item.obra not in oc], f) if r_ant else []
     a = pxr.analisar(ls, ls_ant)
     lista = [l for l in pxr.so_status(ls, f["status"] or "atrasadas") if l.status not in ("PENDENTE", "SEM INFORMAÇÃO")]
     lista.sort(key=lambda l: (l.item.data, l.item.nave, l.item.forma, l.item.obra, l.item.peca))

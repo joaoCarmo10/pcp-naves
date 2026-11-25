@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}Avanço das obras | PCP Naves{% endblock %}
 {% block corpo %}
-<h1>Avanço físico das obras</h1>
+<h1 style="display:flex;justify-content:space-between;align-items:center;gap:12px">Avanço físico das obras <a class="botao-sec nao-imprime" href="/obras/escolher" style="font-size:14px">Escolher obras e etapas</a></h1>
 <p class="sub">Peças fabricadas segundo o Plannix. A barra mostra fabricado (verde), programado (azul), atrasado sem data nova (laranja) e sem programação (vermelho). Volume do Plannix; quando a exportação não traz, estimado por seção x comprimento.</p>
 {% if not linhas %}
 <div class="vazio">Nenhuma obra ainda. Comece em <a href="/importar">Importar dados</a> com a exportação do Plannix.</div>

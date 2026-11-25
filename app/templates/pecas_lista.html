@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}Peças | PCP Naves{% endblock %}
 {% block corpo %}
-<h1>Peças</h1>
+<h1 style="display:flex;justify-content:space-between;align-items:center;gap:12px">Peças <a class="botao-sec nao-imprime" href="/obras/escolher" style="font-size:14px">Escolher obras e etapas</a></h1>
 <p class="sub">Um tipo de peça por linha. Quantidades do Plannix, status do Autodoc, cabos e bitolas lidos da prancha (PDF do Autodoc, baixado pelo PC da fábrica).{% if base %} Base: {{ base }}.{% endif %}
   <a href="/pecas?visao=detalhe{{ '&obra=' ~ f.obra|urlencode if f.obra }}">Ver detalhado (concreto, aço por bitola, içamento)</a></p>
 

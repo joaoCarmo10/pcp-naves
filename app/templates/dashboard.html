@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block titulo %}Dashboard | PCP Naves{% endblock %}
 {% block corpo %}
-<h1>Dashboard da produção</h1>
+<h1 style="display:flex;justify-content:space-between;align-items:center;gap:12px">Dashboard da produção <a class="botao-sec nao-imprime" href="/obras/escolher" style="font-size:14px">Escolher obras e etapas</a></h1>
 <p class="sub">Produção pela data de fabricação no Plannix. {{ de.strftime('%d/%m/%Y') }} a {{ ate.strftime('%d/%m/%Y') }}.{% if base %} Base: {{ base }}.{% endif %}</p>
 
 <form method="get" class="filtros nao-imprime">

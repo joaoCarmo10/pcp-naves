@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block titulo %}Escolher obras e etapas | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Obras e etapas no app</h1>
+<p class="sub">Marque o que deve aparecer. O que ficar desmarcado some do painel, das peças, do dashboard, do planejamento, do realizado do dia e do programado x realizado, e o PC da fábrica deixa de ler as pastas do Autodoc e o Plannix da obra quando todas as etapas dela estiverem desmarcadas. Nada é apagado: marcando de novo, volta.</p>
+<form method="post">
+  <div class="filtros" style="margin-bottom:10px">
+    <button type="submit">Salvar</button>
+    <button type="button" class="sec" onclick="marca(e => e.dataset.falta > 0)">Só as que têm peça a fabricar</button>
+    <button type="button" class="sec" onclick="marca(() => true)">Marcar tudo</button>
+    <button type="button" class="sec" onclick="marca(() => false)">Desmarcar tudo</button>
+    <span class="meta" id="conta"></span>
+  </div>
+  <div class="cartoes">
+  {% for g in grupos %}
+    <div class="cartao">
+      <h3 style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+        <label style="display:flex;gap:8px;align-items:center;font:inherit;margin:0"><input type="checkbox" class="grupo" style="width:auto" aria-label="Todas as etapas de {{ g.nome }}">{{ g.nome }}</label>
+        <span class="meta">{{ g.sigla }}</span></h3>
+      <table class="t compacta"><tbody>
+      {% for e in g.etapas %}
+        <tr><td style="width:24px"><input type="checkbox" name="obra" value="{{ e.o.id }}" data-falta="{{ e.falta }}" {{ 'checked' if e.o.ativa }} style="width:auto" aria-label="{{ e.o.nome }}"></td>
+          <td>{{ e.o.nome.split(' | ')[1] if ' | ' in e.o.nome else (e.o.etapa|title or e.o.nome) }}</td>
+          <td class="n meta" style="white-space:nowrap">{{ e.fab }}/{{ e.n }}</td>
+          <td class="n" style="white-space:nowrap">{% if e.falta %}<b>{{ e.falta }}</b> a fabricar{% elif e.n %}<span class="tag-ok">concluída</span>{% else %}<span class="meta">sem peças</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table>
+    </div>
+  {% endfor %}
+  </div>
+  <p style="margin-top:12px"><button type="submit">Salvar</button></p>
+</form>
+<script>
+(() => {
+  const cx = () => [...document.querySelectorAll('input[name="obra"]')];
+  const conta = () => { const t = cx(); document.getElementById("conta").textContent = `${t.filter(e => e.checked).length} de ${t.length} marcadas`;
+    document.querySelectorAll(".cartao").forEach(c => { const es = [...c.querySelectorAll('input[name="obra"]')], g = c.querySelector(".grupo");
+      g.checked = es.every(e => e.checked); g.indeterminate = !g.checked && es.some(e => e.checked); }); };
+  window.marca = f => { cx().forEach(e => e.checked = f(e)); conta(); };
+  document.addEventListener("change", e => {
+    if (e.target.classList.contains("grupo")) e.target.closest(".cartao").querySelectorAll('input[name="obra"]').forEach(x => x.checked = e.target.checked);
+    conta();
+  });
+  conta();
+})();
+</script>
+{% endblock %}

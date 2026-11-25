@@ -190,20 +190,24 @@ def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> 
 
 def indice(db: Session) -> dict:
     """{(obra_id, nome canônico): desenho vigente} = o PDF mais recente não obsoleto que cita a peça."""
-    idx: dict = {}
+    sig = {o.id: o.sigla for o in db.scalars(select(Obra))}
+    idx: dict = {"_sig": sig}
     for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.obsoleto.is_(False), DesenhoAutodoc.obra_id.is_not(None))):
         for p in x.pecas or []:
-            k = (x.obra_id, _canon(p))
-            atual = idx.get(k)
-            # prefere PDF; entre iguais, o mais recente
-            chave = (x.extensao == "pdf", x.data or datetime.min, x.revisao)
-            if not atual or chave > (atual.extensao == "pdf", atual.data or datetime.min, atual.revisao):
-                idx[k] = x
+            # por etapa e, de reserva, pela obra do Plannix inteira (etapas iguais, ex.: blocos repetidos em escolas diferentes)
+            for k in ((x.obra_id, _canon(p)), ("s", sig.get(x.obra_id), _canon(p))):
+                atual = idx.get(k)
+                # prefere PDF; entre iguais, o mais recente
+                chave = (x.extensao == "pdf", x.data or datetime.min, x.revisao)
+                if not atual or chave > (atual.extensao == "pdf", atual.data or datetime.min, atual.revisao):
+                    idx[k] = x
     return idx
 
 
 def de(idx: dict, obra_id: int, peca: str):
-    return idx.get((obra_id, _canon(peca)))
+    """Desenho da peça na etapa; se a etapa não tem, o da mesma obra do Plannix (outra etapa com a mesma peça)."""
+    c = _canon(peca)
+    return idx.get((obra_id, c)) or idx.get(("s", idx.get("_sig", {}).get(obra_id), c))
 
 
 def resumo(x) -> dict | None:
