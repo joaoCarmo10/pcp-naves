@@ -421,10 +421,10 @@ def test_plannix_automatico(cliente):
 
 def test_modulo_pecas(cliente):
     cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
-    h = cliente.get("/pecas").text
+    h = cliente.get("/pecas?visao=detalhe").text
     assert "tipos de peça" in h and "Sem prancha" in h and 'href="/pecas"' in h
-    assert cliente.get("/pecas?situacao=com").status_code == 200
-    assert "Nenhuma peça" in cliente.get("/pecas?q=NAOEXISTE").text
+    assert cliente.get("/pecas?visao=detalhe&situacao=com").status_code == 200
+    assert "Nenhuma peça" in cliente.get("/pecas?visao=detalhe&q=NAOEXISTE").text
 
 
 def test_pranchas_pelo_modulo_pecas(cliente):
@@ -444,10 +444,10 @@ def test_pranchas_pelo_modulo_pecas(cliente):
         if db.scalar(select(CadastroPeca)):
             break
         time.sleep(0.1)
-    h = cliente.get(f"/pecas?obra={o.nome}").text
+    h = cliente.get(f"/pecas?visao=detalhe&obra={o.nome}").text
     assert "Ø12.5" in h and "/cadastro/" in h
     assert "Cadastro de peças (pranchas)" not in cliente.get(f"/obras/{o.id}").text
-    assert cliente.get(f"/obras/{o.id}/pecas", follow_redirects=False).headers["location"].startswith("/pecas?obra=")
+    assert cliente.get(f"/obras/{o.id}/pecas", follow_redirects=False).headers["location"].startswith("/pecas?visao=detalhe&obra=")
 
 
 def test_pecas_completo_e_planilha(cliente):
@@ -457,7 +457,7 @@ def test_pecas_completo_e_planilha(cliente):
     assert dim_secao("h20") == (None, 20) and dim_secao("20x70", "VIGA") == (20, 70) and dim_secao("VARIAVEL") == (None, None)
     assert dim_secao("16X125", "LAJE") == (125, 16) and dim_secao("115x16", "LAJE") == (115, 16) and dim_secao("76,5X16", "LAJE") == (76.5, 16)
     test_pranchas_pelo_modulo_pecas(cliente)
-    h = cliente.get("/pecas").text
+    h = cliente.get("/pecas?visao=detalhe").text
     assert "Alt. (cm)" in h and "Barras/pç" in h and "Baixar Excel" in h
     r = cliente.get("/pecas/planilha")
     assert r.status_code == 200
@@ -494,7 +494,7 @@ def test_prancha_em_obra_errada_aparece(cliente):
             break
         time.sleep(0.1)
     time.sleep(0.2)
-    h = cliente.get(f"/pecas?obra={o.nome}").text
+    h = cliente.get(f"/pecas?visao=detalhe&obra={o.nome}").text
     assert "Pranchas sem peça no Plannix (1)" in h and "ZZ9" in h
     assert "ZZ9 não existe nesta obra no Plannix" in h
 
@@ -674,7 +674,7 @@ def test_autodoc_status_na_peca(cliente):
     assert g["ad"]["bloqueado"] and g["ad"]["rev"] == "01"
     p = db.scalar(select(Peca).where(Peca.obra_id == o.id, Peca.peca == nome))
     assert planejar.desenho_bloqueado(db, [p])
-    assert "Bloqueado R01" in cliente.get(f"/pecas?obra={o.nome}").text
+    assert "Bloqueado R01" in cliente.get(f"/pecas?visao=detalhe&obra={o.nome}").text
 
 
 def test_robo_autodoc_sem_rede(cliente, monkeypatch):
@@ -993,3 +993,32 @@ def test_api_autodoc_token(cliente):
     assert cliente.get("/api/autodoc/obras", headers={"Authorization": "Bearer tk"}).json()["ok"]
     r = cliente.post("/api/autodoc/linhas", headers=cab, content=gzip.compress(json.dumps({"linhas": []}).encode()))
     assert r.json()["sem_mudanca"]
+
+
+def test_pranchas_pelo_pc_e_lista_de_pecas(cliente):
+    """O PC pede a fila de pranchas, manda o PDF, o app lê; a lista de peças mostra cabos, bitola e fôrmas."""
+    import gzip
+    import hashlib
+    from app.db import SessionLocal
+    from sqlalchemy import select
+    from app.models import Config, DesenhoAutodoc, Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = True
+    db.add(Peca(obra_id=o.id, codigo="7002", peca="PP1", produto="PILAR", secao="30X20", volume=0.15, item="4"))
+    d = DesenhoAutodoc(projeto="P", obra_id=o.id, codigo="X-PP1-R00.pdf", extensao="pdf", revisao="00", pecas=["PP1"],
+                       status="Aprovado", hash="h1", link="https://plataforma.autodoc.com.br/projetos/directories/folder/abc")
+    db.add(d)
+    db.add(Config(chave="sync_token", valor=hashlib.sha256(b"tk").hexdigest()))
+    db.commit()
+    cab = {"Authorization": "Bearer tk"}
+    fila = cliente.get("/api/autodoc/pranchas?n=5", headers=cab).json()
+    assert [p["codigo"] for p in fila["pranchas"]] == ["X-PP1-R00.pdf"]
+    r = cliente.post(f"/api/autodoc/prancha?id={d.id}&hash=h1", headers={**cab, "Content-Encoding": "gzip", "Content-Type": "application/pdf"},
+                     content=gzip.compress(_prancha_pdf(cord=True)))
+    assert r.json()["ok"]
+    assert cliente.get("/api/autodoc/pranchas", headers=cab).json()["faltam"] == 0     # já lida: sai da fila
+    h = cliente.get(f"/pecas?obra={o.nome}&status=todos").text
+    assert "PP1" in h and "Autodoc ↗" in h and "prancha</a>" in h and "Realizado / planejado" in h
+    assert cliente.get("/pecas?status=realizado&q=PP1").status_code == 200

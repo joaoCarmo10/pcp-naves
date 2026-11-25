@@ -2,7 +2,7 @@
 {% block titulo %}Peças | PCP Naves{% endblock %}
 {% block corpo %}
 <h1>Peças</h1>
-<p class="sub">Um tipo de peça por linha (obra + nome + etapa). Medidas e quantidades do Plannix, armadura e protensão das pranchas.{% if base %} Base: {{ base }}.{% endif %}</p>
+<p class="sub"><a href="/pecas">← Lista resumida</a> · Um tipo de peça por linha (obra + nome + etapa). Medidas e quantidades do Plannix, armadura e protensão das pranchas.{% if base %} Base: {{ base }}.{% endif %}</p>
 
 {% if flash %}<div class="aviso {{ 'erro' if flash.startswith('Erro') else 'ok' }}">{{ flash }}</div>{% endif %}
 {% for o, st in lendo %}<div class="aviso">{% if st.feitos < st.total %}<b>{{ o.nome }}:</b> lendo pranchas, {{ st.feitos }} de {{ st.total }}.{% else %}<b>{{ o.nome }}:</b> leitura concluída.{% endif %}
@@ -26,6 +26,7 @@
 </details>
 
 <form method="get" class="filtros">
+  <input type="hidden" name="visao" value="detalhe">
   <label for="obra">Obra<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas</option>
     {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
   <label for="produto">Produto<select id="produto" name="produto" onchange="this.form.submit()"><option value="">Todos</option>
@@ -38,7 +39,7 @@
   <label class="check"><input type="checkbox" name="prot" value="1" {{ 'checked' if f.prot }} onchange="this.form.submit()"> Só protendidas</label>
   <label class="check"><input type="checkbox" name="e2" value="1" {{ 'checked' if f.e2 }} onchange="this.form.submit()"> Só 2ª etapa</label>
   <button type="submit" class="sec">Filtrar</button>
-  {% if f.values()|select|list %}<a class="botao-sec" href="/pecas">Limpar</a>{% endif %}
+  {% if f.values()|select|list %}<a class="botao-sec" href="/pecas?visao=detalhe">Limpar</a>{% endif %}
 </form>
 
 <div class="kpis">

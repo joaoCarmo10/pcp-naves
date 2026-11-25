@@ -174,8 +174,9 @@ def resumo(x) -> dict | None:
             "obs": x.observacoes, "titulo": x.titulo, "arquivo": x.codigo, "link": x.link}
 
 
-def pranchas_para_baixar(db: Session, linhas: list[dict]) -> list[dict]:
-    """PDFs de detalhamento vigentes, novos ou alterados, de peças com unidades ainda não fabricadas em obras ativas."""
+def pranchas_para_baixar(db: Session, linhas: list[dict], todas: bool = False) -> list[dict]:
+    """PDFs de detalhamento vigentes, novos ou alterados, de peças com unidades ainda não fabricadas em obras ativas.
+    todas=True: também as de peças já fabricadas, depois das pendentes."""
     from .models import Peca
     pend: dict = {}
     for oid, nome in db.execute(select(Peca.obra_id, Peca.peca).where(Peca.fabricada.is_(False))):
@@ -183,13 +184,14 @@ def pranchas_para_baixar(db: Session, linhas: list[dict]) -> list[dict]:
     obras = {o.id: o for o in db.scalars(select(Obra).where(Obra.ativa.is_(True)))}
     out = []
     for x in db.scalars(select(DesenhoAutodoc).where(DesenhoAutodoc.obsoleto.is_(False), DesenhoAutodoc.obra_id.is_not(None))):
-        if x.extensao != "pdf" or not x.url or not x.hash or x.hash == x.hash_baixado or x.obra_id not in obras:
+        if x.extensao != "pdf" or not x.hash or x.hash == x.hash_baixado or x.obra_id not in obras or not x.pecas:
             continue
-        if not x.pecas or not any(_canon(p) in pend.get(x.obra_id, set()) for p in x.pecas):
+        tem_pend = any(_canon(p) in pend.get(x.obra_id, set()) for p in x.pecas)
+        if not tem_pend and not todas:
             continue
         out.append({"id": x.id, "obra": obras[x.obra_id], "codigo": x.codigo, "url": x.url, "hash": x.hash,
-                    "data": x.data or datetime.min})
-    out.sort(key=lambda d: d["data"], reverse=True)   # as mais recentes primeiro
+                    "projeto": x.projeto, "data": x.data or datetime.min, "pend": tem_pend})
+    out.sort(key=lambda d: (d["pend"], d["data"]), reverse=True)   # pendentes primeiro, as mais recentes primeiro
     return out
 
 

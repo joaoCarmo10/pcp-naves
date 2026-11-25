@@ -206,3 +206,66 @@ def planilha(dados: dict) -> bytes:
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------- lista enxuta (visão principal do módulo)
+
+def lista(db: Session, qp) -> dict:
+    """Um tipo de peça por linha: obra, nome, tipo, realizado/planejado, Autodoc, seção, altura, comprimento, cabos,
+    bitola, fôrmas onde cabe e link da prancha. Mesmo nome em itens diferentes do contrato com a mesma seção e
+    comprimento vira uma linha só; seção ou comprimento diferente (outra estrutura) fica separado."""
+    from datetime import date
+    from . import autodoc, formas as fm
+    f = {"obra": qp.get("obra") or "", "tipo": qp.get("tipo") or "", "status": qp.get("status") or "a_realizar",
+         "q": qp.get("q") or ""}
+    obras = {o.id: o for o in db.scalars(select(Obra))}
+    idx, ad_idx = cad.indice(db), autodoc.indice(db)
+    fs = [x for x in fm.vigentes(db, date.today()) if x.situacao == "ativa"]
+    cabe: dict = {}
+    g: dict = {}
+    for p in db.scalars(select(Peca)):
+        k = (p.obra_id, cad._canon(p.peca), p.produto, (p.secao or "").upper(), round(p.comprimento or 0, 2))
+        t = g.get(k)
+        if not t:
+            ck = (p.produto, p.secao, round(p.comprimento or 0, 2))
+            if ck not in cabe:
+                cabe[ck] = sorted((x.nome_completo for x in fs if fm.aceita(x, p.produto, p.secao, p.comprimento)))
+            larg, alt = dim_secao(p.secao, p.produto)
+            t = g[k] = {"o": obras[p.obra_id], "nome": p.peca, "produto": p.produto, "secao": p.secao, "alt": alt,
+                        "comp": p.comprimento, "n": 0, "fab": 0, "c": cad.de_peca(idx, p), "formas": cabe[ck],
+                        "ad": autodoc.de(ad_idx, p.obra_id, p.peca)}
+        t["n"] += 1
+        t["fab"] += 1 if p.fabricada else 0
+    busca = cad._canon(f["q"].strip())
+    ativas = {o.id for o in obras.values() if o.ativa}
+
+    def passa(t):
+        if t["o"].id not in ativas and not f["obra"]:
+            return False
+        if f["obra"] and t["o"].nome != f["obra"]:
+            return False
+        if f["tipo"] and t["produto"] != f["tipo"]:
+            return False
+        if f["status"] == "a_realizar" and t["fab"] >= t["n"]:
+            return False
+        if f["status"] == "realizado" and t["fab"] < t["n"]:
+            return False
+        return not busca or busca in cad._canon(t["nome"])
+
+    todos = list(g.values())
+    linhas = sorted((t for t in todos if passa(t)), key=lambda t: (t["o"].nome, t["produto"], chave_natural(t["nome"]), t["comp"] or 0))
+    for t in linhas:
+        c = t["c"]
+        t["cabos"] = c.cordoalhas if c and c.cordoalhas else None
+        if t["cabos"]:
+            t["bitola"] = f"Ø{c.cord_diam} (cordoalha)" if c.cord_diam else ""
+        elif c:
+            t["bitola"] = " · ".join(f"Ø{b}" for b in sorted(_da_prancha(c)["bit"], key=float))
+        else:
+            t["bitola"] = ""
+    opcoes = {"obra": sorted({t["o"].nome for t in todos if t["o"].id in ativas}),
+              "tipo": sorted({t["produto"] for t in todos if t["produto"]})}
+    tot = {"tipos": len(linhas), "pend": sum(t["n"] - t["fab"] for t in linhas), "n": sum(t["n"] for t in linhas),
+           "fab": sum(t["fab"] for t in linhas), "com": sum(1 for t in linhas if t["c"]),
+           "bloq": sum(1 for t in linhas if t["ad"] and t["ad"].bloqueado)}
+    return {"linhas": linhas, "f": f, "opcoes": opcoes, "tot": tot}

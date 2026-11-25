@@ -249,6 +249,7 @@ function Rodada-Autodoc($cfg, $e, [bool]$testar = $false) {
     $siglas = @((App $cfg "/api/autodoc/obras").siglas)
     $tok = Autodoc-Entrar $cfg
     $linhas = Autodoc-Ler $cfg $siglas $tok
+    $script:AD = @{ tok = $tok; linhas = $linhas }   # as pranchas usam a mesma leitura
     if ($testar) {
         $bl = @($linhas | Where-Object { $_.Status -like "Bloqueado*" -and $_.Obsoleto -eq "Não" }).Count
         Log ("Autodoc OK. Desenhos bloqueados agora: {0}. Nada enviado (teste)." -f $bl); return
@@ -267,6 +268,39 @@ function Rodada-Autodoc($cfg, $e, [bool]$testar = $false) {
         $ult["hash"] = $h; $ult["contato"] = $agora; $ult["enviado"] = (Get-Date).ToString("yyyy-MM-ddTHH:mm")
     }
     $e["autodoc"] = $ult
+}
+
+# ------------------------------------------------------------ Pranchas (PDF de detalhamento das peças)
+function Baixar-Bytes([string]$url, $tok) {
+    $req = [Net.HttpWebRequest]::Create($url)
+    $req.Method = "GET"; $req.Timeout = 120000; $req.ReadWriteTimeout = 120000; $req.UserAgent = "pcp-sync"
+    $req.Headers.Add("Cookie", "idToken=" + $tok.IdToken + "; accessToken=" + $tok.AccessToken)
+    $resp = $req.GetResponse()
+    try { $ms = New-Object IO.MemoryStream; $resp.GetResponseStream().CopyTo($ms); return ,$ms.ToArray() } finally { $resp.Close() }
+}
+
+function Rodada-Pranchas($cfg, $e, [bool]$testar = $false) {
+    # Baixa do Autodoc os PDFs de detalhamento que o app ainda não leu (novos ou com revisão nova) e manda um a um.
+    # Poucos por rodada, para não pesar: a fila inicial termina em alguns dias, depois só entram as revisões.
+    if (-not $script:AD) { return }
+    $n = [int](V $cfg "autodoc" "pranchas_por_rodada" "30"); if ($n -le 0) { return }
+    $fila = App $cfg ("/api/autodoc/pranchas?n=" + $n)
+    if (-not $fila.pranchas -or @($fila.pranchas).Count -eq 0) { Log "Pranchas: nada novo para ler."; return }
+    if ($testar) { Log ("Pranchas: {0} para ler (teste, nada baixado)." -f $fila.faltam); return }
+    $url = @{}; foreach ($l in $script:AD.linhas) { $url[$l.Projeto + "|" + $l."Código"] = $l._url }
+    $ok = 0; $erros = 0; $ini = Get-Date
+    foreach ($p in $fila.pranchas) {
+        if (((Get-Date) - $ini).TotalMinutes -gt 10) { break }
+        $u = $url[[string]$p.projeto + "|" + [string]$p.codigo]
+        if (-not $u) { continue }
+        try {
+            $pdf = Baixar-Bytes $u $script:AD.tok
+            [void](App $cfg ("/api/autodoc/prancha?id={0}&hash={1}" -f $p.id, [Uri]::EscapeDataString([string]$p.hash)) $pdf "application/pdf")
+            $ok++
+        } catch { $erros++; if ($erros -le 3) { Log ("Pranchas: erro em {0}: {1}" -f $p.codigo, $_.Exception.Message) } }
+        Start-Sleep -Milliseconds 300
+    }
+    Log ("Pranchas: {0} lidas nesta rodada, faltam {1}." -f $ok, ([int]$fila.faltam - $ok))
 }
 
 # ------------------------------------------------------------ Plannix (modo pasta)
@@ -539,7 +573,7 @@ function Rodar($cfg, [bool]$forcar) {
     [IO.File]::WriteAllText($TRAVA, [string]$PID)
     $e = Ler-Estado; $erro = 0
     try {
-        foreach ($p in @(@("Autodoc", ${function:Rodada-Autodoc}), @("Plannix", ${function:Rodada-Plannix}))) {
+        foreach ($p in @(@("Autodoc", ${function:Rodada-Autodoc}), @("Plannix", ${function:Rodada-Plannix}), @("Pranchas", ${function:Rodada-Pranchas}))) {
             try { & $p[1] $cfg $e $false } catch { Log ($p[0] + ": ERRO " + $_.Exception.Message); $erro = 1 }
         }
         Gravar-Estado $e
@@ -557,7 +591,7 @@ try {
         "testar" {
             Log ("App: " + (V $cfg "app" "url"))
             try { $s = App $cfg "/api/autodoc/obras"; Log ("App OK. Obras ativas: " + (@($s.siglas) -join ", ")) } catch { Log ("App: ERRO " + $_.Exception.Message); exit 1 }
-            foreach ($p in @(@("Autodoc", ${function:Rodada-Autodoc}), @("Plannix", ${function:Rodada-Plannix}))) {
+            foreach ($p in @(@("Autodoc", ${function:Rodada-Autodoc}), @("Plannix", ${function:Rodada-Plannix}), @("Pranchas", ${function:Rodada-Pranchas}))) {
                 try { & $p[1] $cfg @{} $true } catch { Log ($p[0] + ": ERRO " + $_.Exception.Message) }
             }
         }

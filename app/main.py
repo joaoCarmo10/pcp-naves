@@ -352,6 +352,45 @@ async def api_autodoc_linhas(request: Request, db: Session = Depends(get_db)):
     return {"ok": True, **r}
 
 
+@app.get("/api/autodoc/pranchas")
+def api_autodoc_pranchas(request: Request, n: int = 30, db: Session = Depends(get_db)):
+    """Para o script do PC da fábrica: pranchas (PDF de detalhamento no Autodoc) que o app ainda não leu, novas ou
+    com revisão nova. Peças com unidades a fabricar primeiro. O PC baixa e manda uma a uma em /api/autodoc/prancha."""
+    if not _token_valido(request, db):
+        return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
+    fila = autodoc.pranchas_para_baixar(db, [], todas=True)
+    return {"faltam": len(fila), "pranchas": [{"id": d["id"], "projeto": d["projeto"], "codigo": d["codigo"], "hash": d["hash"]}
+                                              for d in fila[:max(1, min(n, 60))]]}
+
+
+@app.post("/api/autodoc/prancha")
+async def api_autodoc_prancha(request: Request, id: int, hash: str, db: Session = Depends(get_db)):
+    """Recebe o PDF de uma prancha baixado pelo PC da fábrica, lê (lista de material, protensão) e grava o cadastro."""
+    import gzip
+    if not _token_valido(request, db):
+        return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
+    x = db.get(DesenhoAutodoc, id)
+    if not x or not x.obra_id:
+        return JSONResponse({"ok": False, "erro": "Desenho não encontrado."}, status_code=404)
+    corpo = await request.body()
+    if request.headers.get("content-encoding", "") == "gzip":
+        corpo = gzip.decompress(corpo)
+    if not corpo.startswith(b"%PDF"):
+        return JSONResponse({"ok": False, "erro": "Não é PDF."}, status_code=400)
+    obra = db.get(Obra, x.obra_id)
+    lote = cad.guardar(obra, [(x.codigo, corpo)])
+    st = {"total": len(lote), "feitos": 0, "msgs": []}
+    for nome, caminho in lote:
+        try:
+            with SessionLocal() as s2:
+                cad._uma(s2, obra.id, nome, caminho, st)
+        except Exception as e:   # prancha ilegível não trava a fila: marca como lida e segue
+            st["msgs"].append(f"{nome}: erro na leitura ({str(e)[:120]})")
+    autodoc.marcar_baixada(db, x.id, hash)
+    db.commit()
+    return {"ok": True, "msgs": st["msgs"][-3:]}
+
+
 @app.post("/importar/reprocessar")
 def importar_reprocessar(request: Request, db: Session = Depends(get_db)):
     """Processa de novo o último envio do PC da fábrica (depois de uma correção no app, sem esperar o próximo envio)."""
@@ -1468,6 +1507,8 @@ def perfil_excluir(request: Request, pid: int, db: Session = Depends(get_db)):
 def pecas_modulo(request: Request, db: Session = Depends(get_db)):
     """Características de todas as peças: um tipo por linha (obra + nome + etapa), dados do Plannix
     completados pelo cadastro lido das pranchas."""
+    if request.query_params.get("visao") != "detalhe":
+        return tpl.TemplateResponse(request, "pecas_lista.html", {**ptab.lista(db, request.query_params), "base": ultima_base(db)})
     d = ptab.montar(db, request.query_params)
     obras = d["obras"]
     sel = next((o for o in obras.values() if o.nome == d["f"]["obra"]), None)
@@ -1492,7 +1533,7 @@ def pecas_planilha(request: Request, db: Session = Depends(get_db)):
 
 
 def _pecas_url(o: Obra) -> str:
-    return f"/pecas?obra={quote(o.nome)}"
+    return f"/pecas?visao=detalhe&obra={quote(o.nome)}"
 
 
 @app.get("/obras/{obra_id}/pecas")

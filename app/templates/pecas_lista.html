@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block titulo %}Peças | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Peças</h1>
+<p class="sub">Um tipo de peça por linha. Quantidades do Plannix, status do Autodoc, cabos e bitolas lidos da prancha (PDF do Autodoc, baixado pelo PC da fábrica).{% if base %} Base: {{ base }}.{% endif %}
+  <a href="/pecas?visao=detalhe{{ '&obra=' ~ f.obra|urlencode if f.obra }}">Ver detalhado (concreto, aço por bitola, içamento)</a></p>
+
+<form method="get" class="filtros">
+  <label for="obra">Obra<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas</option>
+    {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
+  <label for="tipo">Tipo da peça<select id="tipo" name="tipo" onchange="this.form.submit()"><option value="">Todos</option>
+    {% for x in opcoes.tipo %}<option {{ 'selected' if x == f.tipo }}>{{ x }}</option>{% endfor %}</select></label>
+  <label for="status">Status<select id="status" name="status" onchange="this.form.submit()">
+    {% for v, n in [('a_realizar', 'A realizar'), ('realizado', 'Realizado'), ('todos', 'Todos')] %}
+    <option value="{{ v }}" {{ 'selected' if v == f.status }}>{{ n }}</option>{% endfor %}</select></label>
+  <label for="q">Peça<input id="q" name="q" value="{{ f.q }}" placeholder="ex.: VS1-2" size="10"></label>
+  <button type="submit" class="sec">Filtrar</button>
+</form>
+
+<div class="kpis">
+  <div class="kpi"><b>{{ tot.tipos }}</b><span>tipos de peça</span></div>
+  <div class="kpi"><b>{{ tot.fab }}/{{ tot.n }}</b><span>realizado / planejado</span></div>
+  <div class="kpi"><b>{{ tot.pend }}</b><span>unidades a realizar</span></div>
+  <div class="kpi"><b>{{ tot.com }}</b><span>com prancha lida</span></div>
+  {% if tot.bloq %}<div class="kpi"><b style="color:#a4161a">{{ tot.bloq }}</b><span>bloqueadas no Autodoc</span></div>{% endif %}
+</div>
+
+{% if linhas %}
+<div class="rolagem-x"><table class="t compacta">
+  <thead><tr><th>Obra</th><th>Peça</th><th>Tipo</th><th class="n" title="Unidades fabricadas / unidades no Plannix">Realizado / planejado</th>
+    <th>Autodoc</th><th>Seção</th><th class="n" title="Altura da seção (h da laje, maior medida da viga)">Altura (cm)</th><th class="n">Compr. (m)</th>
+    <th class="n" title="Cordoalhas, da prancha">Nº de cabos</th><th title="Cordoalha quando protendida; senão as bitolas do aço frouxo">Bitola</th>
+    <th title="Fôrmas ativas que aceitam a seção, o produto e o comprimento">Fôrmas onde cabe</th><th>PDF</th></tr></thead>
+  <tbody>{% for t in linhas[:1500] %}{% set c = t.c %}{% set ad = t.ad %}
+    <tr>
+      <td class="meta" style="white-space:nowrap">{{ t.o.nome }}</td>
+      <td style="white-space:nowrap">{% if c %}<a href="/cadastro/{{ c.id }}"><b>{{ t.nome }}</b></a>{% else %}<b>{{ t.nome }}</b>{% endif %}</td>
+      <td class="meta">{{ t.produto }}</td>
+      <td class="n" style="white-space:nowrap">{% if t.fab >= t.n %}<span class="tag-ok">{{ t.fab }}/{{ t.n }}</span>{% else %}{{ t.fab }}/{{ t.n }}{% endif %}</td>
+      <td style="white-space:nowrap">{% if ad %}<span class="{{ 'tag-bloq' if ad.bloqueado else 'tag-ok' }}" title="{{ ad.titulo }}{{ ' · ' ~ ad.observacoes if ad.observacoes }}">{{ ad.status }} R{{ ad.revisao }}</span>{% else %}<span class="meta">sem desenho</span>{% endif %}</td>
+      <td>{{ t.secao }}</td>
+      <td class="n">{{ t.alt|num(0) if t.alt else '' }}</td>
+      <td class="n">{{ t.comp|num(2) if t.comp else '' }}</td>
+      <td class="n">{{ t.cabos or ('-' if c else '') }}</td>
+      <td class="meta" style="white-space:nowrap">{{ t.bitola }}</td>
+      <td class="meta corta" title="{{ t.formas|join(', ') }}">{% if t.formas %}{{ t.formas[:3]|join(', ') }}{% if t.formas|length > 3 %} +{{ t.formas|length - 3 }}{% endif %}{% else %}<span style="color:#a4161a">nenhuma cadastrada</span>{% endif %}</td>
+      <td style="white-space:nowrap">{% if c and c.arquivo %}<a href="/cadastro/{{ c.id }}/pdf" target="_blank" rel="noopener">prancha</a>{% endif %}
+        {% if ad and ad.link %}{{ ' · ' if c and c.arquivo }}<a href="{{ ad.link }}" target="_blank" rel="noopener" title="Pasta do desenho no Autodoc">Autodoc ↗</a>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div>
+{% if linhas|length > 1500 %}<p class="meta">Mostrando 1500 de {{ linhas|length }} tipos. Use os filtros.</p>{% endif %}
+{% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
+<p class="meta" style="margin-top:8px">Cabos e bitolas aparecem quando a prancha da peça já foi lida. O PC da fábrica baixa do Autodoc algumas pranchas por hora (primeiro as das peças a realizar) até completar; revisão nova no Autodoc é lida de novo sozinha.</p>
+{% endblock %}
