@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block titulo %}Planejar | PCP Naves{% endblock %}
+{% block corpo %}
+{% set SEM = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"] %}
+<div class="filtros" style="align-items:flex-end">
+  <div style="flex:1;min-width:260px"><h1 style="margin:0">Planejar</h1>
+    <p class="sub" style="margin:0">Arraste as peças da lista para a fôrma no dia. Arraste uma peça já programada para mudar de fôrma ou de dia; × tira do dia.</p></div>
+  {% if r %}
+  <form method="get" class="filtros" style="margin:0">
+    <label for="de">De<input type="date" id="de" name="de" value="{{ de.isoformat() }}"></label>
+    <label for="ate">Até<input type="date" id="ate" name="ate" value="{{ ate.isoformat() }}"></label>
+    <label for="rev">Revisão em edição<select id="rev" name="rev" onchange="this.form.submit()">
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ '[RASCUNHO] ' if x.rascunho }}{{ x.nome }} ({{ x.criada_em|hl }})</option>{% endfor %}</select></label>
+    <button type="submit" class="sec">Ver período</button>
+    <a class="botao-sec" href="/planejar?rev={{ r.id }}&de={{ (de - timedelta(days=7)).isoformat() }}&ate={{ (ate - timedelta(days=7)).isoformat() }}" title="Semana anterior">‹</a>
+    <a class="botao-sec" href="/planejar?rev={{ r.id }}&de={{ (de + timedelta(days=7)).isoformat() }}&ate={{ (ate + timedelta(days=7)).isoformat() }}" title="Próxima semana">›</a>
+  </form>
+  {% endif %}
+  <span style="display:flex;gap:6px;flex-wrap:wrap">
+    {% if r %}<a class="botao-sec" href="/planejar?visao=dia&rev={{ r.id }}&dia={{ de.isoformat() }}">Layout das naves (1 dia)</a>
+    <a class="botao-sec" href="/planejar/premissas">Premissas</a>{% endif %}
+    <form method="post" action="/planejar/revisao" style="margin:0;display:flex;gap:6px">
+      <input type="hidden" name="rev" value="{{ r.id if r else '' }}"><input type="hidden" name="dia" value="{{ de.isoformat() }}">
+      {% if r %}<button type="submit" name="modo" value="copia" class="sec" title="Revisão nova com tudo desta">Nova revisão (cópia)</button>{% endif %}
+      <button type="submit" name="modo" value="vazia" class="sec">Nova revisão vazia</button></form>
+  </span>
+</div>
+{% if not r %}
+<div class="vazio">Não há revisão de programação. Crie uma revisão vazia ou importe a planilha em <a href="/importar">Importar dados</a>.</div>
+{% else %}
+{% if r.rascunho %}<p class="aviso">Rascunho de replanejamento, ainda não publicado. <a href="/planejar/replanejamento/{{ r.id }}">Ver resumo, baixar planilha ou publicar</a>.</p>{% endif %}
+<p class="meta" style="margin:2px 0 8px">Editando <b>{{ r.nome }}</b>: vale na hora no Realizado do dia e no programado x realizado.</p>
+
+<div class="pq">
+  <aside class="pq-lista" aria-label="Peças a programar">
+    <div class="pq-lcab">
+      <b>Peças a programar</b> <span class="meta" id="lf-n"></span>
+      <select id="f-obra" aria-label="Obra"><option value="">Todas as obras</option>{% for o in obras %}<option>{{ o }}</option>{% endfor %}</select>
+      <div style="display:flex;gap:4px"><select id="f-prod" aria-label="Tipo de peça"><option value="">Todos os tipos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
+        <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção"></div>
+      <label class="meta" style="flex-direction:row;align-items:center;gap:4px"><input id="f-arm" type="checkbox" style="width:auto"> só armadas</label>
+    </div>
+    <div id="lf-itens"></div>
+  </aside>
+
+  <div class="pq-grade">
+    <table class="pq-t">
+      <thead><tr><th class="pq-f">Fôrma</th>
+        {% for d in dias %}<th class="{{ 'hoje' if d == hoje }}{{ ' sab' if d.weekday() == 5 }}"><span>{{ SEM[d.weekday()] }}</span>{{ d.strftime('%d/%m') }}<small>{{ q.tot.get(d, 0) }} pç · {{ q.vol.get(d, 0)|num(1) }} m³</small></th>{% endfor %}</tr></thead>
+      {% for n in q.naves %}{% if n.linhas %}
+      <tbody><tr class="pq-nave"><th colspan="{{ dias|length + 1 }}">{{ n.nome }}</th></tr>
+      {% for l in n.linhas %}<tr>
+        <th class="pq-f">{% if l.f %}<b>{{ l.f.nome }}</b><small>{{ l.f.secao or '' }}{{ (' · ' ~ l.f.comprimento|num(0) ~ ' m') if l.f.comprimento and l.f.tipo != 'unidade' else '' }}{{ (' · ' ~ l.f.capacidade|num(0) ~ ' pç/dia') if l.f.tipo == 'unidade' else '' }}</small>{% else %}<b>Sem fôrma no cadastro</b>{% endif %}</th>
+        {% for c in l.cels %}{% set pct = (c.uso / c.cap) if c.cap else 0 %}
+        <td class="pq-c{{ ' off' if l.f and not c.cap }}{{ ' cheio' if c.cap and c.uso > c.cap + 0.001 }}{{ ' hoje' if c.d == hoje }}" {% if l.f %}data-forma="{{ l.f.id }}" data-dia="{{ c.d.isoformat() }}" data-nome="{{ l.f.nome }}"{% endif %}>
+          {% if l.f and c.cap %}<div class="pq-bar" title="{{ c.uso|num(1) }} de {{ c.cap|num(0) }} {{ l.un }}"><i style="width:{{ [pct * 100, 100]|min }}%"></i></div>{% endif %}
+          {% for g in c.g %}<div class="pq-chip{{ ' feito' if g.fab >= g.qtd }}{{ ' forcado' if g.obs.startswith('Forçado') }}" draggable="true" data-ids="{{ g.ids|join(',') }}" title="{{ g.obra }} · {{ g.peca }} · {{ g.secao }}{{ (' · ' ~ g.comp|num(2) ~ ' m') if g.comp }}{{ ' · ' ~ g.fab ~ ' feita(s)' if g.fab }}{{ ' · ' ~ g.obs if g.obs }}">
+            <span class="pq-o">{{ g.obra.split(' | ')[0][:10] }}</span><b>{{ g.peca }}</b>{% if g.qtd > 1 %}<span class="pq-q">×{{ g.qtd }}</span>{% endif %}
+            <button type="button" class="pq-x" aria-label="Tirar {{ g.peca }} deste dia">×</button></div>{% endfor %}
+        </td>{% endfor %}
+      </tr>{% endfor %}</tbody>{% endif %}{% endfor %}
+    </table>
+  </div>
+</div>
+<div id="pq-msg" class="pq-msg" role="status" aria-live="polite" hidden></div>
+
+<script>
+const REV = {{ r.id }};
+const FALT = {{ falt|tojson }};
+(() => {
+  const lista = document.getElementById("lf-itens"), n = document.getElementById("lf-n");
+  const fo = document.getElementById("f-obra"), fp = document.getElementById("f-prod"), fb = document.getElementById("f-busca"), fa = document.getElementById("f-arm");
+  const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+  const num = (v, d) => v == null ? "" : Number(v).toLocaleString("pt-BR", {minimumFractionDigits: d, maximumFractionDigits: d});
+  function desenha() {
+    const b = fb.value.trim().toUpperCase();
+    const gs = FALT.map((g, i) => [g, i]).filter(([g]) => (!fo.value || g.obra === fo.value) && (!fp.value || g.produto === fp.value)
+      && (!fa.checked || g.armadas) && (!b || (g.peca + " " + (g.secao || "")).toUpperCase().includes(b)));
+    n.textContent = `${gs.reduce((s, [g]) => s + g.codigos.length, 0)} un.`;
+    lista.innerHTML = gs.slice(0, 400).map(([g, i]) => `
+      <div class="pq-item${g.ad && g.ad.bloqueado ? " bloq" : ""}" draggable="true" data-i="${i}">
+        <div><b>${esc(g.peca)}</b> <span class="meta">${esc(g.produto)} · ${esc(g.secao)}${g.comp ? " · " + num(g.comp, 2) + " m" : ""}</span></div>
+        <div class="meta">${esc(g.obra)}${g.armadas ? ` · <span class="tag-ok">${g.armadas} armada(s)</span>` : ""}${g.ad && g.ad.bloqueado ? ' · <b style="color:#a4161a">desenho bloqueado</b>' : ""}${g.e2 ? " · 2ª etapa" : ""}</div>
+        <label class="pq-qtd">qtd <input type="number" min="1" max="${g.codigos.length}" value="1" aria-label="Quantas unidades de ${esc(g.peca)}"> de ${g.codigos.length}</label>
+      </div>`).join("") + (gs.length > 400 ? `<p class="meta">Mostrando 400 de ${gs.length}. Use os filtros.</p>` : "");
+  }
+  [fo, fp, fa].forEach(e => e.addEventListener("change", desenha)); fb.addEventListener("input", desenha);
+  desenha();
+
+  const msg = document.getElementById("pq-msg");
+  const aviso = (t, ruim) => { msg.textContent = t; msg.hidden = false; msg.className = "pq-msg" + (ruim ? " ruim" : ""); clearTimeout(aviso.t); aviso.t = setTimeout(() => msg.hidden = true, 6000); };
+  const recarrega = () => { sessionStorage.setItem("pq-scroll", JSON.stringify([scrollY, document.querySelector(".pq-grade").scrollLeft, document.getElementById("lf-itens").scrollTop])); location.reload(); };
+  try { const s = JSON.parse(sessionStorage.getItem("pq-scroll") || "null"); if (s) { scrollTo(0, s[0]); document.querySelector(".pq-grade").scrollLeft = s[1]; lista.scrollTop = s[2]; sessionStorage.removeItem("pq-scroll"); } } catch (e) {}
+
+  async function envia(url, corpo, alvo) {
+    const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    const j = await r.json().catch(() => ({ok: false, problemas: ["Erro no servidor."]}));
+    if (j.ok) return recarrega();
+    if (j.pode_forcar && confirm(`${alvo}:\n\n${j.problemas.join("\n")}\n\nProgramar mesmo assim?`)) return envia(url, {...corpo, forcar: true}, alvo);
+    if (!j.pode_forcar) aviso((j.problemas || [j.erro || "Não deu."]).join(" "), true);
+  }
+  let arrasto = null;
+  document.addEventListener("dragstart", e => {
+    const it = e.target.closest(".pq-item"), ch = e.target.closest(".pq-chip");
+    if (it) { const g = FALT[+it.dataset.i]; const q = Math.max(1, Math.min(g.codigos.length, +it.querySelector("input").value || 1)); arrasto = {tipo: "nova", codigos: g.codigos.slice(0, q), nome: `${g.peca} ×${q}`}; }
+    else if (ch) arrasto = {tipo: "mover", ids: ch.dataset.ids.split(",").map(Number), nome: ch.querySelector("b").textContent};
+    else return;
+    e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", arrasto.nome);
+  });
+  document.addEventListener("dragend", () => document.querySelectorAll(".pq-c.sobre").forEach(c => c.classList.remove("sobre")));
+  document.querySelectorAll(".pq-c[data-forma]").forEach(c => {
+    c.addEventListener("dragover", e => { if (arrasto) { e.preventDefault(); c.classList.add("sobre"); } });
+    c.addEventListener("dragleave", () => c.classList.remove("sobre"));
+    c.addEventListener("drop", e => {
+      e.preventDefault(); c.classList.remove("sobre"); if (!arrasto) return;
+      const base = {rev: REV, forma: +c.dataset.forma, dia: c.dataset.dia}, alvo = `${arrasto.nome} → ${c.dataset.nome} em ${c.dataset.dia.split("-").reverse().slice(0, 2).join("/")}`;
+      if (arrasto.tipo === "nova") envia("/planejar/alocar", {...base, codigos: arrasto.codigos}, alvo);
+      else envia("/planejar/mover", {...base, ids: arrasto.ids}, alvo);
+      arrasto = null;
+    });
+  });
+  document.addEventListener("click", async e => {
+    const x = e.target.closest(".pq-x"); if (!x) return;
+    const ch = x.closest(".pq-chip");
+    if (!confirm(`Tirar ${ch.querySelector("b").textContent} deste dia? A peça volta para a lista.`)) return;
+    const r = await fetch("/planejar/remover", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({ids: ch.dataset.ids.split(",").map(Number)})});
+    if (r.ok) recarrega(); else aviso("Não deu para tirar.", true);
+  });
+})();
+</script>
+{% endif %}
+<style>
+.pq{display:flex;gap:10px;align-items:flex-start}
+.pq-lista{width:270px;flex:none;position:sticky;top:8px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;background:#fff;border:1px solid var(--linha);border-radius:8px}
+.pq-lcab{padding:8px;border-bottom:1px solid var(--linha);display:flex;flex-direction:column;gap:5px}
+#lf-itens{overflow:auto;padding:6px}
+.pq-item{border:1px solid var(--linha);border-left:3px solid var(--azul2);border-radius:6px;padding:5px 7px;margin-bottom:5px;cursor:grab;font-size:12px;background:#fff}
+.pq-item.bloq{border-left-color:#a4161a}.pq-item:active{cursor:grabbing}
+.pq-qtd{flex-direction:row!important;align-items:center;gap:4px;font-size:11px;margin-top:3px}.pq-qtd input{width:52px;padding:2px 4px}
+.pq-grade{flex:1;overflow:auto;max-height:calc(100vh - 24px);border:1px solid var(--linha);border-radius:8px;background:#fff}
+.pq-t{border-collapse:separate;border-spacing:0;font-size:11px}
+.pq-t thead th{position:sticky;top:0;z-index:3;background:var(--azul);color:#fff;padding:4px 6px;min-width:118px;text-align:center;font-weight:700;line-height:1.15}
+.pq-t thead th span{display:block;font-weight:400;font-size:10px;opacity:.85}.pq-t thead th small{display:block;font-weight:400;font-size:10px;opacity:.85}
+.pq-t thead th.hoje{background:#0b6e4f}.pq-t thead th.sab{background:#3d5a80}
+.pq-t .pq-f{position:sticky;left:0;z-index:2;background:#f5f7fa;text-align:left;min-width:132px;max-width:150px;padding:4px 6px;border-bottom:1px solid var(--linha);border-right:1px solid var(--linha)}
+.pq-t thead .pq-f{z-index:4;background:var(--azul)}
+.pq-f small{display:block;color:#667;font-weight:400}
+.pq-nave th{position:sticky;left:0;background:#e7ebf0;text-align:left;padding:4px 8px;font-size:12px;color:var(--azul);border-bottom:1px solid var(--linha)}
+.pq-c{vertical-align:top;padding:3px;border-bottom:1px solid #eef0f4;border-right:1px solid #eef0f4;min-width:118px;height:42px}
+.pq-c.off{background:repeating-linear-gradient(45deg,#fafafa,#fafafa 5px,#f0f0f0 5px,#f0f0f0 10px)}
+.pq-c.hoje{background-color:#f2fbf6}.pq-c.cheio{background:#fff3f3}.pq-c.sobre{outline:2px dashed var(--azul2);outline-offset:-2px;background:#eef5ff}
+.pq-bar{height:3px;background:#e7ebf0;border-radius:2px;margin-bottom:3px;overflow:hidden}.pq-bar i{display:block;height:100%;background:var(--prog)}
+.pq-c.cheio .pq-bar i{background:var(--falta)}
+.pq-chip{display:flex;align-items:center;gap:3px;background:#eef3fb;border:1px solid #c9d6ea;border-radius:4px;padding:1px 3px;margin-bottom:2px;cursor:grab;white-space:nowrap}
+.pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
+.pq-o{color:#667;font-size:9.5px;max-width:42px;overflow:hidden;text-overflow:ellipsis}.pq-q{color:var(--azul);font-weight:700}
+.pq-x{margin-left:auto;border:none;background:none;color:#889;cursor:pointer;padding:0 2px;font-size:13px;line-height:1}.pq-x:hover{color:#a4161a}
+.pq-msg{position:fixed;bottom:16px;right:16px;background:#1f3864;color:#fff;padding:10px 14px;border-radius:8px;max-width:420px;z-index:50;font-size:13px}
+.pq-msg.ruim{background:#a4161a}
+@media (max-width:900px){.pq{flex-direction:column}.pq-lista{width:100%;position:static;max-height:300px}}
+</style>
+{% endblock %}

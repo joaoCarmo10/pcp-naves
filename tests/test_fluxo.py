@@ -1115,3 +1115,35 @@ def test_ficha_de_fabricacao(cliente):
     h = cliente.get(f"/ficha/{p.codigo}").text
     assert "25%" in h and "Ajustes do PCP" in h
     assert cliente.get(f"/pecas/ficha?obra={p.obra_id}&peca={p.peca}", follow_redirects=False).status_code == 303
+
+
+def test_quadro_de_planejamento(cliente):
+    """Quadro do período: datas no cabeçalho, arrastar peça para fôrma x dia, mover para outro dia, tirar."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": date.today().isoformat()})
+    db = SessionLocal()
+    f = Forma(codigo="N1-FT", nave="N1", nome="FT", tipo="unidade", capacidade=5, situacao="ativa")
+    db.add(f)
+    db.commit()
+    from app import programacao as pg
+    rev = db.scalars(select(__import__("app.models", fromlist=["RevisaoProg"]).RevisaoProg)).all()[-1]
+    d0 = date.today() + timedelta(days=1)
+    while d0.weekday() == 6:
+        d0 += timedelta(days=1)
+    h = cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
+    assert "Peças a programar" in h and d0.strftime("%d/%m") in h and 'data-forma="' in h
+    p = db.scalar(select(Peca).where(Peca.fabricada.is_(False)))
+    j = cliente.post("/planejar/alocar", json={"rev": rev.id, "forma": f.id, "dia": d0.isoformat(), "codigos": [p.codigo], "forcar": True}).json()
+    assert j["ok"]
+    it = SessionLocal().scalar(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.codigo == p.codigo))
+    d1 = d0 + timedelta(days=1 if d0.weekday() != 5 else 2)
+    j = cliente.post("/planejar/mover", json={"rev": rev.id, "forma": f.id, "dia": d1.isoformat(), "ids": [it.id], "forcar": True}).json()
+    assert j["ok"] and SessionLocal().get(ItemProg, it.id).data == d1
+    h = cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
+    assert f'data-ids="{it.id}"' in h
+    assert cliente.get(f"/planejar?visao=dia&rev={rev.id}").status_code == 200

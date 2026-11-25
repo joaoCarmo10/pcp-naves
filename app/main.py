@@ -1215,7 +1215,10 @@ def forma_detalhe(request: Request, fid: int, dia: str | None = None, db: Sessio
 
 # ---------------------------------------------------------------- quadro de planejamento (arrastar peças para as fôrmas)
 @app.get("/planejar", response_class=HTMLResponse)
-def planejar_tela(request: Request, rev: int | None = None, dia: str | None = None, db: Session = Depends(get_db)):
+def planejar_tela(request: Request, rev: int | None = None, dia: str | None = None, de: str | None = None, ate: str | None = None,
+                  visao: str = "", db: Session = Depends(get_db)):
+    if visao != "dia":
+        return planejar_quadro(request, rev, de or dia, ate, db)
     r = _rev(db, rev)
     hoje = date.today()
     d = _data(dia) or hoje
@@ -1249,6 +1252,32 @@ def planejar_tela(request: Request, rev: int | None = None, dia: str | None = No
         "r": r, "revs": _revisoes(db), "d": d, "dias": dias, "ant": dias[i - 1] if i else None, "prox": dias[i + 1] if i + 1 < len(dias) else None,
         "naves": naves, "sobra": sobra, "falt": falt, "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
         "tamanho": fm.tamanho, "altura": fm.altura, "hoje": hoje, "base": ultima_base(db), "rp_ini": rp_ini, "rp_fim": rp_fim})
+
+
+def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str | None, db: Session) -> HTMLResponse:
+    """Quadro do período: fôrmas nas linhas, dias nas colunas; arrasta peça da lista (ou de outra célula) para fôrma x dia."""
+    r = _rev(db, rev)
+    hoje = date.today()
+    d0 = _data(de) or hoje
+    d1 = _data(ate) or (d0 + timedelta(days=13))
+    if d1 < d0:
+        d0, d1 = d1, d0
+    d1 = min(d1, d0 + timedelta(days=44))
+    dias = pl.dias_periodo(d0, d1)
+    q = pl.quadro(db, r, dias) if r else {"naves": [], "tot": {}, "vol": {}}
+    falt = pl.faltantes(db, r) if r else []
+    return tpl.TemplateResponse(request, "planejar_quadro.html", {
+        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje,
+        "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
+        "DIAS": ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"], "base": ultima_base(db)})
+
+
+@app.post("/planejar/mover")
+def planejar_mover(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    f = db.get(Forma, int(dados["forma"])) or _404()
+    d = _data(dados.get("dia")) or _404()
+    return pl.mover(db, r, [int(x) for x in dados.get("ids", [])][:500], f, d, bool(dados.get("forcar")))
 
 
 @app.post("/planejar/alocar")

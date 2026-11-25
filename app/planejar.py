@@ -177,3 +177,83 @@ def conflito_protensao(db: Session, f: Forma, novas: list[Peca], ja: list[ItemPr
         fmt = lambda s: ", ".join(f"{n} ({a or 'sem protensão'})" for n, a in sorted(s))
         return [f"Protensão diferente na {f.nome}: {fmt(lado_b)} x já programadas {fmt(lado_a)}."]
     return []
+
+
+# ---------------------------------------------------------------- quadro do período (fôrmas x dias)
+
+def dias_periodo(de: date, ate: date) -> list[date]:
+    from datetime import timedelta
+    out, d = [], de
+    while d <= ate and len(out) < 45:
+        if d.weekday() != 6:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
+    """Linhas = fôrmas vigentes em algum dia do período (por nave); colunas = dias. Cada célula: itens agrupados por
+    peça, uso e capacidade. Itens cuja fôrma não está no cadastro vão para a linha 'sem fôrma' da nave."""
+    formas = [f for f in db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)) if any(f.vigente(d) for d in dias)]
+    itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data >= dias[0],
+                                                   ItemProg.data <= dias[-1]))) if dias else []
+    fab = {c for (c,) in db.execute(select(Peca.codigo).where(Peca.fabricada.is_(True),
+                                                              Peca.codigo.in_([i.codigo for i in itens if i.codigo] or [""])))}
+    cel: dict = defaultdict(list)
+    sem: dict = defaultdict(list)
+    cache: dict = {}
+    for i in itens:
+        if i.forma not in cache:
+            cache[i.forma] = next((f.id for f in formas if i.forma and fm.item_e_da_forma(i.forma, f)), None)
+        fid = cache[i.forma]
+        (cel[(fid, i.data)] if fid else sem[(i.nave or "-", i.data)]).append(i)
+
+    def grupos(its):
+        g: dict = {}
+        for i in its:
+            k = (i.obra, i.peca)
+            x = g.setdefault(k, {"obra": i.obra, "peca": i.peca, "ids": [], "qtd": 0, "fab": 0, "comp": i.comprimento,
+                                 "secao": i.secao, "obs": i.obs})
+            x["ids"].append(i.id)
+            x["qtd"] += i.qtd
+            x["fab"] += i.qtd if i.codigo in fab else 0
+        return sorted(g.values(), key=lambda x: (x["obra"], chave_natural(x["peca"])))
+    naves = []
+    for n, nome in fm.NAVES.items():
+        linhas = []
+        for f in (f for f in formas if f.nave == n):
+            cs = []
+            for d in dias:
+                its = cel.get((f.id, d), [])
+                cap = capacidade(f, d)
+                cs.append({"d": d, "g": grupos(its), "uso": uso(f, its), "cap": cap})
+            linhas.append({"f": f, "cels": cs, "un": "pç" if f.tipo == "unidade" else "m"})
+        if any(sem.get((n, d)) for d in dias):
+            linhas.append({"f": None, "un": "", "cels": [{"d": d, "g": grupos(sem.get((n, d), [])), "uso": 0, "cap": 0} for d in dias]})
+        naves.append({"cod": n, "nome": nome, "linhas": linhas})
+    tot = {d: sum(i.qtd for i in itens if i.data == d) for d in dias}
+    vol = {d: sum((i.volume or 0) for i in itens if i.data == d) for d in dias}
+    return {"naves": naves, "tot": tot, "vol": vol}
+
+
+def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forcar: bool = False) -> dict:
+    """Leva itens já programados para outra fôrma/dia, com a mesma validação de quando se arrasta da lista."""
+    its = [i for i in db.scalars(select(ItemProg).where(ItemProg.id.in_(ids), ItemProg.revisao_id == rev.id))]
+    if not its:
+        return {"ok": False, "problemas": ["Itens não encontrados nesta revisão."], "pode_forcar": False}
+    pecas = list(db.scalars(select(Peca).where(Peca.codigo.in_([i.codigo for i in its if i.codigo] or [""]))))
+    vig = [x for x in db.scalars(select(Forma)) if x.vigente(d)]
+    por, _ = itens_por_forma(db, rev, d, vig)
+    ja = [i for i in por.get(f.id, []) if i.id not in ids]
+    probs = validar(f, d, pecas, uso(f, ja))
+    probs += conflito_protensao(db, f, pecas, ja)
+    if probs and not forcar:
+        return {"ok": False, "problemas": probs, "pode_forcar": True}
+    for i in its:
+        i.data, i.nave, i.forma = d, f.nave, f.nome_completo
+        if probs:
+            i.obs = ("Forçado: " + " ".join(probs))[:300]
+    datas = [rev.inicio, rev.fim, d]
+    rev.inicio, rev.fim = min(x for x in datas if x), max(x for x in datas if x)
+    db.commit()
+    return {"ok": True, "n": len(its), "avisos": probs}
