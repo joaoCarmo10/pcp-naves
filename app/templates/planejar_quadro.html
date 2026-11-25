@@ -18,6 +18,8 @@
   {% endif %}
   <span style="display:flex;gap:6px;flex-wrap:wrap">
     {% if r %}<button type="button" id="b-auto" title="Completa a capacidade livre das fôrmas no período com as peças que faltam, pela prioridade. Não tira nada do que já está.">Autopreencher período</button>
+    <span style="display:flex;gap:4px;align-items:center"><select id="s-orig" aria-label="Revisão de onde trazer as faltantes" style="max-width:220px">{% for x in revs if x.id != r.id %}<option value="{{ x.id }}">{{ x.nome[:45] }}</option>{% endfor %}</select>
+      <button type="button" class="sec" id="b-trazer" title="Traz as peças não fabricadas da revisão escolhida (até o fim do período): mesmo dia e fôrma quando cabe, senão pelo autopreenchimento">Trazer faltantes</button></span>
     <button type="button" class="sec" id="b-desf" title="Tira os itens do último autopreenchimento; o que foi arrastado à mão fica">Desfazer autopreenchimento</button>
     <a class="botao-sec" href="/planejar/exportar?rev={{ r.id }}&de={{ de.isoformat() }}&ate={{ ate.isoformat() }}">Exportar planilha</a>
     <button type="button" class="sec" onclick="window.print()">Imprimir</button>
@@ -157,6 +159,15 @@ const FALT = {{ falt|tojson }};
     const j = await r.json().catch(() => ({ok: false}));
     if (j.ok) { sessionStorage.setItem("pq-aviso", `Autopreenchido: ${j.n} peça(s) programada(s); ${j.sobram} ficaram sem lugar no período.`); recarrega(); }
     else { aviso(j.erro || "Não deu para autopreencher.", true); e.target.disabled = false; e.target.textContent = "Autopreencher período"; }
+  });
+  document.getElementById("b-trazer").addEventListener("click", async e => {
+    const o = document.getElementById("s-orig");
+    if (!confirm(`Trazer para esta revisão as peças não fabricadas de "${o.selectedOptions[0].textContent}" programadas até {{ ate.strftime('%d/%m') }}?\n\nNo mesmo dia e fôrma quando couber; o resto pelo autopreenchimento. Nada do que está aqui é tirado; dá para desfazer.`)) return;
+    e.target.disabled = true; e.target.textContent = "Trazendo...";
+    const r = await fetch("/planejar/trazer", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV, origem: +o.value, de: "{{ de.isoformat() }}", ate: "{{ ate.isoformat() }}"})});
+    const j = await r.json().catch(() => ({ok: false}));
+    if (j.ok) { sessionStorage.setItem("pq-aviso", `${j.faltantes} faltante(s): ${j.mesmo_lugar} no mesmo lugar, ${j.auto} pelo autopreenchimento, ${j.sem_lugar} sem lugar no período.`); recarrega(); }
+    else { aviso(j.erro || "Não deu.", true); e.target.disabled = false; e.target.textContent = "Trazer faltantes"; }
   });
   document.getElementById("b-desf").addEventListener("click", async () => {
     if (!confirm("Tirar as peças do último autopreenchimento? O que você arrastou à mão fica.")) return;

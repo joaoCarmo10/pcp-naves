@@ -276,7 +276,8 @@ def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forc
 
 # ---------------------------------------------------------------- autopreencher (completa sem tirar o que já está)
 
-def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: set[int] | None = None) -> dict:
+def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: set[int] | None = None,
+                  so_codigos: set[str] | None = None, lote: str | None = None) -> dict:
     """Completa a capacidade livre das fôrmas no período com as peças que faltam, na ordem de prioridade do PCP
     (fura-fila, prioridade da obra, armadas primeiro, produto, nome). Não tira nem move nada do que já está.
     Respeita: encaixe (produto, seção, comprimento), capacidade, fôrma parada (setup), premissas (não programar,
@@ -294,7 +295,7 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
     adx = autodoc.indice(db)
     cands = []
     for p, o in db.execute(select(Peca, Obra).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))):
-        if p.codigo in ja or pm.motivo_fora(prs, p):
+        if p.codigo in ja or pm.motivo_fora(prs, p) or (so_codigos is not None and p.codigo not in so_codigos):
             continue
         x = autodoc.de(adx, p.obra_id, p.peca)
         if x and x.bloqueado:
@@ -303,7 +304,7 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
     cands.sort(key=lambda p: (0 if pm.fura_fila(prs, p) else 1, p.obra.prioridade or 99,
                               0 if (p.hora_armacao or p.codigo in armadas) else 1, p.produto, chave_natural(p.peca), p.codigo))
     usados: set[str] = set()
-    lote = "AUTO-" + secrets.token_hex(3)
+    lote = lote or "AUTO-" + secrets.token_hex(3)
     novos, cont = 0, defaultdict(int)
     formas = [f for f in db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)) if not so_formas or f.id in so_formas]
     for d in dias:
@@ -367,3 +368,46 @@ def desfazer_auto(db: Session, rev: RevisaoProg, lote: str | None = None) -> int
             n += 1
     db.commit()
     return n
+
+
+def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: list[date]) -> dict:
+    """Peças de outra revisão (ex.: a última programação) programadas até o fim do período e ainda não fabricadas, que
+    não estão nesta revisão: primeiro tenta o mesmo dia e fôrma de lá (se o dia está no período e cabe); o resto entra
+    pelo autopreenchimento, na ordem de prioridade. Nada do que já está nesta revisão é tirado."""
+    import secrets
+    from . import premissas as pm
+    hoje = date.today()
+    dias = [d for d in dias if d >= hoje]
+    lote = "AUTO-" + secrets.token_hex(3)
+    ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == origem.id, ItemProg.data <= dias[-1]).order_by(ItemProg.data)))
+    sem_codigo = sorted({f"{i.obra} {i.peca}" for i in its if not i.codigo})
+    cods = [i.codigo for i in its if i.codigo and i.codigo not in ja]
+    feitas = {c for (c,) in db.execute(select(Peca.codigo).where(Peca.codigo.in_(cods or [""]), Peca.fabricada.is_(True)))}
+    pend = [i for i in its if i.codigo and i.codigo not in ja and i.codigo not in feitas]
+    paradas = [pr for pr in pm.ativas(db) if pr.tipo == "parar_forma"]
+    formas = list(db.scalars(select(Forma)))
+    mesmo = 0
+    for i in pend:
+        if i.data not in dias:
+            continue
+        f = next((f for f in formas if f.vigente(i.data) and i.forma and fm.item_e_da_forma(i.forma, f)), None)
+        if not f or parada(paradas, f, i.data):
+            continue
+        p = db.scalar(select(Peca).where(Peca.codigo == i.codigo))
+        if not p:
+            continue
+        por, _ = itens_por_forma(db, rev, i.data, [f])
+        atual = por.get(f.id, [])
+        if validar(f, i.data, [p], uso(f, atual)) or conflito_protensao(db, f, [p], atual):
+            continue
+        db.add(ItemProg(revisao_id=rev.id, data=i.data, nave=f.nave, forma=f.nome_completo, obra=p.obra.nome, peca=p.peca,
+                        codigo=p.codigo, produto=p.produto, secao=p.secao, comprimento=p.comprimento, qtd=1, volume=p.volume,
+                        tipo="PLANEJADA", obs=f"Autopreenchido ({lote}) · mesmo lugar da {origem.nome[:40]}"))
+        db.flush()
+        mesmo += 1
+    db.commit()
+    resto = {i.codigo for i in pend} - {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id))}
+    r = autopreencher(db, rev, dias, so_codigos=resto, lote=lote) if resto else {"n": 0, "sobram": 0}
+    return {"ok": True, "lote": lote, "faltantes": len({i.codigo for i in pend}), "mesmo_lugar": mesmo, "auto": r["n"],
+            "sem_lugar": len(resto) - r["n"], "sem_codigo": sem_codigo, "ja_feitas": len(feitas)}

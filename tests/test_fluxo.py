@@ -1161,6 +1161,11 @@ def test_quadro_de_planejamento(cliente):
     assert antes is not None                                    # o que estava fica
     assert cliente.post("/planejar/desfazer-auto", json={"rev": rev.id}).json()["ok"]
     assert SessionLocal().get(ItemProg, it.id) is not None
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": d0.isoformat()})
+    from app.models import RevisaoProg as _R
+    nova = SessionLocal().scalars(select(_R)).all()[-1]
+    j = cliente.post("/planejar/trazer", json={"rev": nova.id, "origem": rev.id, "de": d0.isoformat(), "ate": (d0 + timedelta(days=6)).isoformat()}).json()
+    assert j["ok"] and j["faltantes"] >= 1 and j["mesmo_lugar"] + j["auto"] + j["sem_lugar"] == j["faltantes"]
     r = cliente.get(f"/planejar/exportar?rev={rev.id}&de={d0.isoformat()}")
     assert r.status_code == 200 and r.content[:2] == b"PK"
     assert 'class="pq-setup"' not in cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text

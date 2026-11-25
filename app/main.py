@@ -1308,6 +1308,16 @@ def planejar_autopreencher(dados: dict = Body(...), db: Session = Depends(get_db
     return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so)
 
 
+@app.post("/planejar/trazer")
+def planejar_trazer(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    o = db.get(RevisaoProg, int(dados["origem"])) or _404()
+    d0, d1 = _data(dados.get("de")), _data(dados.get("ate"))
+    if not d0 or not d1 or o.id == r.id:
+        return {"ok": False, "erro": "Escolha outra revisão e um período válido."}
+    return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)))
+
+
 @app.post("/planejar/desfazer-auto")
 def planejar_desfazer_auto(dados: dict = Body(...), db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, int(dados["rev"])) or _404()
