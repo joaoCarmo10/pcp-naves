@@ -36,7 +36,7 @@
   <thead><tr><th>Obra</th><th>Peça</th><th>Tipo</th><th class="n" title="Unidades fabricadas / unidades no Plannix">Realizado / planejado</th>
     <th>Autodoc</th><th>Seção</th><th class="n" title="Altura da seção (h da laje, maior medida da viga)">Altura (cm)</th><th class="n">Compr. (m)</th>
     <th class="n" title="Cordoalhas, da prancha">Nº de cabos</th><th title="Cordoalha quando protendida; senão as bitolas do aço frouxo">Bitola</th>
-    <th title="Fôrmas ativas que aceitam a seção, o produto e o comprimento">Fôrmas onde cabe</th><th>PDF</th></tr></thead>
+    <th title="Fôrmas ativas que aceitam a seção, o produto e o comprimento">Fôrmas onde cabe</th><th>PDF</th><th class="nao-imprime">Ficha</th></tr></thead>
   <tbody>{% for t in linhas[:3000] %}{% set c = t.c %}{% set ad = t.ad %}
     <tr>
       <td class="meta" style="white-space:nowrap">{{ t.o.nome }}</td>
@@ -53,6 +53,7 @@
       <td style="white-space:nowrap">{% if ad and ad.arquivo %}<a href="/autodoc/desenho/{{ ad.id }}/pdf" target="_blank" rel="noopener" title="{{ ad.codigo }} (cópia do Autodoc)">PDF R{{ ad.revisao }}</a>
         {% elif c and c.arquivo %}<a href="/cadastro/{{ c.id }}/pdf" target="_blank" rel="noopener" title="{{ c.nome_arquivo }}">PDF {{ c.revisao }}</a>
         {% elif ad %}<span class="meta" title="O PC da fábrica baixa algumas pranchas por hora">na fila</span>{% endif %}</td>
+      <td class="nao-imprime"><a href="/pecas/ficha?obra={{ t.o.id }}&peca={{ t.nome|urlencode }}" title="Ficha de fabricação">ficha</a></td>
     </tr>{% endfor %}</tbody>
 </table></div>
 {% if linhas|length > 3000 %}<p class="meta">Mostrando 3000 de {{ linhas|length }} tipos. Use os filtros.</p>{% endif %}

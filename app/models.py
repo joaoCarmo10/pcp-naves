@@ -325,3 +325,23 @@ class Premissa(Base):
     obs: Mapped[str] = mapped_column(String(300), default="")
     ativa: Mapped[bool] = mapped_column(Boolean, default=True)
     criada_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class ComplementoPeca(Base):
+    """Informações adicionais do cadastro de produtos do Plannix (embutidos, consolos, neoprene...), por unidade."""
+    __tablename__ = "complementos_peca"
+    codigo: Mapped[str] = mapped_column(String(30), primary_key=True)
+    sigla: Mapped[str] = mapped_column(String(10), default="")
+    peca: Mapped[str] = mapped_column(String(60), default="")
+    itens: Mapped[dict] = mapped_column(JSON, default=dict)                   # {"LUVA 20mm": 4, ...} só os não zerados
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+class FichaFab(Base):
+    """Ficha de fabricação (manual da peça para produção/montagem): o que o PCP e a fábrica preencheram."""
+    __tablename__ = "fichas_fab"
+    codigo: Mapped[str] = mapped_column(String(30), primary_key=True)
+    dados: Mapped[dict] = mapped_column(JSON, default=dict)
+    alteracoes: Mapped[list] = mapped_column(JSON, default=list)              # [{quando, quem, campo, de, para}]
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    atualizado_por: Mapped[str] = mapped_column(String(60), default="")

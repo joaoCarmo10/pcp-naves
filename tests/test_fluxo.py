@@ -1086,3 +1086,32 @@ def test_escolher_obras_e_etapas(cliente):
     db.expire_all()
     assert not db.get(Obra, o.id).ativa
     assert o.nome not in cliente.get("/pecas").text.split("Escolher obras")[1].split("<table")[0] or True
+
+
+def test_ficha_de_fabricacao(cliente):
+    """Complementos do Plannix entram na ficha (só os não zerados); PCP ajusta, fica histórico; feedback de tempos."""
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import FichaFab, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    p = db.scalar(select(Peca))
+    cab = "Sigla\tNome da Obra\tEtapa\tPeça\tCódigo\tProduto\tGrupo\tSeção\tDetalhe\tLUVA 20mm und\tNP3 und\tNP3 und4\tCONSOLO C1 und\tBAINHA 40mm und\n"
+    txt = ("Projeto - X\t\t\nDATA IMPRESSÃO: 25/11/2026\t\n" + cab
+           + f"9999\t9999-OBRA\tÚNICA\t{p.peca}\t{p.codigo}\tPILAR\tPILAR\t40X40\tN/A\t4\t1\t2\t0\t0\n").replace("\n", "\r\n")
+    r = cliente.post("/importar", files={"arquivo": ("complementos.xls", txt.encode("latin-1"))})
+    assert "complementos do Plannix" in r.text
+    h = cliente.get(f"/ficha/{p.codigo}").text
+    assert "Ficha de fabricação" in h and "LUVA 20mm" in h and "NP3" in h and "BAINHA" not in h and "Neoprene / elastômero" in h
+    assert 'name="usar::NP3" value="3' in h   # NP3 und + NP3 und4 somados
+    cliente.post(f"/ficha/{p.codigo}", data={"item": ["LUVA 20mm", "NP3"], "usar::LUVA 20mm": "3", "usar::NP3": "3",
+                                              "local::LUVA 20mm": "Almox. A2", "status::LUVA 20mm": "Separado",
+                                              "acabamento": "Desempenado", "cons_metodo": "2", "cons_tipo": "C1-N6",
+                                              "fb_esp_arm": "4", "fb_real_arm": "5", "fb_dif_arm": "4", "nave": "N1"})
+    f = SessionLocal().get(FichaFab, p.codigo)
+    assert f.dados["itens"]["LUVA 20mm"] == {"usar": 3.0, "local": "Almox. A2", "status": "Separado"}
+    assert [(a["campo"], a["de"], a["para"]) for a in f.alteracoes] == [("LUVA 20mm", 4.0, 3.0)]   # NP3 igual ao Plannix: sem registro
+    assert f.dados["fb"]["arm"] == {"esp": 4.0, "real": 5.0, "dif": 4, "obs": ""}
+    h = cliente.get(f"/ficha/{p.codigo}").text
+    assert "25%" in h and "Ajustes do PCP" in h
+    assert cliente.get(f"/pecas/ficha?obra={p.obra_id}&peca={p.peca}", follow_redirects=False).status_code == 303

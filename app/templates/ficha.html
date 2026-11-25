@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block titulo %}Ficha {{ p.peca }} | PCP Naves{% endblock %}
+{% block corpo %}
+{% set fb = d.get('fb', {}) %}
+<div class="nao-imprime" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+  <a href="/pecas?obra={{ p.obra.nome|urlencode }}&q={{ p.peca|urlencode }}&status=todos">← Peças</a>
+  <span class="meta">Unidade:</span>
+  <select onchange="location.href='/ficha/' + this.value" aria-label="Unidade da peça">
+    {% for u in unidades %}<option value="{{ u.codigo }}" {{ 'selected' if u.codigo == p.codigo }}>{{ u.codigo }}{{ ' · fabricada ' ~ u.data_fabricacao.strftime('%d/%m') if u.fabricada and u.data_fabricacao else (' · fabricada' if u.fabricada else '') }}</option>{% endfor %}
+  </select>
+  <span style="margin-left:auto;display:flex;gap:6px">
+    {% if pode %}<button type="submit" form="ficha">Salvar</button>{% endif %}
+    <button type="button" class="sec" onclick="window.print()">Imprimir A4</button></span>
+</div>
+{% if msg %}<div class="aviso nao-imprime">{{ msg }}</div>{% endif %}
+
+<form method="post" id="ficha" class="ficha">
+<header class="fi-cab">
+  <div><div class="fi-tit">Ficha de fabricação</div><div class="meta">{{ p.obra.nome }} · código {{ p.codigo }}</div></div>
+  <div class="fi-peca">{{ p.peca }}<span>{{ p.produto }}</span></div>
+  <div class="meta" style="text-align:right">Emitida {{ agora }}{% if f %}<br>Atualizada {{ f.atualizado_em.strftime('%d/%m %H:%M') }} · {{ f.atualizado_por }}{% endif %}</div>
+</header>
+
+<h2 class="fi-sec">1. Peça <span>Plannix e Autodoc</span></h2>
+<div class="fi-grade">
+  <div><span>Revisão do projeto</span><b>{% if ad %}R{{ ad.revisao }} · {{ ad.status }}{% else %}sem desenho{% endif %}</b></div>
+  <div><span>Seção</span><b>{{ p.secao or '-' }}</b></div>
+  <div><span>Comprimento</span><b>{{ p.comprimento|num(2) ~ ' m' if p.comprimento else '-' }}</b></div>
+  <div><span>Volume</span><b>{{ (p.volume or p.vol_projeto)|num(3) ~ ' m³' if (p.volume or p.vol_projeto) else '-' }}</b></div>
+  <div><span>Protensão</span><b>{{ prot }}</b></div>
+  <div><span>fck</span><b>{{ (c.fck|num(0) ~ ' MPa') if c and c.fck else (p.traco or '-') }}</b></div>
+  <div class="largo"><span>Inf. adicional</span><b>{{ info or '-' }}</b></div>
+</div>
+
+<h2 class="fi-sec">2. Programação <span>vem do app; em branco se não programada</span></h2>
+<div class="fi-grade tres">
+  <label><span>Nave</span><input name="nave" value="{{ nave }}"></label>
+  <label><span>Fôrma</span><input name="forma" value="{{ forma }}"></label>
+  <label><span>Data programada</span><input name="data" value="{{ data }}" placeholder="dd/mm/aaaa"></label>
+</div>
+
+<h2 class="fi-sec">3. Itens e embutidos <span>quantidade do Plannix; o PCP ajusta a coluna "Usar"{% if not tem_complemento %} · sem complementos importados para esta unidade{% endif %}</span></h2>
+<table class="fi-itens">
+  <thead><tr><th>Item</th><th class="n">Plannix</th><th class="n">Usar</th><th>Local de armazenamento</th><th>Status</th><th class="ok">OK</th></tr></thead>
+  <tbody>
+  {% for fam, its in grupos %}
+    <tr class="fi-fam"><td colspan="6">{{ fam }}</td></tr>
+    {% for x in its %}{% set usar = x.usar if x.usar is not none else x.plannix %}
+    <tr>
+      <td>{{ x.chave }}<input type="hidden" name="item" value="{{ x.chave }}"></td>
+      <td class="n meta">{{ x.plannix|qtd if x.plannix is not none else '-' }}</td>
+      <td class="n"><input name="usar::{{ x.chave }}" value="{{ usar|qtd }}" class="fi-qtd{{ ' mudou' if x.usar is not none and x.usar != x.plannix }}" {{ '' if pode_qtd else 'readonly' }} inputmode="decimal" aria-label="Quantidade a usar de {{ x.chave }}"></td>
+      <td><input name="local::{{ x.chave }}" value="{{ x.local or '' }}" aria-label="Local de {{ x.chave }}"></td>
+      <td><select name="status::{{ x.chave }}" aria-label="Status de {{ x.chave }}">{% for s in STATUS_ITEM %}<option {{ 'selected' if s == (x.status or '') }}>{{ s }}</option>{% endfor %}</select></td>
+      <td class="ok"><span class="caixa"></span></td>
+    </tr>{% endfor %}
+  {% endfor %}
+  {% if pode_qtd %}<tr class="nao-imprime"><td><input name="novo_item" placeholder="Incluir item (ex.: Içamento)"></td><td></td><td class="n"><input name="novo_qtd" class="fi-qtd" inputmode="decimal" aria-label="Quantidade do item novo"></td><td colspan="3" class="meta">aparece em "Outros" depois de salvar</td></tr>{% endif %}
+  </tbody>
+</table>
+{% if f and f.alteracoes %}<p class="meta fi-alt">Ajustes do PCP: {% for a in f.alteracoes[-4:] %}{{ a.campo }} {{ a.de|qtd or '-' }} → {{ a.para|qtd or '-' }} ({{ a.quem }}, {{ a.quando }}){{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+
+<div class="fi-dois">
+  <div>
+    <h2 class="fi-sec">4. Acabamento</h2>
+    <div class="fi-opcoes">{% for a in ACABAMENTOS %}<label><input type="radio" name="acabamento" value="{{ a }}" {{ 'checked' if d.get('acabamento') == a }}> {{ a }}</label>{% endfor %}</div>
+    <input name="acab_obs" value="{{ d.get('acab_obs', '') }}" placeholder="Observação do acabamento" style="margin-top:6px">
+  </div>
+  <div>
+    <h2 class="fi-sec">5. Consolo</h2>
+    {% set met = d.get('cons_metodo') or cons_padrao %}
+    <div class="fi-opcoes"><span class="meta">Método:</span>
+      <label><input type="radio" name="cons_metodo" value="1" {{ 'checked' if met == '1' }}> 1 etapa</label>
+      <label><input type="radio" name="cons_metodo" value="2" {{ 'checked' if met == '2' }}> 2 etapas</label>
+      <label><input type="radio" name="cons_metodo" value="na" {{ 'checked' if met == 'na' }}> sem consolo</label></div>
+    <div class="fi-opcoes" style="margin-top:4px"><span class="meta">Tipo:</span>
+      {% for v, n in CONSOLOS %}<label><input type="radio" name="cons_tipo" value="{{ v }}" {{ 'checked' if d.get('cons_tipo') == v }}> {{ n }}</label>{% endfor %}</div>
+    {% if cons_padrao and not d.get('cons_metodo') %}<p class="meta nao-imprime" style="margin:4px 0 0">Sugestão da prancha: {{ cons_padrao }} etapa(s).</p>{% endif %}
+  </div>
+</div>
+
+<h2 class="fi-sec">6. Feedback da fábrica <span>tempo em horas; dificuldade de 1 (fácil) a 5 (muito difícil)</span></h2>
+<table class="fi-fb">
+  <thead><tr><th>Etapa</th><th class="n">Tempo esperado (h)</th><th class="n">Tempo real (h)</th><th class="n">Desvio</th><th>Dificuldade</th><th>Comentário</th></tr></thead>
+  <tbody>{% for k, n in ETAPAS_FB %}{% set x = fb.get(k) or {'esp': none, 'real': none, 'dif': none, 'obs': ''} %}
+    <tr><td><b>{{ n }}</b></td>
+      <td class="n"><input name="fb_esp_{{ k }}" value="{{ x.esp|qtd }}" class="fi-qtd" inputmode="decimal" aria-label="Tempo esperado de {{ n }}"></td>
+      <td class="n"><input name="fb_real_{{ k }}" value="{{ x.real|qtd }}" class="fi-qtd" inputmode="decimal" aria-label="Tempo real de {{ n }}"></td>
+      <td class="n">{% if x.esp and x.real is not none %}<b class="{{ 'ruim' if x.real > x.esp * 1.1 else 'bom' }}">{{ ((x.real - x.esp) / x.esp * 100)|round|int }}%</b>{% else %}<span class="meta">-</span>{% endif %}</td>
+      <td><div class="fi-dif" role="radiogroup" aria-label="Dificuldade de {{ n }}">{% for i in range(1, 6) %}<label><input type="radio" name="fb_dif_{{ k }}" value="{{ i }}" {{ 'checked' if x.dif == i }}><span>{{ i }}</span></label>{% endfor %}</div></td>
+      <td><input name="fb_obs_{{ k }}" value="{{ x.obs or '' }}" aria-label="Comentário de {{ n }}"></td></tr>{% endfor %}
+  </tbody>
+</table>
+<label class="fi-obs"><span class="meta">Observações gerais</span><textarea name="obs" rows="2">{{ d.get('obs', '') }}</textarea></label>
+
+<div class="fi-ass">
+  <div>PCP</div><div>Encarregado da nave</div><div>Armador</div><div>Qualidade</div>
+</div>
+{% if pode %}<p class="nao-imprime" style="margin-top:12px"><button type="submit">Salvar ficha</button></p>{% endif %}
+</form>
+
+<style>
+.ficha{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:18px 22px;max-width:1000px}
+.fi-cab{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;border-bottom:2px solid var(--azul);padding-bottom:8px}
+.fi-tit{font-size:18px;font-weight:700;color:var(--azul)}
+.fi-peca{font-size:26px;font-weight:800;text-align:center;line-height:1}.fi-peca span{display:block;font-size:11px;font-weight:600;color:#667;letter-spacing:.05em}
+.fi-sec{font-size:13px;color:var(--azul);margin:14px 0 6px;text-transform:none}.fi-sec span{font-weight:400;color:#778;font-size:11px;margin-left:6px}
+.fi-grade{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.fi-grade.tres{grid-template-columns:repeat(3,1fr)}
+.fi-grade>div,.fi-grade>label{border:1px solid var(--linha);border-radius:6px;padding:5px 8px;display:flex;flex-direction:column;margin:0}
+.fi-grade span{font-size:11px;color:#778}.fi-grade b{font-size:14px}.fi-grade .largo{grid-column:1/-1}
+.fi-grade input{border:none;padding:2px 0;font-size:14px;font-weight:700;background:transparent}
+.fi-itens,.fi-fb{width:100%;border-collapse:collapse;font-size:13px}
+.fi-itens th,.fi-fb th{background:var(--azul);color:#fff;text-align:left;padding:4px 6px;font-size:11px}
+.fi-itens td,.fi-fb td{border-bottom:1px solid #e3e7ee;padding:2px 6px}
+.fi-itens td input,.fi-itens td select,.fi-fb td input{border:1px solid transparent;background:#f6f8fb;padding:3px 6px;width:100%}
+.fi-qtd{text-align:right;max-width:80px}.fi-qtd.mudou{background:#fff4d6!important;font-weight:700}
+.fi-fam td{background:#eef2f8;font-weight:700;font-size:11px;color:var(--azul);padding-top:5px}
+.ok{width:34px;text-align:center}.caixa{display:inline-block;width:14px;height:14px;border:1.5px solid #556;border-radius:2px}
+.fi-dois{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fi-opcoes{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px}.fi-opcoes label{display:flex;gap:4px;align-items:center;margin:0}
+.fi-opcoes input{width:auto}
+.fi-dif{display:flex;gap:3px}.fi-dif label{margin:0}.fi-dif input{position:absolute;opacity:0;width:1px}
+.fi-dif span{display:inline-block;width:24px;height:24px;line-height:22px;text-align:center;border:1px solid #9aa4b2;border-radius:50%;font-weight:700;cursor:pointer;font-size:12px}
+.fi-dif input:checked+span{background:var(--azul);color:#fff;border-color:var(--azul)}
+.fi-dif input:focus-visible+span{outline:2px solid var(--azul2)}
+.bom{color:#2e7d32}.ruim{color:#c62828}
+.fi-obs{display:block;margin-top:10px}.fi-obs textarea{width:100%}
+.fi-ass{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:28px;font-size:11px;color:#556}
+.fi-ass div{border-top:1px solid #556;padding-top:3px}
+.fi-alt{margin:4px 0 0}
+@media (max-width:760px){.fi-grade,.fi-grade.tres,.fi-dois{grid-template-columns:1fr 1fr}.fi-cab{grid-template-columns:1fr}}
+@media print{
+  @page{size:A4 portrait;margin:9mm}
+  .ficha{border:none;padding:0;max-width:none}
+  .fi-itens td input,.fi-itens td select,.fi-fb td input{background:transparent;border:none;border-bottom:1px dotted #99a;-webkit-appearance:none;appearance:none}
+  .fi-itens,.fi-fb{font-size:10.5px}.fi-sec{margin:9px 0 4px}
+  .fi-dif span{width:18px;height:18px;line-height:16px;font-size:10px}
+  tr{break-inside:avoid}.fi-ass{margin-top:18px}
+  textarea{border:1px solid #bbb}
+}
+</style>
+{% endblock %}

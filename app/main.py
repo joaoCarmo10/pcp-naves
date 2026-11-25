@@ -44,6 +44,7 @@ VERSAO_CSS = hashlib.md5((BASE / "static" / "app.css").read_bytes()).hexdigest()
 tpl.env.globals.update(lendo_etiquetas=lambda pid: pid in _ocr_em_andamento, CORES={k: v[1] for k, v in CORES.items()}, LEGENDA=LEGENDA, DADOS_EFEMEROS=DADOS_EFEMEROS, VERSAO_CSS=VERSAO_CSS)
 tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+tpl.env.filters["qtd"] = lambda v: "" if v is None else (f"{v:.0f}" if float(v).is_integer() else f"{v:.2f}".rstrip("0").replace(".", ","))
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
 # datas gravadas com datetime.now() estão no fuso do servidor (UTC no Railway): mostra no horário da Bahia
 tpl.env.filters["hl"] = lambda d, f="%d/%m %H:%M": d.astimezone(plannix.BAHIA).strftime(f) if d else ""
@@ -535,6 +536,11 @@ async def importar(arquivo: list[UploadFile] = File(...), db: Session = Depends(
                 msgs.append(f"{nome}: Autodoc, {r['arquivos']} desenhos ({r['novos']} novos)"
                             + (f", bloqueados: {', '.join(r['bloqueadas'])}" if r["bloqueadas"] else ", nenhum bloqueado")
                             + (f". Projeto sem obra no Plannix: {', '.join(r['sem_obra'])}" if r["sem_obra"] else "") + ".")
+                continue
+            from . import ficha as fch
+            if fch.detectar(conteudo):
+                r = fch.importar(db, conteudo)
+                msgs.append(f"{nome}: complementos do Plannix, {r['linhas']} peças ({r['com_itens']} com itens), {r['colunas']} colunas.")
                 continue
             if nome.lower().endswith(".xlsx"):
                 imp = pg.importar_programacao(db, conteudo, nome)
@@ -1602,6 +1608,45 @@ def pecas_modulo(request: Request, db: Session = Depends(get_db)):
         "obras": sorted(obras.values(), key=lambda o: o.nome), "obras_map": obras, "sel": sel, "lendo": lendo,
         "rodando": any(st["feitos"] < st["total"] for _, st in lendo), "qs": request.url.query,
         "flash": request.session.pop("flash", None)})
+
+
+@app.get("/pecas/ficha")
+def pecas_ficha(obra: int, peca: str, db: Session = Depends(get_db)):
+    """Da lista de peças (um tipo por linha) para a ficha: a primeira unidade ainda não fabricada, senão a primeira."""
+    us = list(db.scalars(select(Peca).where(Peca.obra_id == obra, Peca.peca == peca).order_by(Peca.fabricada, Peca.codigo)))
+    if not us:
+        _404()
+    return RedirectResponse(f"/ficha/{quote(us[0].codigo)}", status_code=303)
+
+
+def _ficha_ctx(request: Request, db: Session, codigo: str, msg: str = "") -> HTMLResponse:
+    from . import ficha as fch
+    ctx = fch.montar(db, codigo)
+    if not ctx:
+        _404()
+    u = request.state.usuario
+    pode = getattr(request.state, "nivel_pagina", 2) >= 2
+    pode_qtd = pode and (u is None or u.admin or u.perfil in ("PCP", "Administrador"))
+    return tpl.TemplateResponse(request, "ficha.html", {**ctx, "pode": pode, "pode_qtd": pode_qtd, "msg": msg,
+                                                        "agora": datetime.now(plannix.BAHIA).strftime("%d/%m/%Y %H:%M"),
+                                                        "base": ultima_base(db)})
+
+
+@app.get("/ficha/{codigo}", response_class=HTMLResponse)
+def ficha_ver(request: Request, codigo: str, db: Session = Depends(get_db)):
+    """Ficha de fabricação da unidade (formulário para PCP e fábrica; imprime em A4)."""
+    return _ficha_ctx(request, db, codigo)
+
+
+@app.post("/ficha/{codigo}", response_class=HTMLResponse)
+async def ficha_salvar(request: Request, codigo: str, db: Session = Depends(get_db)):
+    from . import ficha as fch
+    if not db.scalar(select(Peca).where(Peca.codigo == codigo)):
+        _404()
+    u = request.state.usuario
+    pode_qtd = u is None or u.admin or u.perfil in ("PCP", "Administrador")
+    fch.salvar(db, codigo, await request.form(), (u.nome if u else "PCP"), pode_qtd)
+    return _ficha_ctx(request, db, codigo, "Ficha salva.")
 
 
 @app.get("/pecas/pdf")
