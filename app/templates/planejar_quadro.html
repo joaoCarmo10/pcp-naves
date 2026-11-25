@@ -105,7 +105,13 @@ const FALT = {{ falt|tojson }};
         <label class="pq-qtd">qtd <input type="number" min="1" max="${g.codigos.length}" value="1" aria-label="Quantas unidades de ${esc(g.peca)}"> de ${g.codigos.length}</label>
       </div>`).join("") + (gs.length > 400 ? `<p class="meta">Mostrando 400 de ${gs.length}. Use os filtros.</p>` : "");
   }
-  [fo, fp, fa].forEach(e => e.addEventListener("change", desenha)); fb.addEventListener("input", desenha);
+  // filtros da lista sobrevivem ao recarregar depois de arrastar (por aba do navegador)
+  const CH = "pq-filtros";
+  try { const v = JSON.parse(sessionStorage.getItem(CH) || "null");
+    if (v) { if ([...fo.options].some(o => o.value === v.o)) fo.value = v.o; if ([...fp.options].some(o => o.value === v.p)) fp.value = v.p; fb.value = v.b || ""; fa.checked = !!v.a; } } catch (e) {}
+  const guarda = () => { try { sessionStorage.setItem(CH, JSON.stringify({o: fo.value, p: fp.value, b: fb.value, a: fa.checked})); } catch (e) {} };
+  [fo, fp, fa].forEach(e => e.addEventListener("change", () => { guarda(); desenha(); }));
+  fb.addEventListener("input", () => { guarda(); desenha(); });
   desenha();
 
   const msg = document.getElementById("pq-msg");
