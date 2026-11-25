@@ -15,7 +15,7 @@
         {% if prox %}<a class="botao-sec" href="/planejar?rev={{ r.id }}&dia={{ prox }}" title="Próximo dia">›</a>{% endif %}
       </span></label>
     <label for="rev">Revisão em edição<select id="rev" name="rev" onchange="this.form.submit()">
-      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ '[RASCUNHO] ' if x.rascunho }}{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ '[RASCUNHO] ' if x.rascunho }}{{ x.nome }} ({{ x.criada_em|hl }})</option>{% endfor %}</select></label>
   </form>
   {% endif %}
   <form method="post" action="/planejar/revisao" class="filtros" style="margin:0">

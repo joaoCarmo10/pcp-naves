@@ -1,5 +1,6 @@
 import hashlib
 import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import hmac
@@ -44,6 +45,8 @@ tpl.env.globals.update(lendo_etiquetas=lambda pid: pid in _ocr_em_andamento, COR
 tpl.env.filters["pct"] = lambda v: f"{v:.0%}"
 tpl.env.filters["num"] = lambda v, d=1: f"{v:,.{d}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 tpl.env.filters["dm"] = lambda d: d.strftime("%d/%m") if d else ""
+# datas gravadas com datetime.now() estão no fuso do servidor (UTC no Railway): mostra no horário da Bahia
+tpl.env.filters["hl"] = lambda d, f="%d/%m %H:%M": d.astimezone(plannix.BAHIA).strftime(f) if d else ""
 Base.metadata.create_all(engine)
 migrar()
 from . import autodoc_robo   # noqa: E402  (robô do Autodoc: agenda própria, 2x por dia)
@@ -189,7 +192,8 @@ def _sync_status(db: Session) -> dict:
     contato = dt(_cfg(db, "sync_contato"))
     agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
     return {"ativo": bool(_cfg(db, "sync_token")), "contato": contato, "mudanca": dt(_cfg(db, "sync_mudanca")),
-            "atrasado": bool(contato and (agora - contato).total_seconds() > 3 * 3600), "erro": _cfg(db, "sync_erro")}
+            "atrasado": bool(contato and (agora - contato).total_seconds() > 7 * 3600),
+            "duracao": _cfg(db, "sync_duracao"), "erro": _cfg(db, "sync_erro")}
 
 
 @app.get("/importar", response_class=HTMLResponse)
@@ -370,6 +374,7 @@ async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
         _cfg_grava(db, "sync_erro", "")
         db.commit()
         return {"ok": True, "sem_mudanca": True}
+    t0 = time.monotonic()
     try:
         (DATA_DIR / "importacoes" / "plannix_automatico_ultimo.tsv").write_bytes(conteudo)
         imp = plannix.importar_exportacao(db, conteudo, "Plannix (automático)")
@@ -381,6 +386,7 @@ async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"ok": False, "erro": str(e)}, status_code=422)
     _cfg_grava(db, "sync_hash", h)
     _cfg_grava(db, "sync_mudanca", agora)
+    _cfg_grava(db, "sync_duracao", f"{time.monotonic() - t0:.0f}")
     _cfg_grava(db, "sync_erro", "")
     db.commit()
     return {"ok": True, "tipo": imp.tipo, "resumo": imp.resumo}

@@ -9,12 +9,12 @@
     <label for="dia">Dia da concretagem<select id="dia" name="dia" onchange="this.form.submit()">
       {% for x in dias %}<option value="{{ x }}" {{ 'selected' if x == d }}>{{ DIAS[x.weekday()] }} {{ x.strftime('%d/%m/%y') }}{{ ' (hoje)' if x == hoje }}</option>{% endfor %}</select></label>
     <label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.submit()">
-      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em|hl }})</option>{% endfor %}</select></label>
   </form>
   {% endif %}
 </div>
 {% if not r %}<div class="vazio">Nenhuma programação importada.</div>{% else %}
-<h2 class="so-imprime">Armação para {{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m/%Y') }} · {{ r.nome }}{% if dv %} · divulgada em {{ dv.criada_em.strftime('%d/%m %H:%M') }}{% endif %}</h2>
+<h2 class="so-imprime">Armação para {{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m/%Y') }} · {{ r.nome }}{% if dv %} · divulgada em {{ dv.criada_em|hl }}{% endif %}</h2>
 <div class="kpis" style="margin-bottom:8px">
   <div class="kpi"><b>{{ DIAS[d.weekday()] }} {{ d.strftime('%d/%m') }}</b><span>concretagem</span></div>
   <div class="kpi"><b>{{ pecas }}</b><span>peças programadas</span></div>
@@ -26,7 +26,7 @@
   · total <b>{{ bit_dia.values()|sum|num(0) }} kg</b>{% if sem_cad %} · {{ sem_cad }} peça(s) sem cadastro{% endif %}</p>{% endif %}
 <section class="cartao nao-imprime divulga">
   <div>
-    {% if dv %}<b>Divulgada em {{ dv.criada_em.strftime('%d/%m às %H:%M') }}</b> com {{ dv.itens|length }} linhas.
+    {% if dv %}<b>Divulgada em {{ dv.criada_em|hl('%d/%m às %H:%M') }}</b> com {{ dv.itens|length }} linhas.
       {% if incluidos or retirados %}<span class="alerta-mud">Mudou depois: {{ incluidos|length }} incluída(s), {{ retirados|length }} retirada(s). Divulgue de novo para o armador ver.</span>{% endif %}
     {% else %}<b>Ainda não divulgada.</b> O armador só vê a lista depois de divulgar.{% endif %}
   </div>

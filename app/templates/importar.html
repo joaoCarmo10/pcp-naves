@@ -39,8 +39,8 @@
   <p>Desligado. O script <code>plannix_sync</code>, rodando num PC da fábrica, lê o banco do Plannix e manda o "all data" para cá sozinho.</p>
   {% else %}
   <p>Último contato do PC da fábrica: <b>{{ sync.contato.strftime('%d/%m %H:%M') if sync.contato else 'nenhum ainda' }}</b>
-     {% if sync.mudanca %} · última mudança nos dados: {{ sync.mudanca.strftime('%d/%m %H:%M') }}{% endif %}</p>
-  {% if sync.atrasado %}<p><b>Mais de 3 horas sem contato.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
+     {% if sync.mudanca %} · última mudança nos dados: {{ sync.mudanca.strftime('%d/%m %H:%M') }}{% if sync.duracao %} (o app levou {{ sync.duracao }} s para processar){% endif %}{% endif %}</p>
+  {% if sync.atrasado %}<p><b>Mais de 7 horas sem contato.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
   {% if sync.erro %}<p><b>Último envio recusado:</b> {{ sync.erro }}</p>{% endif %}
   {% endif %}
   {% if admin and not token_novo %}
@@ -62,7 +62,7 @@
 <table class="t" style="max-width:980px">
   <tr><th>Data</th><th>Arquivo</th><th>Tipo</th><th>Resumo</th></tr>
   {% for i in imps %}
-  <tr><td>{{ i.criada_em.strftime('%d/%m/%Y %H:%M') }}</td><td>{{ i.arquivo }}</td>
+  <tr><td>{{ i.criada_em|hl('%d/%m/%Y %H:%M') }}</td><td>{{ i.arquivo }}</td>
       <td>{{ {'completa':'Realizado','geral':'All data','a_realizar':'A realizar','programacao':'Programação'}.get(i.tipo, i.tipo) }}</td>
       <td>{{ i.resumo.linhas }} linhas{% if i.resumo.obras %} · {{ i.resumo.obras|join(', ') }}{% endif %}</td></tr>
   {% endfor %}

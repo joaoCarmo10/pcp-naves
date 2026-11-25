@@ -9,7 +9,7 @@
   {% if not listas %}<div class="vazio">Nenhuma lista divulgada para os próximos dias.</div>{% endif %}
   {% for l in listas %}
   <section class="arm-dia">
-    <h2>{{ DIAS[l.d.weekday()] }} {{ l.d.strftime('%d/%m') }} <span class="meta">· {{ l.armadas }} de {{ l.pecas }} armadas · divulgada {{ l.dv.criada_em.strftime('%d/%m %H:%M') }}</span></h2>
+    <h2>{{ DIAS[l.d.weekday()] }} {{ l.d.strftime('%d/%m') }} <span class="meta">· {{ l.armadas }} de {{ l.pecas }} armadas · divulgada {{ l.dv.criada_em|hl }}</span></h2>
     {% for (nave, forma), ls in l.grupos.items() %}
     <div class="arm-forma"><div class="arm-cab"><b>{{ forma or nave }}</b></div>
       {% for y in ls %}{% set x = y.x %}

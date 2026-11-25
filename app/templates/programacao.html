@@ -29,7 +29,7 @@
     <label for="peca">Peça ou código<input id="peca" name="peca" type="search" value="{{ f.peca }}" placeholder="ex.: VR, P163" style="width:120px" onchange="this.form.submit()"></label>
     {% if f.obra or f.nave or f.produto or f.peca or f.situacao %}<a class="botao-sec" href="/programacao?rev={{ r.id }}&dia={{ d }}">Limpar</a>{% endif %}
     <label for="rev">Revisão<select id="rev" name="rev" onchange="this.form.dia.value='';this.form.submit()">
-      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em.strftime('%d/%m %H:%M') }})</option>{% endfor %}</select></label>
+      {% for x in revs %}<option value="{{ x.id }}" {{ 'selected' if x.id == r.id }}>{{ x.nome }} ({{ x.criada_em|hl }})</option>{% endfor %}</select></label>
   </form>
 </div>
 {% set feitas = tot['NO PRAZO'] + tot['COM ATRASO'] + tot['DATA A CONFIRMAR'] %}
