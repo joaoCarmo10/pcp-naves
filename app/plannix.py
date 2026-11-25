@@ -113,8 +113,9 @@ def etapa_legivel(etapa: str) -> str:
     def um(w: str, primeiro: bool) -> str:
         if w.lower() in _MINUSC and not primeiro:
             return w.lower()
-        if any(ch.isdigit() for ch in w) or len(w) <= 4:
-            return w
+        vogais = sum(ch in "AEIOUÁÉÍÓÚÂÊÔÃÕ" for ch in w.upper())
+        if any(ch.isdigit() for ch in w) or len(w) <= 3 or (len(w) <= 4 and vogais <= 1):
+            return w   # sigla ou código: IBPC, PDV, AMP., S4PEPC
         return w[:1] + w[1:].lower()
     out = []
     for w in (etapa or "").replace("_", " ").split(" "):
