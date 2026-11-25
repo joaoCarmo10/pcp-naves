@@ -17,7 +17,11 @@
   </form>
   {% endif %}
   <span style="display:flex;gap:6px;flex-wrap:wrap">
-    {% if r %}<a class="botao-sec" href="/planejar?visao=dia&rev={{ r.id }}&dia={{ de.isoformat() }}">Layout das naves (1 dia)</a>
+    {% if r %}<button type="button" id="b-auto" title="Completa a capacidade livre das fôrmas no período com as peças que faltam, pela prioridade. Não tira nada do que já está.">Autopreencher período</button>
+    <button type="button" class="sec" id="b-desf" title="Tira os itens do último autopreenchimento; o que foi arrastado à mão fica">Desfazer autopreenchimento</button>
+    <a class="botao-sec" href="/planejar/exportar?rev={{ r.id }}&de={{ de.isoformat() }}&ate={{ ate.isoformat() }}">Exportar planilha</a>
+    <button type="button" class="sec" onclick="window.print()">Imprimir</button>
+    <a class="botao-sec" href="/planejar?visao=dia&rev={{ r.id }}&dia={{ de.isoformat() }}">Layout das naves (1 dia)</a>
     <a class="botao-sec" href="/planejar/premissas">Premissas</a>{% endif %}
     <form method="post" action="/planejar/revisao" style="margin:0;display:flex;gap:6px">
       <input type="hidden" name="rev" value="{{ r.id if r else '' }}"><input type="hidden" name="dia" value="{{ de.isoformat() }}">
@@ -63,7 +67,7 @@
         <td class="pq-c{{ ' off' if l.f and not c.cap and not c.parada }}{{ ' parada' if c.parada }}{{ ' cheio' if c.cap and c.uso > c.cap + 0.001 }}{{ ' hoje' if c.d == hoje }}" {% if l.f %}data-forma="{{ l.f.id }}" data-dia="{{ c.d.isoformat() }}" data-nome="{{ l.f.nome }}"{% endif %}>
           {% if c.parada %}<div class="pq-setup" title="{{ c.parada.obs }} · {{ c.parada.de.strftime('%d/%m') if c.parada.de else '' }} a {{ c.parada.ate.strftime('%d/%m') if c.parada.ate else '' }}">{{ (c.parada.obs or 'Parada').split(' da fôrma')[0].split(':')[0] }}<button type="button" class="pq-sx" data-pr="{{ c.parada.id }}" aria-label="Remover período de {{ c.parada.obs }}">×</button></div>{% endif %}
           {% if l.f and c.cap %}<div class="pq-bar" title="{{ c.uso|num(1) }} de {{ c.cap|num(0) }} {{ l.un }}"><i style="width:{{ [pct * 100, 100]|min }}%"></i></div>{% endif %}
-          {% for g in c.g %}<div class="pq-chip{{ ' feito' if g.fab >= g.qtd }}{{ ' forcado' if g.obs.startswith('Forçado') }}" draggable="true" data-ids="{{ g.ids|join(',') }}" title="{{ g.obra }} · {{ g.peca }} · {{ g.secao }}{{ (' · ' ~ g.comp|num(2) ~ ' m') if g.comp }}{{ ' · ' ~ g.fab ~ ' feita(s)' if g.fab }}{{ ' · ' ~ g.obs if g.obs }}">
+          {% for g in c.g %}<div class="pq-chip{{ ' feito' if g.fab >= g.qtd }}{{ ' forcado' if g.obs.startswith('Forçado') }}{{ ' auto' if g.obs.startswith('Autopreenchido') }}" draggable="true" data-ids="{{ g.ids|join(',') }}" title="{{ g.obra }} · {{ g.peca }} · {{ g.secao }}{{ (' · ' ~ g.comp|num(2) ~ ' m') if g.comp }}{{ ' · ' ~ g.fab ~ ' feita(s)' if g.fab }}{{ ' · ' ~ g.obs if g.obs }}">
             <span class="pq-o">{{ g.obra.split(' | ')[0][:10] }}</span><b>{{ g.peca }}</b>{% if g.qtd > 1 %}<span class="pq-q">×{{ g.qtd }}</span>{% endif %}
             <button type="button" class="pq-x" aria-label="Tirar {{ g.peca }} deste dia">×</button></div>{% endfor %}
         </td>{% endfor %}
@@ -146,6 +150,21 @@ const FALT = {{ falt|tojson }};
       arrasto = null;
     });
   });
+  document.getElementById("b-auto").addEventListener("click", async e => {
+    if (!confirm("Autopreencher de {{ de.strftime('%d/%m') }} a {{ ate.strftime('%d/%m') }}?\n\nCompleta a capacidade livre das fôrmas com as peças que faltam, pela prioridade (fura-fila, obra, armadas, produto, peça), respeitando encaixe, setup, premissas e desenho bloqueado. Nada do que já está é tirado; dá para desfazer.")) return;
+    e.target.disabled = true; e.target.textContent = "Preenchendo...";
+    const r = await fetch("/planejar/autopreencher", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV, de: "{{ de.isoformat() }}", ate: "{{ ate.isoformat() }}"})});
+    const j = await r.json().catch(() => ({ok: false}));
+    if (j.ok) { sessionStorage.setItem("pq-aviso", `Autopreenchido: ${j.n} peça(s) programada(s); ${j.sobram} ficaram sem lugar no período.`); recarrega(); }
+    else { aviso(j.erro || "Não deu para autopreencher.", true); e.target.disabled = false; e.target.textContent = "Autopreencher período"; }
+  });
+  document.getElementById("b-desf").addEventListener("click", async () => {
+    if (!confirm("Tirar as peças do último autopreenchimento? O que você arrastou à mão fica.")) return;
+    const r = await fetch("/planejar/desfazer-auto", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV})});
+    const j = await r.json().catch(() => ({ok: false}));
+    sessionStorage.setItem("pq-aviso", j.ok ? `${j.n} peça(s) do autopreenchimento tiradas.` : "Não deu para desfazer."); recarrega();
+  });
+  { const a = sessionStorage.getItem("pq-aviso"); if (a) { sessionStorage.removeItem("pq-aviso"); aviso(a); } }
   const dlg = document.getElementById("dlg-setup"), fs = document.getElementById("f-setup");
   document.addEventListener("click", e => {
     const b = e.target.closest(".pq-setup-btn"); if (!b) return;
@@ -200,7 +219,7 @@ const FALT = {{ falt|tojson }};
 .pq-bar{height:3px;background:#e7ebf0;border-radius:2px;margin-bottom:3px;overflow:hidden}.pq-bar i{display:block;height:100%;background:var(--prog)}
 .pq-c.cheio .pq-bar i{background:var(--falta)}
 .pq-chip{display:flex;align-items:center;gap:3px;background:#eef3fb;border:1px solid #c9d6ea;border-radius:4px;padding:1px 3px;margin-bottom:2px;cursor:grab;white-space:nowrap}
-.pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
+.pq-chip.auto{border-style:dashed}.pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
 .pq-o{color:#667;font-size:9.5px;max-width:42px;overflow:hidden;text-overflow:ellipsis}.pq-q{color:var(--azul);font-weight:700}
 .pq-x{margin-left:auto;border:none;background:none;color:#889;cursor:pointer;padding:0 2px;font-size:13px;line-height:1}.pq-x:hover{color:#a4161a}
 .pq-setup-btn{border:none;background:none;color:#778;cursor:pointer;padding:0 4px 0 0;font-size:13px;float:right}.pq-setup-btn:hover{color:var(--azul)}
@@ -209,6 +228,7 @@ const FALT = {{ falt|tojson }};
 .pq-sx{border:none;background:none;color:#3b2a00;cursor:pointer;padding:0 2px;font-size:13px}
 .pq-msg{position:fixed;bottom:16px;right:16px;background:#1f3864;color:#fff;padding:10px 14px;border-radius:8px;max-width:420px;z-index:50;font-size:13px}
 .pq-msg.ruim{background:#a4161a}
+@media print{.pq-lista,.filtros,.pq-x,.pq-setup-btn,.pq-sx,details{display:none!important}.pq-grade{max-height:none;overflow:visible}@page{size:A3 landscape;margin:6mm}.pq-t thead th,.pq-t .pq-f{position:static}}
 @media (max-width:900px){.pq{flex-direction:column}.pq-lista{width:100%;position:static;max-height:300px}}
 </style>
 {% endblock %}

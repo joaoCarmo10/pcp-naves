@@ -272,3 +272,98 @@ def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forc
     rev.inicio, rev.fim = min(x for x in datas if x), max(x for x in datas if x)
     db.commit()
     return {"ok": True, "n": len(its), "avisos": probs}
+
+
+# ---------------------------------------------------------------- autopreencher (completa sem tirar o que já está)
+
+def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: set[int] | None = None) -> dict:
+    """Completa a capacidade livre das fôrmas no período com as peças que faltam, na ordem de prioridade do PCP
+    (fura-fila, prioridade da obra, armadas primeiro, produto, nome). Não tira nem move nada do que já está.
+    Respeita: encaixe (produto, seção, comprimento), capacidade, fôrma parada (setup), premissas (não programar,
+    só a partir de, máximo por dia), desenho bloqueado no Autodoc e uma seção por fôrma por dia. Itens marcados
+    com o lote para poder desfazer."""
+    import secrets
+    from . import autodoc
+    from . import premissas as pm
+    prs = pm.ativas(db)
+    paradas = [pr for pr in prs if pr.tipo == "parar_forma"]
+    hoje = date.today()
+    dias = [d for d in dias if d >= hoje]
+    ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    armadas = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
+    adx = autodoc.indice(db)
+    cands = []
+    for p, o in db.execute(select(Peca, Obra).join(Obra).where(Peca.fabricada.is_(False), Obra.ativa.is_(True))):
+        if p.codigo in ja or pm.motivo_fora(prs, p):
+            continue
+        x = autodoc.de(adx, p.obra_id, p.peca)
+        if x and x.bloqueado:
+            continue
+        cands.append(p)
+    cands.sort(key=lambda p: (0 if pm.fura_fila(prs, p) else 1, p.obra.prioridade or 99,
+                              0 if (p.hora_armacao or p.codigo in armadas) else 1, p.produto, chave_natural(p.peca), p.codigo))
+    usados: set[str] = set()
+    lote = "AUTO-" + secrets.token_hex(3)
+    novos, cont = 0, defaultdict(int)
+    formas = [f for f in db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)) if not so_formas or f.id in so_formas]
+    for d in dias:
+        vig = [f for f in formas if f.vigente(d)]
+        por, _ = itens_por_forma(db, rev, d, vig)
+        for f in vig:
+            if parada(paradas, f, d):
+                continue
+            cap = capacidade(f, d)
+            if not cap:
+                continue
+            atual = por.get(f.id, [])
+            livre = cap - uso(f, atual)
+            secao = next((i.secao for i in atual if i.secao), None)   # uma seção por fôrma por dia
+            for p in cands:
+                if livre <= 1e-6:
+                    break
+                if p.codigo in usados or not fm.aceita(f, p.produto, p.secao, p.comprimento):
+                    continue
+                if secao and (p.secao or "").upper() != secao.upper():
+                    continue
+                na = pm.nao_antes(prs, p)
+                if na and d < na:
+                    continue
+                lim = pm.limites(prs, p)
+                if any(cont[(pid, f.id, d)] >= l for pid, l in lim):
+                    continue
+                ocupa = 1 if f.tipo == "unidade" else (p.comprimento or 0)
+                if not ocupa or ocupa > livre + 1e-6:
+                    continue
+                if f.tipo == "pista" and conflito_protensao(db, f, [p], atual):
+                    continue
+                it = ItemProg(revisao_id=rev.id, data=d, nave=f.nave, forma=f.nome_completo, obra=p.obra.nome, peca=p.peca,
+                              codigo=p.codigo, produto=p.produto, secao=p.secao, comprimento=p.comprimento, qtd=1,
+                              volume=p.volume, tipo="PLANEJADA", obs=f"Autopreenchido ({lote})")
+                db.add(it)
+                atual.append(it)
+                usados.add(p.codigo)
+                secao = secao or p.secao
+                livre -= ocupa
+                novos += 1
+                for pid, _ in lim:
+                    cont[(pid, f.id, d)] += 1
+    if novos:
+        rev.inicio = min(x for x in [rev.inicio, dias[0]] if x)
+        rev.fim = max(x for x in [rev.fim, dias[-1]] if x)
+    db.commit()
+    return {"ok": True, "n": novos, "lote": lote, "sobram": len(cands) - len(usados)}
+
+
+def desfazer_auto(db: Session, rev: RevisaoProg, lote: str | None = None) -> int:
+    """Tira os itens do último autopreenchimento (ou do lote informado). O que foi arrastado à mão fica."""
+    its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.obs.like("Autopreenchido (AUTO-%"))))
+    if not its:
+        return 0
+    alvo = lote or max(its, key=lambda i: i.id).obs.split("(")[1].rstrip(")")
+    n = 0
+    for i in its:
+        if alvo in i.obs:
+            db.delete(i)
+            n += 1
+    db.commit()
+    return n

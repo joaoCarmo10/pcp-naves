@@ -1298,6 +1298,33 @@ def planejar_setup_remover(dados: dict = Body(...), db: Session = Depends(get_db
     return {"ok": True}
 
 
+@app.post("/planejar/autopreencher")
+def planejar_autopreencher(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    d0, d1 = _data(dados.get("de")), _data(dados.get("ate"))
+    if not d0 or not d1:
+        return {"ok": False, "erro": "Período inválido."}
+    so = {int(x) for x in dados.get("formas", []) if str(x).isdigit()} or None
+    return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so)
+
+
+@app.post("/planejar/desfazer-auto")
+def planejar_desfazer_auto(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    return {"ok": True, "n": pl.desfazer_auto(db, r)}
+
+
+@app.get("/planejar/exportar")
+def planejar_exportar(rev: int, de: str, ate: str = "", db: Session = Depends(get_db)):
+    """A revisão em edição na planilha padrão (Rev03), a partir do início do período do quadro."""
+    from . import planilha_prog
+    r = db.get(RevisaoProg, rev) or _404()
+    ini = _data(de) or date.today()
+    nome = f"Programacao_Producao_{ini:%d-%m}_a_{(r.fim or ini):%d-%m}.xlsx"
+    return Response(planilha_prog.gerar(db, r, ini), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
 @app.post("/planejar/mover")
 def planejar_mover(dados: dict = Body(...), db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, int(dados["rev"])) or _404()

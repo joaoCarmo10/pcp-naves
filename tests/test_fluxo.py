@@ -1155,4 +1155,12 @@ def test_quadro_de_planejamento(cliente):
     j = cliente.post("/planejar/alocar", json={"rev": rev.id, "forma": f.id, "dia": d0.isoformat(), "codigos": [p2.codigo]}).json()
     assert not j["ok"] and "parada" in j["problemas"][0]
     cliente.post("/planejar/setup/remover", json={"id": j and SessionLocal().scalar(select(__import__("app.models", fromlist=["Premissa"]).Premissa).where(__import__("app.models", fromlist=["Premissa"]).Premissa.tipo == "parar_forma", __import__("app.models", fromlist=["Premissa"]).Premissa.forma == "N1-FT")).id})
+    j = cliente.post("/planejar/autopreencher", json={"rev": rev.id, "de": d0.isoformat(), "ate": (d0 + timedelta(days=6)).isoformat()}).json()
+    assert j["ok"] and j["n"] >= 0
+    antes = SessionLocal().scalar(select(ItemProg).where(ItemProg.id == it.id))
+    assert antes is not None                                    # o que estava fica
+    assert cliente.post("/planejar/desfazer-auto", json={"rev": rev.id}).json()["ok"]
+    assert SessionLocal().get(ItemProg, it.id) is not None
+    r = cliente.get(f"/planejar/exportar?rev={rev.id}&de={d0.isoformat()}")
+    assert r.status_code == 200 and r.content[:2] == b"PK"
     assert 'class="pq-setup"' not in cliente.get(f"/planejar?rev={rev.id}&de={d0.isoformat()}&ate={(d0 + timedelta(days=6)).isoformat()}").text
