@@ -285,6 +285,15 @@ def tipos_da_folha(atribuidas: list[dict], unidades: dict[str, list[dict]], fora
         us = unidades.get(n, [])
         if len({tipo(u) for u in us}) < 2:
             continue
+        # só pede conferência quando a escolha muda o resultado: tipos de fato diferentes (não só o item do contrato
+        # com a mesma seção e comprimento) e status diferentes entre eles (se tudo está fabricado, tanto faz)
+        assin = defaultdict(set)
+        for u in us:
+            assin[tipo(u)].add((u.get("produto", ""), (u.get("secao") or "").upper(), u.get("etapa", ""), round(u.get("comp") or 0, 2)))
+        if len({frozenset(v) for v in assin.values()}) < 2:
+            continue
+        if len({u["st"] for u in us}) < 2:
+            continue
         for u in us:
             k = tipo(u)
             x = g.setdefault(k, {"chave": k, "item": u.get("item", ""), "produto": u.get("produto", ""), "etapa": u.get("etapa", ""),
