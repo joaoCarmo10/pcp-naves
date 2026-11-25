@@ -631,7 +631,9 @@ def obra(request: Request, obra_id: int, db: Session = Depends(get_db)):
 @app.post("/obras/{obra_id}")
 def obra_editar(obra_id: int, nome: str = Form(...), prioridade: str = Form(""), ativa: str = Form(""), db: Session = Depends(get_db)):
     o = db.get(Obra, obra_id) or _404()
-    o.nome = nome.strip()[:80] or o.nome
+    novo = nome.strip()[:80] or o.nome
+    plannix.renomear_obra(db, o.nome, novo)
+    o.nome = novo
     o.ativa = bool(ativa)
     o.prioridade = int(prioridade) if prioridade.strip().isdigit() else None
     db.commit()

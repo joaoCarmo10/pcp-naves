@@ -1038,13 +1038,16 @@ def test_cada_etapa_do_plannix_vira_uma_obra(cliente):
     db.commit()
     plannix.importar_exportacao(db, tsv.encode("latin-1"), "auto.tsv")
     obras = {o.nome: o for o in db.scalars(select(Obra).where(Obra.sigla == "8243"))}
-    assert set(obras) == {"Farol (Hot Park)", "Barracão (Hot Park)"}
-    assert obras["Farol (Hot Park)"].etapa == "FAROL" and obras["Barracão (Hot Park)"].prioridade == 1
+    assert set(obras) == {"Hot Park | Farol", "Hot Park | Barracão"}
+    assert obras["Hot Park | Farol"].etapa == "FAROL" and obras["Hot Park | Barracão"].prioridade == 1
     p3 = db.scalar(select(Peca).where(Peca.codigo == "3"))
-    assert p3.obra_id == obras["Barracão (Hot Park)"].id
+    assert p3.obra_id == obras["Hot Park | Barracão"].id
     # arquivo sem a coluna Etapa (exportação manual) não desfaz a separação
     plannix.importar_exportacao(db, (cab.replace("\tEtapa", "") + lin("LE1", "3", "", "").rsplit("\t", 1)[0] + "\n"
                                      + lin("LE1", "1", "", "10/11/2026").rsplit("\t", 1)[0] + "\n"
                                      + lin("LE1", "2", "", "").rsplit("\t", 1)[0] + "\n").encode("latin-1"), "manual.tsv")
     db.expire_all()
-    assert db.get(Peca, p3.id).obra_id == obras["Barracão (Hot Park)"].id
+    assert db.get(Peca, p3.id).obra_id == obras["Hot Park | Barracão"].id
+    from app.plannix import etapa_legivel
+    assert etapa_legivel("BLOCO AMP. 24 SALAS - ARATU") == "Bloco AMP. 24 Salas - Aratu"
+    assert etapa_legivel("PDV-VILA_DOS_PESCADORES") == "PDV-Vila dos Pescadores"

@@ -105,25 +105,69 @@ def _obra_da_etapa(db: Session, nome_plannix: str, etapa: str, principal: str, m
     return o
 
 
+_MINUSC = {"de", "da", "do", "dos", "das", "e", "em"}
+
+
+def etapa_legivel(etapa: str) -> str:
+    """'BLOCO AMP. 24 SALAS - ARATU' -> 'Bloco AMP. 24 Salas - Aratu'; siglas curtas e códigos ficam em maiúsculas."""
+    def um(w: str, primeiro: bool) -> str:
+        if w.lower() in _MINUSC and not primeiro:
+            return w.lower()
+        if any(ch.isdigit() for ch in w) or len(w) <= 4:
+            return w
+        return w[:1] + w[1:].lower()
+    out = []
+    for w in (etapa or "").replace("_", " ").split(" "):
+        out.append("-".join(um(x, not out and k == 0) for k, x in enumerate(w.split("-"))))
+    return " ".join(out)
+
+
+def base_da_sigla(os_: list) -> str:
+    """Nome da obra sem a etapa: o que vem antes do " | ", senão o nome curto da primeira obra da sigla
+    ('Farol (Hot Park)', que já cita a etapa, vira 'Hot Park')."""
+    for o in os_:
+        if " | " in o.nome:
+            return o.nome.split(" | ")[0]
+    orig = os_[0].nome.split(" · ")[0]
+    m = re.search(r"\(([^)]+)\)\s*$", orig)
+    et = _sem_acento((os_[0].etapa or "").split("-")[0].strip())
+    if m and et and et in _sem_acento(orig):
+        return m.group(1)
+    return orig
+
+
+def renomear_obra(db: Session, antigo: str, novo: str) -> None:
+    """O nome da obra também está gravado nos itens de programação e nas premissas: troca em todos."""
+    from sqlalchemy import update
+    from .models import ItemProg, Premissa
+    if antigo and novo and antigo != novo:
+        db.execute(update(ItemProg).where(ItemProg.obra == antigo).values(obra=novo))
+        db.execute(update(Premissa).where(Premissa.obra == antigo).values(obra=novo))
+
+
 def nomes_das_etapas(db: Session) -> None:
-    """Sigla com várias etapas: cada obra se chama "Etapa (Obra)", ex.: "Barracão (Hot Park)". O nome que já cita a
-    própria etapa (ex.: "Farol (Hot Park)") fica como está."""
+    """Toda obra com etapa no Plannix se chama "Obra | Etapa" (ex.: "Hot Park | Farol", "Hot Park | Barracão").
+    Os itens de programação seguem a obra (etapa) em que a peça está."""
+    from .models import ItemProg
     por: dict[str, list] = {}
     for o in db.scalars(select(Obra).order_by(Obra.id)):
         por.setdefault(o.sigla, []).append(o)
     for os_ in por.values():
-        if len(os_) < 2:
-            continue
-        orig = os_[0].nome.split(" · ")[0]
-        m = re.search(r"\(([^)]+)\)\s*$", orig)
-        base = m.group(1) if m else orig
+        base = base_da_sigla(os_)
         for o in os_:
             if not o.etapa:
                 continue
-            if _sem_acento(o.etapa.split("-")[0].strip()) in _sem_acento(o.nome) and " · " not in o.nome and "((" not in o.nome \
-                    and not re.search(r"\([^)]*\([^)]*\)\)", o.nome):
-                continue
-            o.nome = f"{o.etapa.title()} ({base})"[:80]
+            novo = f"{base} | {etapa_legivel(o.etapa)}"[:80]
+            if o.nome != novo:
+                renomear_obra(db, o.nome, novo)
+                o.nome = novo
+    db.flush()
+    nome_obra = {o.id: o.nome for o in db.scalars(select(Obra))}
+    obra_cod = dict(db.execute(select(Peca.codigo, Peca.obra_id)).all())
+    for it in db.scalars(select(ItemProg).where(ItemProg.codigo.is_not(None))):
+        oid = obra_cod.get(it.codigo)
+        if oid and it.obra != nome_obra[oid]:
+            it.obra = nome_obra[oid]
 
 
 def _obra(db: Session, nome_plannix: str) -> Obra:
