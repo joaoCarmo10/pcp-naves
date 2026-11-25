@@ -951,6 +951,13 @@ def _pxr_ctx(request: Request, db: Session) -> dict | None:
             "qs": "&".join(f"{k}={quote(v)}" for k, v in qp.items() if v)}
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+def dashboard_tela(request: Request, db: Session = Depends(get_db)):
+    """Cards do período, matriz obra|etapa > tipo > peça x mês/dia e avanço por tipo de peça."""
+    from . import dashboard
+    return tpl.TemplateResponse(request, "dashboard.html", {**dashboard.montar(db, request.query_params), "base": ultima_base(db)})
+
+
 @app.get("/pxr", response_class=HTMLResponse)
 def pxr_tela(request: Request, db: Session = Depends(get_db)):
     ctx = _pxr_ctx(request, db)

@@ -1058,3 +1058,11 @@ def test_cada_etapa_do_plannix_vira_uma_obra(cliente):
     from app.plannix import etapa_legivel
     assert etapa_legivel("BLOCO AMP. 24 SALAS - ARATU") == "Bloco AMP. 24 Salas - Aratu"
     assert etapa_legivel("PDV-VILA_DOS_PESCADORES") == "PDV-Vila dos Pescadores"
+
+
+def test_dashboard(cliente):
+    from datetime import date
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    h = cliente.get("/dashboard?de=2020-01-01&ate=" + date.today().isoformat() + "&m=vol&col=mes").text
+    assert "Dashboard da produção" in h and "Avanço por tipo de peça" in h and "peças produzidas" in h
+    assert cliente.get("/dashboard").status_code == 200 and cliente.get("/dashboard?m=aco&col=dia&obra=XX").status_code == 200

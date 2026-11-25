@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block titulo %}Dashboard | PCP Naves{% endblock %}
+{% block corpo %}
+<h1>Dashboard da produção</h1>
+<p class="sub">Produção pela data de fabricação no Plannix. {{ de.strftime('%d/%m/%Y') }} a {{ ate.strftime('%d/%m/%Y') }}.{% if base %} Base: {{ base }}.{% endif %}</p>
+
+<form method="get" class="filtros nao-imprime">
+  <label for="de">De<input type="date" id="de" name="de" value="{{ de.isoformat() }}"></label>
+  <label for="ate">Até<input type="date" id="ate" name="ate" value="{{ ate.isoformat() }}"></label>
+  <label for="obra">Obra | etapa<select id="obra" name="obra" onchange="this.form.submit()"><option value="">Todas as ativas</option>
+    {% for x in opcoes.obra %}<option {{ 'selected' if x == f.obra }}>{{ x }}</option>{% endfor %}</select></label>
+  <label for="tipo">Tipo de peça<select id="tipo" name="tipo" onchange="this.form.submit()"><option value="">Todos</option>
+    {% for x in opcoes.tipo %}<option {{ 'selected' if x == f.tipo }}>{{ x }}</option>{% endfor %}</select></label>
+  <input type="hidden" name="m" value="{{ f.m }}"><input type="hidden" name="col" value="{{ f.col }}">
+  <button type="submit" class="sec">Aplicar</button>
+  <span style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
+    {% set hoje = ate %}
+    <a class="botao-sec" href="?de={{ ate.replace(day=1).isoformat() }}&ate={{ ate.isoformat() }}&obra={{ f.obra|urlencode }}&tipo={{ f.tipo|urlencode }}&m={{ f.m }}">Mês</a>
+    <a class="botao-sec" href="?de={{ ate.replace(month=1, day=1).isoformat() }}&ate={{ ate.isoformat() }}&obra={{ f.obra|urlencode }}&tipo={{ f.tipo|urlencode }}&m={{ f.m }}&col=mes">Ano</a>
+    <button type="button" class="sec" onclick="window.print()">Imprimir</button></span>
+</form>
+
+{% set c = cards %}
+<div class="kpis">
+  <div class="kpi" title="Programadas no período feitas no dia (revisão vigente), até ontem"><b>{% if c.ppc and c.ppc.ppc is not none %}{{ c.ppc.ppc|pct }}{% else %}-{% endif %}</b><span>PPC{% if c.ppc %} ({{ c.ppc['NO PRAZO'] }} de {{ c.ppc.prog }}){% endif %}</span></div>
+  <div class="kpi"><b>{{ c.pecas }}</b><span>peças produzidas</span></div>
+  <div class="kpi"><b>{{ c.vol|num(1) }}</b><span>m³ produzidos</span></div>
+  <div class="kpi"><b>{{ c.vol_dia|num(1) }}</b><span>m³ por dia produtivo ({{ c.dias }} dias)</span></div>
+  <div class="kpi" title="{{ c.sem_aco }} peça(s) sem peso de aço no Plannix"><b>{{ (c.aco / 1000)|num(1) }} t</b><span>aço frouxo produzido</span></div>
+  {% if c.ativo %}<div class="kpi" title="Taxa de aço protendido do Plannix x volume"><b>{{ (c.ativo / 1000)|num(1) }} t</b><span>aço ativo (cordoalha)</span></div>{% endif %}
+  {% if c.ppc and c.ppc.ppc_vol is not none %}<div class="kpi"><b>{{ c.ppc.ppc_vol|pct }}</b><span>PPC em volume</span></div>{% endif %}
+</div>
+
+<h2 style="margin-top:18px">Produção por obra, tipo e peça</h2>
+<div class="filtros nao-imprime" style="margin:4px 0 8px">
+  <span class="meta">Valor:</span>
+  {% for k, (n, _) in METRICAS.items() %}<a class="{{ 'botao' if k == f.m else 'botao-sec' }}" href="?de={{ de.isoformat() }}&ate={{ ate.isoformat() }}&obra={{ f.obra|urlencode }}&tipo={{ f.tipo|urlencode }}&col={{ f.col }}&m={{ k }}">{{ n }}</a>{% endfor %}
+  <span class="meta" style="margin-left:12px">Colunas:</span>
+  {% for k, n in [('mes', 'Ano / mês'), ('dia', 'Dia')] %}<a class="{{ 'botao' if k == f.col else 'botao-sec' }}" href="?de={{ de.isoformat() }}&ate={{ ate.isoformat() }}&obra={{ f.obra|urlencode }}&tipo={{ f.tipo|urlencode }}&m={{ f.m }}&col={{ k }}">{{ n }}</a>{% endfor %}
+  <button type="button" class="sec" onclick="mtx(true)">Expandir tudo</button><button type="button" class="sec" onclick="mtx(false)">Recolher</button>
+</div>
+{% if linhas %}
+<div class="rolagem-x"><table class="t compacta matriz" id="matriz">
+  <thead><tr><th style="min-width:220px">Obra | etapa › tipo › peça</th>{% for k in cols %}<th class="n">{{ rot[k] }}</th>{% endfor %}<th class="n">Total</th></tr></thead>
+  <tbody>{% for l in linhas %}{% set tot = l.v.values()|sum %}
+    <tr class="mx-n{{ l.n }}" data-id="{{ l.id }}" data-pai="{{ l.pai }}" {{ 'hidden' if l.n > 1 }}>
+      <td style="padding-left:{{ 6 + (l.n - 1) * 18 }}px;white-space:nowrap">{% if l.n < 3 %}<button type="button" class="mx-abre" aria-label="Abrir {{ l.rot }}" aria-expanded="false">▸</button>{% endif %}{{ l.rot }}</td>
+      {% for k in cols %}<td class="n">{{ l.v[k]|num(dec) if l.v.get(k) else '' }}</td>{% endfor %}
+      <td class="n"><b>{{ tot|num(dec) }}</b></td></tr>{% endfor %}
+  </tbody>
+  <tfoot><tr><th>Total</th>{% for k in cols %}<th class="n">{{ tot_col[k]|num(dec) if tot_col.get(k) else '' }}</th>{% endfor %}<th class="n">{{ tot_col.values()|sum|num(dec) }}</th></tr></tfoot>
+</table></div>
+{% else %}<div class="vazio">Nada fabricado no período com esses filtros.</div>{% endif %}
+
+<h2 style="margin-top:22px">Avanço por tipo de peça <span class="meta">posição de hoje, obras {{ f.obra or 'ativas' }}</span></h2>
+<div class="cartoes">
+{% for t in av %}
+  <button type="button" class="cartao card-tipo" onclick="document.getElementById('tp{{ loop.index }}').showModal()">
+    <h3>{{ t.tipo }}</h3>
+    <div class="barra" title="Fabricado {{ t.pct|pct }}">
+      <i style="width:{{ 100*t.fab/t.total if t.total else 0 }}%;background:var(--fab)"></i>
+      <i style="width:{{ 100*t.prog/t.total if t.total else 0 }}%;background:var(--prog)"></i>
+      <i style="width:{{ 100*t.atras/t.total if t.total else 0 }}%;background:{{ CORES['ATRASO'] }}"></i>
+      <i style="width:{{ 100*(t.total-t.fab-t.prog-t.atras)/t.total if t.total else 0 }}%;background:var(--falta)"></i>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><b>{{ t.pct|pct }}</b><span>peças</span></div>
+      <div class="kpi"><b>{{ t.pct_vol|pct }}</b><span>volume</span></div>
+      <div class="kpi"><b>{{ t.fab }}/{{ t.total }}</b><span>{{ t.total - t.fab }} faltam</span></div>
+    </div>
+  </button>
+  <dialog class="pop" id="tp{{ loop.index }}"><div class="pop-corpo">
+    <div class="pop-cab"><div><h2 style="margin:0">{{ t.tipo }}</h2><span class="meta">{{ t.fab }} de {{ t.total }} fabricadas ({{ t.pct|pct }}) · {{ t.prog }} programadas · {{ t.atras }} atrasadas</span></div>
+      <button type="button" class="sec" onclick="this.closest('dialog').close()">Fechar</button></div>
+    <table class="t compacta" style="margin-top:10px"><thead><tr><th>Obra | etapa</th><th class="n">Fabricadas</th><th class="n">%</th><th class="n">Programadas</th><th class="n">Atrasadas</th><th>A fabricar (peça × qtd · próxima data)</th></tr></thead>
+    <tbody>{% for o in t.obras %}<tr><td>{{ o.nome }}</td><td class="n">{{ o.fab }}/{{ o.total }}</td><td class="n">{{ o.pct|pct }}</td><td class="n">{{ o.prog or '-' }}</td><td class="n">{{ o.atras or '-' }}</td>
+      <td class="meta">{% for n, q, d in o.pend[:40] %}{{ n }}{{ ' ×' ~ q if q > 1 }}{{ ' · ' ~ d.strftime('%d/%m') if d }}{{ '; ' if not loop.last }}{% endfor %}{{ ' …' if o.pend|length > 40 }}</td></tr>{% endfor %}</tbody></table>
+  </div></dialog>
+{% endfor %}
+</div>
+
+<script>
+(() => {
+  const tab = document.getElementById("matriz");
+  if (!tab) return;
+  const filhos = id => tab.querySelectorAll(`tr[data-pai="${CSS.escape(id)}"]`);
+  const fecha = id => filhos(id).forEach(tr => { tr.hidden = true; const b = tr.querySelector(".mx-abre"); if (b) { b.textContent = "▸"; b.setAttribute("aria-expanded", "false"); } fecha(tr.dataset.id); });
+  tab.addEventListener("click", e => {
+    const b = e.target.closest(".mx-abre"); if (!b) return;
+    const tr = b.closest("tr"), abrir = b.getAttribute("aria-expanded") !== "true";
+    if (abrir) filhos(tr.dataset.id).forEach(x => x.hidden = false); else fecha(tr.dataset.id);
+    b.textContent = abrir ? "▾" : "▸"; b.setAttribute("aria-expanded", String(abrir));
+  });
+  window.mtx = abrir => tab.querySelectorAll("tbody tr").forEach(tr => {
+    if (tr.classList.contains("mx-n1")) { const b = tr.querySelector(".mx-abre"); b.textContent = abrir ? "▾" : "▸"; b.setAttribute("aria-expanded", String(abrir)); return; }
+    tr.hidden = !abrir; const b = tr.querySelector(".mx-abre"); if (b) { b.textContent = abrir ? "▾" : "▸"; b.setAttribute("aria-expanded", String(abrir)); }
+  });
+})();
+</script>
+<style>
+.matriz .mx-n1 td{font-weight:700;background:#f3f6fa}.matriz .mx-n2 td{background:#fafbfd}
+.card-tipo{text-align:left;cursor:pointer;font:inherit;background:#fff;color:inherit;border:1px solid var(--linha);width:100%}
+.card-tipo:hover{border-color:var(--azul2)}.card-tipo h3{margin-top:0}
+.mx-abre{border:none;background:none;cursor:pointer;width:18px;padding:0;font-size:12px;color:var(--azul)}
+.matriz tfoot th{background:#e7ebf0;color:#1f3864}
+@media print{.matriz tr[hidden]{display:none}@page{size:A4 landscape;margin:8mm}dialog{display:none}.rolagem-x{overflow:visible!important}}
+</style>
+{% endblock %}
