@@ -770,6 +770,16 @@ def test_tipo_de_outra_estrutura_nao_entra_na_folha():
     assert not tipos_da_folha(ao[1], un, {"7|ESCADA|VARIAVEL"})[1]["dentro"]
 
 
+def test_atrasada_e_adiantada_de_mesmo_nome():
+    """Programada num dia que passou e não feita = ATRASO; se a idêntica foi feita antes do dia dela, herda a data."""
+    from datetime import date, timedelta
+    from app.status import StatusPeca, status_de_unidades
+    st = status_de_unidades({"V1": [{"cod": "A", "st": "ATRASO", "data": date.today() - timedelta(days=1), "vol": 1.0}],
+                             "V2": [{"cod": "B", "st": "FALTA", "data": None, "vol": 1.0}]})
+    assert (st["V1"].atrasadas, st["V1"].falta, st["V1"].status) == (1, 0, "ATRASO")
+    assert (st["V2"].atrasadas, st["V2"].falta, st["V2"].status) == (0, 1, "FALTA")
+
+
 def test_fora_da_area_sai_do_avanco():
     from types import SimpleNamespace as NS
     from app.status import fora_da_area

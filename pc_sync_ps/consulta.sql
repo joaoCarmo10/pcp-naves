@@ -4,6 +4,7 @@
 -- Versão 3 (24/11): conferida com a exportação. Volume = M3UNIT do item do lançamento final (100%);
 -- taxa protendida = aço protendido da peça / volume de projeto (96,5%), e quando a peça não tem aço
 -- protendido no projeto usa o lançado na fabricação; sem peças com status D.
+-- Versão 4 (25/11): + Etapa (estrutura/bloco da obra no Plannix), para separar peças de mesmo nome.
 SET NOCOUNT ON;
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
@@ -61,7 +62,8 @@ SELECT
     mp.DESCRICAO                                        AS [Modelo de Protensão],
     pp.VOLUME                                           AS [Volume Teórico de Projeto],
     sf.NOMESUBFORMA                                     AS [Fôrma de Fabricação],
-    rp.STATUS                                           AS [Status Projeto]
+    rp.STATUS                                           AS [Status Projeto],
+    LTRIM(RTRIM(e.NOMEETAPA))                           AS [Etapa]
 FROM PJREGPROJETO rp
 JOIN obras ob             ON ob.CODOBRA = rp.CODOBRA
 JOIN PPECAS pp            ON pp.CODPECA = rp.CODPECA
@@ -77,5 +79,6 @@ LEFT JOIN arm             ON arm.CODIGOCONTROLE = rp.CODIGOCONTROLE
 LEFT JOIN cdo             ON cdo.CODIGOCONTROLE = rp.CODIGOCONTROLE
 LEFT JOIN aco             ON aco.CODPECA = pp.CODPECA
 LEFT JOIN fa              ON fa.CODIGOCONTROLE = rp.CODIGOCONTROLE
+LEFT JOIN PETAPAS e       ON e.CODETAPA = COALESCE(rp.CODETAPA, pp.CODETAPA)
 WHERE ISNULL(rp.STATUS, '') <> 'D'      -- D: peça desativada no projeto (não sai na exportação)
 ORDER BY ob.SIGLA, pp.NOMEPECA, rp.CODIGOCONTROLE;

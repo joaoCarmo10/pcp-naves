@@ -116,6 +116,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
             novas += 1
         else:
             atualizadas += 1
+            p.obra_id = obra.id   # peça transferida de obra no Plannix
         p.peca = str(r["Peça"]).strip()
         p.produto = str(r["Produto"]).strip()
         p.secao = str(r.get("Seção", "")).strip()
@@ -124,6 +125,8 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         if str(r.get("Item", "") or "").strip() not in ("", "nan"):
             p.item = str(r.get("Item")).strip()[:20]
         p.vol_projeto = _num(r.get("Volume Teórico de Projeto")) or p.vol_projeto
+        if "Etapa" in r:
+            p.etapa = (_texto(r.get("Etapa")) or "")[:80]
         p.hora_armacao = _data_hora(r.get("Hora da Armação", "")) or p.hora_armacao
         p.hora_corte_dobra = _data_hora(r.get("Hora do Corte e Dobra", "")) or p.hora_corte_dobra
         p.traco = _texto(r.get("Traço Real")) or p.traco or ""
@@ -138,7 +141,16 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         elif tipo in ("a_realizar", "geral"):   # sem data no Plannix = pendente (o Plannix manda)
             p.fabricada, p.data_fabricacao, p.origem_fabricacao, p.data_baixa = False, None, None, None
         p.atualizada_em = datetime.now()
-    saiu_lista = 0
+    saiu_lista = removidas = 0
+    if tipo == "geral":
+        # retrato completo da obra: peça que sumiu do Plannix (desativada, trocada de código) sai do app
+        for obra in obras_no_arquivo.values():
+            velhas = [p for p in existentes.values() if p.obra_id == obra.id and p.codigo not in codigos and p.id]
+            no_arquivo = sum(1 for p in existentes.values() if p.obra_id == obra.id and p.codigo in codigos)
+            if velhas and no_arquivo >= 2 * len(velhas):   # proteção contra arquivo parcial
+                for p in velhas:
+                    db.delete(p)
+                removidas += len(velhas)
     if tipo == "a_realizar":
         for obra in obras_no_arquivo.values():
             for p in db.scalars(select(Peca).where(Peca.obra_id == obra.id, Peca.fabricada.is_(False))):
@@ -160,7 +172,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
                 if not p.peso_aco_frouxo and p.peca in pesos:
                     p.peso_aco_frouxo = round(median(pesos[p.peca]), 2)
     imp = Importacao(arquivo=arquivo, tipo=tipo, resumo=dict(
-        linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista,
+        linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista, removidas=removidas,
         obras=sorted(o.nome for o in obras_no_arquivo.values()), data=hoje.isoformat()))
     db.add(imp)
     db.commit()

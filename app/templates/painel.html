@@ -2,7 +2,7 @@
 {% block titulo %}Avanço das obras | PCP Naves{% endblock %}
 {% block corpo %}
 <h1>Avanço físico das obras</h1>
-<p class="sub">Peças fabricadas segundo o Plannix. A barra mostra fabricado (verde), programado (azul) e sem programação (vermelho). Volume do Plannix; quando a exportação não traz, estimado por seção x comprimento.</p>
+<p class="sub">Peças fabricadas segundo o Plannix. A barra mostra fabricado (verde), programado (azul), atrasado sem data nova (laranja) e sem programação (vermelho). Volume do Plannix; quando a exportação não traz, estimado por seção x comprimento.</p>
 {% if not linhas %}
 <div class="vazio">Nenhuma obra ainda. Comece em <a href="/importar">Importar dados</a> com a exportação do Plannix.</div>
 {% else %}
@@ -13,6 +13,7 @@
     <div class="barra" title="Fabricado {{ r.pct|pct }}">
       <i style="width:{{ 100*r.fabricadas/r.pecas }}%;background:var(--fab)"></i>
       <i style="width:{{ 100*r.programadas/r.pecas }}%;background:var(--prog)"></i>
+      <i style="width:{{ 100*r.atrasadas/r.pecas }}%;background:{{ CORES['ATRASO'] }}"></i>
       <i style="width:{{ 100*r.falta/r.pecas }}%;background:var(--falta)"></i>
     </div>
     <div class="kpis">

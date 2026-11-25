@@ -87,12 +87,13 @@ def marcas_tela(caminho: Path, marcas: list, status: dict[str, StatusPeca], zoom
         st = mk.get("st") or s.status
         dica = mk["t"] + (f" · código {mk['cod']}" if mk.get("cod") else (" · sem peça no Plannix" if st == "SEM" else ""))
         if mk.get("data"):
-            dica += f" · {'fabricada' if st == 'FAB' else 'programada'} {mk['data']:%d/%m}"
+            dica += f" · {'fabricada' if st == 'FAB' else 'programada'} {mk['data']:%d/%m}" + (" (atrasada, sem data nova)" if st == "ATRASO" else "")
         out.append(dict(p=mk["t"], s=st, x=round(r.x0), y=round(r.y0), w=round(r.width), h=round(r.height), dica=dica))
     return out
 
 
-def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: str, data_ref: str, area: dict | None = None) -> bytes:
+def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: str, data_ref: str, area: dict | None = None,
+           aviso: str = "") -> bytes:
     src = pymupdf.open(caminho)
     pg0 = src[0]
     marcas = dentro(marcas, area)
@@ -127,9 +128,11 @@ def pdf_a2(caminho: Path, marcas: list, status: dict[str, StatusPeca], titulo: s
         caixa = pymupdf.Rect(W - PW - M, M + 40, W - M, H - M)
     rs = resumo(status, nomes)
     pg.insert_text((M, M + 18), f"AVANÇO FÍSICO DA PRODUÇÃO | {titulo}", fontsize=18, fontname="helv", color=azul)
+    if aviso:
+        pg.insert_text((W / 2, M + 18), aviso, fontsize=11, fontname="hebo", color=(0.8, 0.1, 0.1))
     pg.insert_text((M, M + 36),
                    f"Base: Plannix {data_ref}  |  Peças nesta planta: {rs['pecas']}  |  Fabricadas: {rs['fabricadas']} ({rs['pct']:.0%})  |  "
-                   f"Programadas: {rs['programadas']}  |  Volume fabricado: {rs['volume_fab']:.1f} de {rs['volume']:.1f} m³ ({rs['pct_vol']:.0%})",
+                   f"Programadas: {rs['programadas']}  |  Atrasadas: {rs['atrasadas']}  |  Volume fabricado: {rs['volume_fab']:.1f} de {rs['volume']:.1f} m³ ({rs['pct_vol']:.0%})",
                    fontsize=10, fontname="helv", color=(0.35, 0.35, 0.35))
     _tabela(pg, caixa, nomes, status, azul)
     return out.tobytes(garbage=3, deflate=True)
@@ -147,7 +150,7 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
         pg.draw_rect(pymupdf.Rect(xx, yy - 8, xx + 10, yy + 1), color=CORES[s][0], fill=CORES[s][0], fill_opacity=0.6)
         pg.insert_text((xx + 14, yy), lab, fontsize=8, fontname="helv")
     y += 14 * (-(-len(legenda) // por_linha)) + 8
-    cols = [("PEÇA", 0), ("QTD", 70), ("FAB.", 98), ("PROG.", 126), ("FALTA", 158), ("DATAS PROG.", 192)]
+    cols = [("PEÇA", 0), ("QTD", 64), ("FAB.", 88), ("PROG.", 112), ("ATRAS.", 140), ("FALTA", 170), ("DATAS PROG.", 198)]
     ordem = sorted(nomes, key=lambda k: (status[k].produto, chave_natural(k)))
     rowh = 9.2
     maxrows = max(1, int((y1 - y - 22) / rowh))
@@ -167,7 +170,7 @@ def _tabela(pg, caixa, nomes: set, status: dict, azul) -> None:
         s = status[k]
         pg.draw_rect(pymupdf.Rect(cx - 4, yy - 6.5, cx - 1, yy + 1), color=CORES[s.status][0], fill=CORES[s.status][0])
         ds = ", ".join(d.strftime("%d/%m") for d in s.datas[:3]) + ("…" if len(s.datas) > 3 else "")
-        vals = [k, str(s.total), str(s.fabricadas or "-"), str(s.programadas or "-"), str(s.falta or "-"), ds]
+        vals = [k, str(s.total), str(s.fabricadas or "-"), str(s.programadas or "-"), str(s.atrasadas or "-"), str(s.falta or "-"), ds]
         for (t, dx), v in zip(cols, vals):
             pg.insert_text((cx + dx * sc, yy), v, fontsize=fs, fontname="helv")
     if len(ordem) > maxrows * ncol:

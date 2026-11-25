@@ -13,9 +13,11 @@ CORES = {  # RGB 0-1 para o PDF e hex para a tela
     "FAB": ((0.30, 0.69, 0.31), "#4caf50"),
     "PARC": ((1.00, 0.75, 0.00), "#ffbf00"),
     "PROG": ((0.27, 0.51, 0.85), "#4582d9"),
+    "ATRASO": ((0.85, 0.33, 0.08), "#d84315"),
     "FALTA": ((0.90, 0.22, 0.21), "#e53935"),
 }
-LEGENDA = [("FAB", "Fabricada"), ("PARC", "Fabricada em parte"), ("PROG", "Programada"), ("FALTA", "Sem programação")]
+LEGENDA = [("FAB", "Fabricada"), ("PARC", "Fabricada em parte"), ("PROG", "Programada"), ("ATRASO", "Atrasada (sem nova data)"),
+           ("FALTA", "Sem programação")]
 
 
 @dataclass
@@ -27,13 +29,14 @@ class StatusPeca:
     fabricadas: int = 0
     programadas: int = 0
     bloqueadas: int = 0
+    atrasadas: int = 0       # programada para um dia que passou, não feita e sem data nova
     volume: float = 0.0
     volume_fab: float = 0.0
     datas: list[date] = field(default_factory=list)
 
     @property
     def falta(self) -> int:
-        return self.total - self.fabricadas - self.programadas
+        return self.total - self.fabricadas - self.programadas - self.atrasadas
 
     @property
     def status(self) -> str:
@@ -43,6 +46,8 @@ class StatusPeca:
             return "PARC"
         if self.programadas:
             return "PROG"
+        if self.atrasadas:
+            return "ATRASO"
         return "FALTA"
 
 
@@ -86,6 +91,8 @@ def status_de_unidades(un: dict[str, list[dict]]) -> dict[str, StatusPeca]:
                 s.programadas += 1
                 if u["data"]:
                     s.datas.append(u["data"])
+            elif u["st"] == "ATRASO":
+                s.atrasadas += 1
         s.datas = sorted(set(s.datas))
     return out
 
@@ -132,7 +139,8 @@ def resumo(status: dict[str, StatusPeca], nomes: set[str] | None = None) -> dict
     v = sum(s.volume for s in itens)
     vf = sum(s.volume_fab for s in itens)
     b = sum(getattr(s, "bloqueadas", 0) for s in itens)
-    return dict(pecas=t, fabricadas=f, programadas=p, falta=t - f - p - b, bloqueadas=b, volume=v, volume_fab=vf,
+    a = sum(getattr(s, "atrasadas", 0) for s in itens)
+    return dict(pecas=t, fabricadas=f, programadas=p, falta=t - f - p - b - a, bloqueadas=b, atrasadas=a, volume=v, volume_fab=vf,
                 pct=(f / t if t else 0), pct_vol=(vf / v if v else 0))
 
 
@@ -149,14 +157,15 @@ def por_produto(status: dict[str, StatusPeca]) -> list[dict]:
 
 CORES["SEM"] = ((0.62, 0.62, 0.62), "#9e9e9e")
 CORES["BLOQ"] = ((0.44, 0.19, 0.63), "#7030a0")
-LEGENDA_UNID = [("FAB", "Fabricada"), ("PROG", "Programada"), ("FALTA", "Sem programação"), ("BLOQ", "Desenho bloqueado (Autodoc)"),
+LEGENDA_UNID = [("FAB", "Fabricada"), ("PROG", "Programada"), ("ATRASO", "Atrasada (sem nova data)"), ("FALTA", "Sem programação"), ("BLOQ", "Desenho bloqueado (Autodoc)"),
                 ("SEM", "Sem peça no Plannix")]
 
 
 def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str, list[dict]]:
     """Unidades físicas por nome, na ordem em que ocupam as etiquetas: fabricadas (data), programadas (data), resto."""
-    from .programacao import codigos_programados
+    from .programacao import codigos_atrasados, codigos_programados
     prog = codigos_programados(db)
+    atras = codigos_atrasados(db)
     pecas = list(db.scalars(select(Peca).where(Peca.obra_id == obra_id)))
     vol_nome = {p.peca: p.volume for p in pecas if p.volume}
     from . import premissas as pm
@@ -173,12 +182,21 @@ def unidades_da_obra(db: Session, obra_id: int, escopo: bool = True) -> dict[str
             st, d = "BLOQ", None        # desenho bloqueado no Autodoc: não pode estar programada
         elif p.codigo in prog:
             st, d = "PROG", prog[p.codigo]
+        elif p.codigo in atras:
+            st, d = "ATRASO", atras[p.codigo]
         else:
             st, d = "FALTA", None
         out[p.peca].append({"cod": p.codigo, "st": st, "data": d, "vol": volume_estimado(p, vol_nome),
-                            "produto": p.produto, "secao": p.secao, "pend": pend, "item": p.item or "",
+                            "produto": p.produto, "secao": p.secao, "pend": pend, "item": p.item or "", "etapa": p.etapa or "",
                             "comp": p.comprimento})
-    ordem = {"FAB": 0, "PROG": 1, "FALTA": 2, "BLOQ": 3}
+    # peça idêntica feita antes do dia dela (adiantada) libera a data futura: a atrasada de mesmo nome herda essa data
+    for us in out.values():
+        livres = sorted(prog[u["cod"]] for u in us if u["st"] == "FAB" and u["cod"] in prog)
+        for u in sorted((u for u in us if u["st"] == "ATRASO"), key=lambda u: u["data"]):
+            if not livres:
+                break
+            u["st"], u["data"] = "PROG", livres.pop(0)
+    ordem = {"FAB": 0, "PROG": 1, "ATRASO": 2, "FALTA": 3, "BLOQ": 4}
     for us in out.values():   # pendente (premissa) vem antes das outras não feitas: é peça nossa, não sai na área
         us.sort(key=lambda u: (ordem[u["st"]], 0 if u["pend"] else 1, u["data"] or date.max, u["cod"] or ""))
     if escopo:
@@ -216,7 +234,14 @@ def atribuir(marcas: list, unidades: dict[str, list[dict]]) -> list[dict]:
 def tipo(u: dict) -> str:
     """Tipo da unidade no Plannix: item (linha do contrato) + produto + seção. Separa peças de mesmo nome que são de
     estruturas diferentes da obra (ex.: LE1 do Farol x LE1 do Barracão)."""
-    return f"{u.get('item', '')}|{u.get('produto', '')}|{u.get('secao', '')}"
+    base = f"{u.get('item', '')}|{u.get('produto', '')}|{u.get('secao', '')}"
+    return f"{base}|{u['etapa']}" if u.get("etapa") else base
+
+
+def _fora(u: dict, tf: set) -> bool:
+    """Tipo excluído da folha: pela chave completa ou pela chave sem etapa (marcação antiga vale para todas as etapas)."""
+    k = tipo(u)
+    return k in tf or k.rsplit("|", 1)[0] in tf if u.get("etapa") else k in tf
 
 
 def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]],
@@ -241,7 +266,7 @@ def atribuir_obra(folhas: list[tuple[int, list]], unidades: dict[str, list[dict]
         tf = fora.get(fid) or set()
         resto = {}
         for n in por_folha[fid]:
-            us = [u for u in unidades.get(n, []) if tipo(u) not in tf]
+            us = [u for u in unidades.get(n, []) if not _fora(u, tf)]
             resto[n] = us if n in repetida else [u for u in us if u["cod"] not in usados[n]]
         out[fid] = atribuir(marcas, resto)
         for m in out[fid]:
@@ -262,8 +287,8 @@ def tipos_da_folha(atribuidas: list[dict], unidades: dict[str, list[dict]], fora
             continue
         for u in us:
             k = tipo(u)
-            x = g.setdefault(k, {"chave": k, "item": u.get("item", ""), "produto": u.get("produto", ""),
-                                 "secao": u.get("secao", ""), "pecas": set(), "qtd": 0, "comps": set(), "dentro": k not in fora})
+            x = g.setdefault(k, {"chave": k, "item": u.get("item", ""), "produto": u.get("produto", ""), "etapa": u.get("etapa", ""),
+                                 "secao": u.get("secao", ""), "pecas": set(), "qtd": 0, "comps": set(), "dentro": not _fora(u, fora)})
             x["pecas"].add(n)
             x["qtd"] += 1
             if u.get("comp"):
@@ -273,7 +298,7 @@ def tipos_da_folha(atribuidas: list[dict], unidades: dict[str, list[dict]], fora
         x["pecas"] = sorted(x["pecas"], key=chave_natural)
         x["comps"] = sorted(x["comps"])
         out.append(x)
-    return sorted(out, key=lambda x: (x["produto"], chave_natural(x["item"]), x["secao"]))
+    return sorted(out, key=lambda x: (x["produto"], chave_natural(x["item"]), x["secao"], x["etapa"]))
 
 
 def desenhadas(atrib_obra: dict[int, list[dict]]) -> dict[str, int]:
@@ -310,6 +335,8 @@ def status_folha(atribuidas: list[dict], st_obra: dict[str, StatusPeca],
             s.programadas += 1
             if m["data"]:
                 s.datas.append(m["data"])
+        elif m["st"] == "ATRASO":
+            s.atrasadas += 1
     for s in out.values():
         s.datas = sorted(set(s.datas))
         s.nao_desenhadas = max(0, s.plannix - (desenhadas_obra or {}).get(s.peca, s.total))

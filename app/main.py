@@ -352,6 +352,21 @@ async def api_autodoc_linhas(request: Request, db: Session = Depends(get_db)):
     return {"ok": True, **r}
 
 
+@app.post("/importar/reprocessar")
+def importar_reprocessar(request: Request, db: Session = Depends(get_db)):
+    """Processa de novo o último envio do PC da fábrica (depois de uma correção no app, sem esperar o próximo envio)."""
+    u = request.state.usuario
+    if u is not None and not u.admin:
+        return RedirectResponse(f"/importar?erro={quote('Só o administrador reprocessa.')}", status_code=303)
+    arq = DATA_DIR / "importacoes" / "plannix_automatico_ultimo.tsv"
+    if not arq.exists():
+        return RedirectResponse(f"/importar?erro={quote('Ainda não chegou envio do PC da fábrica.')}", status_code=303)
+    imp = plannix.importar_exportacao(db, arq.read_bytes(), "Plannix (automático, reprocessado)")
+    r = imp.resumo
+    msg = f"Reprocessado: {r['linhas']} linhas, {r.get('removidas', 0)} peças que saíram do Plannix removidas."
+    return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
+
+
 @app.post("/api/plannix")
 async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
     """Recebe o 'all data' enviado pelo script que roda no PC da fábrica (lê o SQL Server do Plannix).
@@ -640,7 +655,7 @@ async def planta_tipos(request: Request, pid: int, db: Session = Depends(get_db)
     todos = set(form.getlist("todos"))
     dentro = set(form.getlist("dentro"))
     antes = set(p.tipos_fora or [])
-    p.tipos_fora = sorted((antes - todos) | (todos - dentro)) or None
+    p.tipos_fora = sorted((antes - todos) | (todos - dentro))   # lista (mesmo vazia) = folha conferida
     db.commit()
     n = len(todos - dentro)
     _flash(request, f"Peças desta folha ajustadas: {n} tipo(s) de outra estrutura não entram mais." if n else "Peças desta folha: todos os tipos entram.")
@@ -693,8 +708,11 @@ def planta_a2(pid: int, db: Session = Depends(get_db)):
     st = status_da_obra(db, p.obra_id)
     ao = _atrib_obra(db, p.obra)
     atrib = ao[p.id]
+    aviso = ""
+    if p.tipos_fora is None and tipos_da_folha(atrib, unidades_da_obra(db, p.obra_id)):
+        aviso = "PRELIMINAR: há peças de mesmo nome em outras estruturas da obra ainda não conferidas nesta folha."
     pdf = plantas.pdf_a2(DATA_DIR / p.arquivo, atrib, status_folha(atrib, st, desenhadas(ao)), f"{p.obra.nome.upper()} - {p.titulo.upper()}",
-                         ultima_base(db), p.area)
+                         ultima_base(db), p.area, aviso)
     nome = f"Avanco_{p.obra.nome}_{p.titulo}_{date.today():%d-%m}.pdf".replace(" ", "_")
     ascii_ = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode()
     return Response(pdf, media_type="application/pdf",

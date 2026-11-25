@@ -28,7 +28,8 @@ class Peca(Base):
     secao: Mapped[str] = mapped_column(String(40), default="")
     comprimento: Mapped[float | None] = mapped_column(Float, nullable=True)
     volume: Mapped[float | None] = mapped_column(Float, nullable=True)
-    item: Mapped[str] = mapped_column(String(20), default="")                # "Item" do Plannix: etapa/bloco da obra
+    item: Mapped[str] = mapped_column(String(20), default="")                # "Item" do Plannix: linha do contrato
+    etapa: Mapped[str] = mapped_column(String(80), default="")               # "Etapa" do Plannix (estrutura/bloco), quando vem
     vol_projeto: Mapped[float | None] = mapped_column(Float, nullable=True)  # volume teórico de projeto (m³)
     fabricada: Mapped[bool] = mapped_column(Boolean, default=False)
     data_fabricacao: Mapped[date | None] = mapped_column(Date, nullable=True)

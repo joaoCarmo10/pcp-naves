@@ -8,6 +8,7 @@
   <div class="kpi"><b>{{ r.pct|pct }}</b><span>peças fabricadas ({{ r.fabricadas }} de {{ r.pecas }})</span></div>
   <div class="kpi"><b>{{ r.pct_vol|pct }}</b><span>do volume ({{ r.volume_fab|num }} de {{ r.volume|num }} m³)</span></div>
   <div class="kpi"><b>{{ r.programadas }}</b><span>programadas</span></div>
+  {% if r.atrasadas %}<div class="kpi"><b style="color:{{ CORES['ATRASO'] }}">{{ r.atrasadas }}</b><span>atrasadas (sem data nova)</span></div>{% endif %}
   <div class="kpi"><b>{{ r.falta }}</b><span>sem programação</span></div>
   {% if r.bloqueadas %}<div class="kpi"><b style="color:#7030a0">{{ r.bloqueadas }}</b><span>desenho bloqueado no Autodoc</span></div>{% endif %}
 </div>

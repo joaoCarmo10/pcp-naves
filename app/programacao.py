@@ -121,6 +121,18 @@ def codigos_programados(db: Session) -> dict[str, date]:
         ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None), ItemProg.data >= date.today()))}
 
 
+def codigos_atrasados(db: Session) -> dict[str, date]:
+    """Códigos que a revisão vigente programou para um dia que já passou (a última data de cada um)."""
+    rev = revisao_atual(db)
+    if not rev:
+        return {}
+    out: dict[str, date] = {}
+    for c, d in db.execute(select(ItemProg.codigo, ItemProg.data).where(
+            ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None), ItemProg.data < date.today())):
+        out[c] = max(d, out.get(c, d))
+    return out
+
+
 # ---------------------------------------------------------------- programado x realizado
 @dataclass
 class Linha:
