@@ -29,6 +29,14 @@
 <div class="vazio">Não há revisão de programação. Crie uma revisão vazia ou importe a planilha em <a href="/importar">Importar dados</a>.</div>
 {% else %}
 {% if r.rascunho %}<p class="aviso">Rascunho de replanejamento, ainda não publicado. <a href="/planejar/replanejamento/{{ r.id }}">Ver resumo, baixar planilha ou publicar</a>.</p>{% endif %}
+<details class="nao-imprime" style="margin:4px 0"><summary class="meta">Replanejar automático (gera rascunho)</summary>
+<form method="post" action="/planejar/replanejar" class="filtros caixa-replan">
+  <input type="hidden" name="rev" value="{{ r.id }}">
+  <label>A partir de<input type="date" name="inicio" value="{{ de.isoformat() }}" required></label>
+  <label>Até<input type="date" name="fim" value="{{ ate.isoformat() }}" required></label>
+  <button type="submit" onclick="this.disabled=true;this.textContent='Calculando...';this.form.submit()">Gerar rascunho</button>
+  <span class="meta" style="align-self:center;max-width:520px">Mantém o que já passou, põe as atrasadas primeiro e encaixa as faltantes nas fôrmas certas. Sai como rascunho: só vale depois de publicar.</span>
+</form></details>
 <p class="meta" style="margin:2px 0 8px">Editando <b>{{ r.nome }}</b>: vale na hora no Realizado do dia e no programado x realizado.</p>
 
 <div class="pq">
@@ -36,8 +44,8 @@
     <div class="pq-lcab">
       <b>Peças a programar</b> <span class="meta" id="lf-n"></span>
       <select id="f-obra" aria-label="Obra"><option value="">Todas as obras</option>{% for o in obras %}<option>{{ o }}</option>{% endfor %}</select>
-      <div style="display:flex;gap:4px"><select id="f-prod" aria-label="Tipo de peça"><option value="">Todos os tipos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
-        <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção"></div>
+      <div style="display:flex;gap:4px;min-width:0"><select id="f-prod" aria-label="Tipo de peça" style="flex:1;min-width:0"><option value="">Todos os tipos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
+        <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção" style="flex:1;min-width:0;width:100%"></div>
       <label class="meta" style="flex-direction:row;align-items:center;gap:4px"><input id="f-arm" type="checkbox" style="width:auto"> só armadas</label>
     </div>
     <div id="lf-itens"></div>
