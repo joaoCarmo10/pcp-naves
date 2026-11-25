@@ -265,6 +265,9 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
         p.atualizada_em = datetime.now()
     if tem_etapa:
         nomes_das_etapas(db)
+        from .autodoc import religar_desenhos
+        db.flush()
+        religar_desenhos(db)
         for o in db.scalars(select(Obra).where(Obra.id.not_in(list(obras_id) or [0]))):   # etapa nova já toda feita: fora do painel
             ps = [p for p in existentes.values() if p.obra_id == o.id]
             if ps and all(p.fabricada for p in ps):

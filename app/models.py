@@ -297,6 +297,7 @@ class DesenhoAutodoc(Base):
     url: Mapped[str] = mapped_column(String(500), default="")             # link do arquivo (só o robô preenche)
     hash: Mapped[str] = mapped_column(String(64), default="")              # muda quando o arquivo muda
     hash_baixado: Mapped[str] = mapped_column(String(64), default="")      # versão já enviada ao leitor de pranchas
+    arquivo: Mapped[str] = mapped_column(String(300), default="")         # PDF baixado pelo PC (caminho em DATA_DIR)
     atualizado_em: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     @property

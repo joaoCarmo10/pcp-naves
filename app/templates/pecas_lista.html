@@ -44,11 +44,12 @@
       <td class="n">{{ t.cabos or ('-' if c else '') }}</td>
       <td class="meta" style="white-space:nowrap">{{ t.bitola }}</td>
       <td class="meta corta" title="{{ t.formas|join(', ') }}">{% if t.formas %}{{ t.formas[:3]|join(', ') }}{% if t.formas|length > 3 %} +{{ t.formas|length - 3 }}{% endif %}{% else %}<span style="color:#a4161a">nenhuma cadastrada</span>{% endif %}</td>
-      <td style="white-space:nowrap">{% if c and c.arquivo %}<a href="/cadastro/{{ c.id }}/pdf" target="_blank" rel="noopener">prancha</a>{% endif %}
-        {% if ad and ad.link %}{{ ' · ' if c and c.arquivo }}<a href="{{ ad.link }}" target="_blank" rel="noopener" title="Pasta do desenho no Autodoc">Autodoc ↗</a>{% endif %}</td>
+      <td style="white-space:nowrap">{% if ad and ad.arquivo %}<a href="/autodoc/desenho/{{ ad.id }}/pdf" target="_blank" rel="noopener" title="{{ ad.codigo }} (cópia do Autodoc)">PDF R{{ ad.revisao }}</a>
+        {% elif c and c.arquivo %}<a href="/cadastro/{{ c.id }}/pdf" target="_blank" rel="noopener" title="{{ c.nome_arquivo }}">PDF {{ c.revisao }}</a>
+        {% elif ad %}<span class="meta" title="O PC da fábrica baixa algumas pranchas por hora">na fila</span>{% endif %}</td>
     </tr>{% endfor %}</tbody>
 </table></div>
 {% if linhas|length > 1500 %}<p class="meta">Mostrando 1500 de {{ linhas|length }} tipos. Use os filtros.</p>{% endif %}
 {% else %}<div class="vazio">Nenhuma peça com esses filtros.</div>{% endif %}
-<p class="meta" style="margin-top:8px">Cabos e bitolas aparecem quando a prancha da peça já foi lida. O PC da fábrica baixa do Autodoc algumas pranchas por hora (primeiro as das peças a realizar) até completar; revisão nova no Autodoc é lida de novo sozinha.</p>
+<p class="meta" style="margin-top:8px">PDF, cabos e bitolas aparecem quando a prancha da peça já foi baixada do Autodoc e lida. O PC da fábrica baixa até 60 por hora (primeiro as das peças a realizar) até completar; revisão nova no Autodoc é baixada e lida de novo sozinha.</p>
 {% endblock %}

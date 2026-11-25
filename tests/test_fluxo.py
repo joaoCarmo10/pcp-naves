@@ -1020,7 +1020,9 @@ def test_pranchas_pelo_pc_e_lista_de_pecas(cliente):
     assert r.json()["ok"]
     assert cliente.get("/api/autodoc/pranchas", headers=cab).json()["faltam"] == 0     # já lida: sai da fila
     h = cliente.get(f"/pecas?obra={o.nome}&status=todos").text
-    assert "PP1" in h and "Autodoc ↗" in h and "prancha</a>" in h and "Realizado / planejado" in h
+    assert "PP1" in h and f"/autodoc/desenho/{d.id}/pdf" in h and "Realizado / planejado" in h
+    r = cliente.get(f"/autodoc/desenho/{d.id}/pdf")
+    assert r.status_code == 200 and r.content.startswith(b"%PDF") and "inline" in r.headers["content-disposition"]
     assert cliente.get("/pecas?status=realizado&q=PP1").status_code == 200
 
 

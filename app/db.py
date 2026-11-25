@@ -53,6 +53,9 @@ def migrar():
     if "pecas" in insp.get_table_names() and "etapa" not in {c["name"] for c in insp.get_columns("pecas")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE pecas ADD COLUMN etapa VARCHAR(80) DEFAULT ''"))
+    if "desenhos_autodoc" in insp.get_table_names() and "arquivo" not in {c["name"] for c in insp.get_columns("desenhos_autodoc")}:
+        with engine.begin() as cx:
+            cx.execute(text("ALTER TABLE desenhos_autodoc ADD COLUMN arquivo VARCHAR(300) DEFAULT ''"))
     if "obras" in insp.get_table_names() and "etapa" not in {c["name"] for c in insp.get_columns("obras")}:
         with engine.begin() as cx:
             cx.execute(text("ALTER TABLE obras ADD COLUMN etapa VARCHAR(80) DEFAULT ''"))

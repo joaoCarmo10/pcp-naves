@@ -88,8 +88,9 @@ def importar(db: Session, conteudo: bytes) -> dict:
     return importar_linhas(db, linhas)
 
 
-def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> dict:
-    """completo=True (robô, árvore inteira de obras ativas): desenho que não apareceu sai do app."""
+def ligador(db: Session):
+    """Função (sigla, linha do Autodoc) -> obra. Obra com várias etapas (ex.: Hot Park: Farol e Barracão): a etapa
+    citada na pasta/arquivo/título; senão a única etapa que tem as peças do título; senão a principal."""
     por_sigla: dict[str, list] = {}
     for o in db.scalars(select(Obra).order_by(Obra.id)):
         por_sigla.setdefault(o.sigla, []).append(o)
@@ -100,8 +101,6 @@ def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> 
             nomes_obra.setdefault(oid, set()).add(_canon(n))
 
     def obra_do_desenho(sigla: str, d: dict):
-        """Obra com várias etapas (ex.: Hot Park: Farol e Barracão): a etapa citada na pasta/arquivo/título;
-        senão a única etapa que tem as peças do título; senão a principal."""
         os_ = por_sigla.get(sigla) or []
         if len(os_) <= 1:
             return os_[0] if os_ else None
@@ -112,7 +111,25 @@ def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> 
         ps = {_canon(p) for p in pecas_do_titulo(_txt(d.get("Título")))}
         com = [o for o in os_ if ps and ps <= nomes_obra.get(o.id, set())]
         return com[0] if len(com) == 1 else os_[0]
+    return obra_do_desenho
 
+
+def religar_desenhos(db: Session) -> int:
+    """Depois que a obra foi separada em etapas: cada desenho já guardado vai para a obra (etapa) certa."""
+    f = ligador(db)
+    n = 0
+    for x in db.scalars(select(DesenhoAutodoc)):
+        m = re.match(r"\s*(\d{3,6})", x.projeto or "")
+        o = f(m.group(1), {"Pasta": x.pasta, "Código": x.codigo, "Título": x.titulo, "Projeto": x.projeto}) if m else None
+        if o and x.obra_id != o.id:
+            x.obra_id = o.id
+            n += 1
+    return n
+
+
+def importar_linhas(db: Session, linhas: list[dict], completo: bool = False) -> dict:
+    """completo=True (robô, árvore inteira de obras ativas): desenho que não apareceu sai do app."""
+    obra_do_desenho = ligador(db)
     vistos: dict[tuple, set] = {}
     novos = atualizados = 0
     sem_obra = set()

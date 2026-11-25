@@ -360,7 +360,18 @@ def api_autodoc_pranchas(request: Request, n: int = 30, db: Session = Depends(ge
         return JSONResponse({"ok": False, "erro": "Token inválido."}, status_code=401)
     fila = autodoc.pranchas_para_baixar(db, [], todas=True)
     return {"faltam": len(fila), "pranchas": [{"id": d["id"], "projeto": d["projeto"], "codigo": d["codigo"], "hash": d["hash"]}
-                                              for d in fila[:max(1, min(n, 60))]]}
+                                              for d in fila[:60]]}   # 60 por rodada (o PC para em 10 min)
+
+
+@app.get("/autodoc/desenho/{did}/pdf")
+def autodoc_desenho_pdf(did: int, db: Session = Depends(get_db)):
+    """O PDF da peça (cópia do Autodoc baixada pelo PC da fábrica), aberto direto no navegador."""
+    x = db.get(DesenhoAutodoc, did) or _404()
+    caminho = DATA_DIR / x.arquivo if x.arquivo else None
+    if not caminho or not caminho.exists():
+        raise HTTPException(404, "PDF ainda não baixado do Autodoc.")
+    nome = re.sub(r"[^\w.\-]+", "_", x.codigo)
+    return FileResponse(caminho, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{nome}"'})
 
 
 @app.post("/api/autodoc/prancha")
@@ -378,7 +389,15 @@ async def api_autodoc_prancha(request: Request, id: int, hash: str, db: Session 
     if not corpo.startswith(b"%PDF"):
         return JSONResponse({"ok": False, "erro": "Não é PDF."}, status_code=400)
     obra = db.get(Obra, x.obra_id)
-    lote = cad.guardar(obra, [(x.codigo, corpo)])
+    pasta = DATA_DIR / "autodoc"
+    pasta.mkdir(parents=True, exist_ok=True)
+    destino = pasta / f"{x.id}_{secrets.token_hex(3)}.pdf"
+    destino.write_bytes(corpo)
+    if x.arquivo and x.arquivo != str(destino.relative_to(DATA_DIR)):
+        (DATA_DIR / x.arquivo).unlink(missing_ok=True)
+    x.arquivo = str(destino.relative_to(DATA_DIR))
+    db.commit()
+    lote = [(x.codigo, destino)]   # o cadastro lido aponta para o mesmo PDF
     st = {"total": len(lote), "feitos": 0, "msgs": []}
     for nome, caminho in lote:
         try:

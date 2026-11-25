@@ -116,18 +116,24 @@ def _uma(db: Session, obra_id: int, nome: str, caminho: Path, st: dict) -> None:
         _gravar(db, obra_id, nome, caminho, st, L, pecas, nomes)
 
 
+def _do_autodoc(caminho: Path) -> bool:
+    """PDF baixado do Autodoc pelo PC: é a cópia do desenho, quem apaga é o desenho, não o cadastro."""
+    return (DATA_DIR / "autodoc") in Path(caminho).parents
+
+
 def _gravar(db: Session, obra_id: int, nome: str, caminho: Path, st: dict, L, pecas: list, nomes: set) -> None:
     chave = L.peca or f"?{Path(nome).stem[:36]}"
     etapas, alertas_et = etapas_da_prancha(pecas, L.peca, L.volume_un) if L.peca else ("", [])
     c = db.scalar(select(CadastroPeca).where(CadastroPeca.obra_id == obra_id, CadastroPeca.peca == chave, CadastroPeca.etapas == etapas))
     if c and _rev_num(c.revisao) > _rev_num(L.revisao) >= 0:
         st["msgs"].append(f"{nome}: {chave} já está cadastrada na {c.revisao}; a {L.revisao} enviada é mais antiga e foi ignorada.")
-        caminho.unlink(missing_ok=True)
+        if not _do_autodoc(caminho):
+            caminho.unlink(missing_ok=True)
         return
     if c:
         c.historico = (c.historico or []) + [{"revisao": c.revisao, "arquivo": c.nome_arquivo, "protensao": c.protensao,
                                               "aco_passivo": c.aco_passivo, "em": c.atualizado_em.isoformat(timespec="minutes")}]
-        if c.arquivo and c.arquivo != str(caminho.relative_to(DATA_DIR)):
+        if c.arquivo and c.arquivo != str(caminho.relative_to(DATA_DIR)) and not _do_autodoc(DATA_DIR / c.arquivo):
             (DATA_DIR / c.arquivo).unlink(missing_ok=True)
     else:
         c = CadastroPeca(obra_id=obra_id, peca=chave, etapas=etapas)
