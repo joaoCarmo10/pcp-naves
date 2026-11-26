@@ -39,7 +39,7 @@ def _data_hora(v) -> datetime | None:
 
 
 def ler_exportacao(conteudo: bytes) -> pd.DataFrame:
-    for enc in ("latin-1", "utf-8"):
+    for enc in ("utf-8-sig", "latin-1"):     # Plannix exporta em latin-1; arquivo salvo em UTF-8 também vale
         try:
             texto = conteudo.decode(enc)
             break
