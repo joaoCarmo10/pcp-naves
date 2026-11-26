@@ -1298,3 +1298,17 @@ def test_conferencia_com_plannix(cliente):
                 ["VX9", "7777", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "25/11/2026", "5,000", "-"]])
     h = cliente.post("/importar/conferir", files={"arquivo": ("ontem.xls", novo)}).text
     assert "2 peça(s) diferentes" in h and "Não está no app" in h and "a fazer no app" in h
+
+
+def test_contato_do_notebook(cliente):
+    """Chamada do PC sem dado novo também conta como contato; a hora do notebook aparece no status."""
+    import hashlib
+    from app.db import SessionLocal
+    from app.models import Config
+    db = SessionLocal()
+    db.add(Config(chave="sync_token", valor=hashlib.sha256(b"tk").hexdigest()))
+    db.commit()
+    r = cliente.get("/api/autodoc/pranchas?n=1", headers={"Authorization": "Bearer tk", "X-PC-Hora": "2026-11-26T13:05:12"})
+    assert r.status_code == 200, r.text
+    h = cliente.get("/importar").text
+    assert "Última atualização do notebook: <b>26/11/2026 13:05" in h and "perdeu o horário" not in h

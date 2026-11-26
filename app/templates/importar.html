@@ -30,7 +30,7 @@
   {% endif %}
 </div>
 <h2>Plannix automático</h2>
-<div class="sync{% if sync.atrasado or sync.erro %} sync-alerta{% endif %}">
+<div class="sync{% if sync.erro %} sync-alerta{% endif %}">
   {% if token_novo %}
   <p><b>Token gerado. Copie agora, ele não aparece de novo:</b></p>
   <p><input class="token" readonly value="{{ token_novo }}" onclick="this.select()"></p>
@@ -38,9 +38,8 @@
   {% elif not sync.ativo %}
   <p>Desligado. O script <code>plannix_sync</code>, rodando num PC da fábrica, lê o banco do Plannix e manda o "all data" para cá sozinho.</p>
   {% else %}
-  <p>Último contato do PC da fábrica: <b>{{ sync.contato.strftime('%d/%m %H:%M') if sync.contato else 'nenhum ainda' }}</b>
-     {% if sync.mudanca %} · última mudança nos dados: {{ sync.mudanca.strftime('%d/%m %H:%M') }}{% if sync.duracao %} (o app levou {{ sync.duracao }} s para processar){% endif %}{% endif %}</p>
-  {% if sync.atrasado %}<p><b>O PC da fábrica perdeu o horário de envio.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
+  <p>Última atualização do notebook: <b>{% if sync.pc_hora %}{{ sync.pc_hora.strftime('%d/%m/%Y %H:%M') }}</b> <small class="meta">(relógio do notebook)</small>{% elif sync.contato %}{{ sync.contato.strftime('%d/%m/%Y %H:%M') }}</b>{% else %}nenhuma ainda</b>{% endif %}
+     {% if sync.mudanca %}<br>Dados do Plannix mudaram por último em {{ sync.mudanca.strftime('%d/%m/%Y %H:%M') }}{% if sync.duracao %} (o app levou {{ sync.duracao }} s para processar){% endif %}{% endif %}</p>
   {% if sync.erro %}<p><b>Último envio recusado:</b> {{ sync.erro }}</p>{% endif %}
   {% endif %}
   {% if admin and not token_novo %}

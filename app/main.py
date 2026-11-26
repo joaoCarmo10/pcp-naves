@@ -82,7 +82,7 @@ def sync_parado() -> str:
         with SessionLocal() as db:
             if not _cfg(db, "sync_token"):
                 return ""
-            contato = datetime.fromisoformat(_cfg(db, "sync_contato"))
+            contato = max(datetime.fromisoformat(v) for v in (_cfg(db, "sync_contato"), _cfg(db, "pc_contato")) if v)
     except (ValueError, Exception):
         return ""
     agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
@@ -92,7 +92,7 @@ def sync_parado() -> str:
     ref = max(contato, ini - timedelta(minutes=90)) if contato.date() < agora.date() else contato
     if (agora - ref).total_seconds() <= 80 * 60:
         return ""
-    return (f"O PC da fábrica não manda o Plannix desde {contato:%d/%m %H:%M}. O que foi lançado depois disso ainda não está "
+    return (f"O notebook da fábrica não se comunica com o app desde {contato:%d/%m %H:%M}. O que foi lançado depois disso ainda não está "
             "no app. Veja se o notebook está ligado, na rede da fábrica e com o usuário logado.")
 
 
@@ -114,6 +114,25 @@ def _primeira_pagina(niveis: dict) -> str:
     destinos = {"obras": "/", "realizado": "/programacao", "pxr": "/pxr", "planejar": "/planejar", "armacao": "/armacao",
                 "formas": "/formas", "importar": "/importar", "usuarios": "/usuarios"}
     return next((destinos[m] for m in destinos if niveis.get(m)), "/conta")
+
+
+@app.middleware("http")
+async def contato_do_pc(request: Request, call_next):
+    """Toda chamada aceita do PC da fábrica (Plannix, Autodoc, pranchas) conta como contato, mesmo quando os dados não
+    mudaram. Guarda também a hora do relógio do notebook (cabeçalho X-PC-Hora), quando o script manda."""
+    resp = await call_next(request)
+    if request.url.path.startswith(("/api/plannix", "/api/autodoc")) and resp.status_code < 400:
+        try:
+            with SessionLocal() as db:
+                _cfg_grava(db, "pc_contato", datetime.now(plannix.BAHIA).replace(tzinfo=None).isoformat(timespec="seconds"))
+                h = request.headers.get("x-pc-hora", "")[:19]
+                if h:
+                    datetime.fromisoformat(h)
+                    _cfg_grava(db, "pc_hora", h)
+                db.commit()
+        except Exception:
+            pass
+    return resp
 
 
 @app.middleware("http")
@@ -271,10 +290,9 @@ def _sync_status(db: Session) -> dict:
             return datetime.fromisoformat(v)
         except ValueError:
             return None
-    contato = dt(_cfg(db, "sync_contato"))
-    agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
+    contato = max([d for d in (dt(_cfg(db, "sync_contato")), dt(_cfg(db, "pc_contato"))) if d], default=None)
     return {"ativo": bool(_cfg(db, "sync_token")), "contato": contato, "mudanca": dt(_cfg(db, "sync_mudanca")),
-            "atrasado": bool(contato and ((agora - contato).total_seconds() > 7 * 3600 or sync_parado())),
+            "pc_hora": dt(_cfg(db, "pc_hora")), "atrasado": bool(sync_parado()),
             "duracao": _cfg(db, "sync_duracao"), "erro": _cfg(db, "sync_erro")}
 
 

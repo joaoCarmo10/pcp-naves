@@ -112,7 +112,7 @@ function Http([string]$metodo, [string]$url, $cab, [byte[]]$corpo, [int]$timeout
 
 function App($cfg, [string]$caminho, [byte[]]$corpo = $null, [string]$tipo = "application/json") {
     $url = (V $cfg "app" "url").TrimEnd("/") + $caminho
-    $cab = @{ "Authorization" = "Bearer " + (V $cfg "app" "token"); "Accept" = "application/json" }
+    $cab = @{ "Authorization" = "Bearer " + (V $cfg "app" "token"); "Accept" = "application/json"; "X-PC-Hora" = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ss") }
     if ($corpo) {
         $cab["Content-Type"] = $tipo; $cab["Content-Encoding"] = "gzip"
         try { return Http "POST" $url $cab (Gzip $corpo) 300 } catch { throw ("app: " + $_.Exception.Message) }
