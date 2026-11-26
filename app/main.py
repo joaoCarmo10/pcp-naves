@@ -59,6 +59,30 @@ with SessionLocal() as _db:
     acesso.carga_inicial(_db)
 
 
+def sync_parado() -> str:
+    """Aviso em todas as telas quando o PC da fábrica deixou de mandar o Plannix no horário de trabalho (ele roda de hora
+    em hora, 06:05 a 20:00, seg a sáb). Vazio = tudo certo."""
+    try:
+        with SessionLocal() as db:
+            if not _cfg(db, "sync_token"):
+                return ""
+            contato = datetime.fromisoformat(_cfg(db, "sync_contato"))
+    except (ValueError, Exception):
+        return ""
+    agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
+    ini = agora.replace(hour=7, minute=30, second=0, microsecond=0)
+    if agora.weekday() == 6 or not (ini <= agora <= agora.replace(hour=21, minute=0)):
+        return ""
+    ref = max(contato, ini - timedelta(minutes=90)) if contato.date() < agora.date() else contato
+    if (agora - ref).total_seconds() <= 80 * 60:
+        return ""
+    return (f"O PC da fábrica não manda o Plannix desde {contato:%d/%m %H:%M}. O que foi lançado depois disso ainda não está "
+            "no app. Veja se o notebook está ligado, na rede da fábrica e com o usuário logado.")
+
+
+tpl.env.globals["sync_parado"] = sync_parado
+
+
 def ultima_base(db: Session) -> str:
     imp = db.scalar(select(Importacao).where(Importacao.tipo != "programacao").order_by(Importacao.criada_em.desc()))
     try:   # o PC da fábrica atualiza de hora em hora: mostra a hora da última mudança que ele mandou
@@ -229,7 +253,7 @@ def _sync_status(db: Session) -> dict:
     contato = dt(_cfg(db, "sync_contato"))
     agora = datetime.now(plannix.BAHIA).replace(tzinfo=None)
     return {"ativo": bool(_cfg(db, "sync_token")), "contato": contato, "mudanca": dt(_cfg(db, "sync_mudanca")),
-            "atrasado": bool(contato and (agora - contato).total_seconds() > 7 * 3600),
+            "atrasado": bool(contato and ((agora - contato).total_seconds() > 7 * 3600 or sync_parado())),
             "duracao": _cfg(db, "sync_duracao"), "erro": _cfg(db, "sync_erro")}
 
 

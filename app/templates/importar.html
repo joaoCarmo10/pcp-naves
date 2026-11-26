@@ -40,7 +40,7 @@
   {% else %}
   <p>Último contato do PC da fábrica: <b>{{ sync.contato.strftime('%d/%m %H:%M') if sync.contato else 'nenhum ainda' }}</b>
      {% if sync.mudanca %} · última mudança nos dados: {{ sync.mudanca.strftime('%d/%m %H:%M') }}{% if sync.duracao %} (o app levou {{ sync.duracao }} s para processar){% endif %}{% endif %}</p>
-  {% if sync.atrasado %}<p><b>Mais de 7 horas sem contato.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
+  {% if sync.atrasado %}<p><b>O PC da fábrica perdeu o horário de envio.</b> Veja se o PC da fábrica está ligado e o agendamento ativo.</p>{% endif %}
   {% if sync.erro %}<p><b>Último envio recusado:</b> {{ sync.erro }}</p>{% endif %}
   {% endif %}
   {% if admin and not token_novo %}
