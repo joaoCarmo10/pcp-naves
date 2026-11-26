@@ -411,3 +411,81 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     r = autopreencher(db, rev, dias, so_codigos=resto, lote=lote) if resto else {"n": 0, "sobram": 0}
     return {"ok": True, "lote": lote, "faltantes": len({i.codigo for i in pend}), "mesmo_lugar": mesmo, "auto": r["n"],
             "sem_lugar": len(resto) - r["n"], "sem_codigo": sem_codigo, "ja_feitas": len(feitas)}
+
+
+def acumulado(db: Session, rev: RevisaoProg, dias: list[date], hoje: date) -> dict:
+    """Quanto cada obra/etapa (ativa) vai somando até a metragem total: fabricado antes do período + produzido no
+    período (até hoje) + programado a fazer (de hoje ao fim do período, não fabricado). Programado em dia que já passou
+    e não foi feito não entra na estimativa (fica como 'para trás')."""
+    vazio = {"obras": [], "tot": {}, "dia": [], "periodo": {}}
+    if not dias:
+        return vazio
+    d0, d1 = dias[0], dias[-1]
+    obras = {o.id: o for o in db.scalars(select(Obra).where(Obra.ativa.is_(True)))}
+    por_nome = {o.nome: o.id for o in obras.values()}
+    pecas = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.obra_id.in_(list(obras) or [0])))}
+    vol = lambda p: p.volume or p.vol_projeto or 0.0
+    quando = lambda p: p.data_fabricacao or p.data_baixa
+
+    def novo(oid):
+        o = obras[oid]
+        return {"id": oid, "nome": o.nome, "pri": o.prioridade if o.prioridade is not None else 999,
+                "vol": 0.0, "pc": 0, "antes": 0.0, "antes_pc": 0, "per": 0.0, "per_pc": 0,
+                "prog": 0.0, "prog_pc": 0, "tras": 0.0, "tras_pc": 0}
+    t: dict = {}
+    real_dia: dict = defaultdict(float)
+    for p in pecas.values():
+        x = t.setdefault(p.obra_id, novo(p.obra_id))
+        x["vol"] += vol(p)
+        x["pc"] += 1
+        if not p.fabricada:
+            continue
+        d = quando(p)
+        if d is None or d < d0:
+            x["antes"] += vol(p); x["antes_pc"] += 1
+        elif d <= d1:
+            x["per"] += vol(p); x["per_pc"] += 1
+            real_dia[d] += vol(p)
+    prog_dia: dict = defaultdict(float)
+    vistos: set = set()
+    for i in db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data >= d0, ItemProg.data <= d1)):
+        p = pecas.get(i.codigo) if i.codigo else None
+        if i.codigo and i.codigo in vistos:
+            continue
+        if p is not None:
+            vistos.add(i.codigo)
+            if p.fabricada:
+                continue
+            oid, v, n = p.obra_id, vol(p), 1
+        else:
+            oid = por_nome.get(i.obra)
+            if oid is None or (i.codigo and db.scalar(select(Peca.fabricada).where(Peca.codigo == i.codigo))):
+                continue                      # obra desmarcada ou peça de fora já feita
+            v, n = (i.volume or 0.0), (i.qtd or 1)
+        x = t.setdefault(oid, novo(oid))
+        if i.data < hoje:
+            x["tras"] += v; x["tras_pc"] += n
+        else:
+            x["prog"] += v; x["prog_pc"] += n
+            prog_dia[i.data] += v
+    lin = []
+    for x in t.values():
+        if not (x["per"] or x["prog"] or x["tras"]):
+            continue
+        base = max(x["vol"], x["antes"] + x["per"] + x["prog"]) or 1.0
+        x["est"] = x["antes"] + x["per"] + x["prog"]
+        x["est_pc"] = x["antes_pc"] + x["per_pc"] + x["prog_pc"]
+        x["falta"] = max(0.0, x["vol"] - x["est"])
+        x["falta_pc"] = max(0, x["pc"] - x["est_pc"])
+        x["pct"] = {k: 100 * x[k] / base for k in ("antes", "per", "prog")}
+        x["pct_est"] = 100 * x["est"] / x["vol"] if x["vol"] else 0
+        lin.append(x)
+    lin.sort(key=lambda x: (x["pri"], x["nome"]))
+    soma = lambda k: sum(x[k] for x in lin)
+    tot = {k: soma(k) for k in ("vol", "pc", "antes", "antes_pc", "per", "per_pc", "prog", "prog_pc", "tras", "tras_pc", "est", "est_pc", "falta")}
+    dia, ac = [], 0.0
+    for d in dias:
+        v = (real_dia.get(d, 0.0) if d <= hoje else 0.0) + (prog_dia.get(d, 0.0) if d >= hoje else 0.0)
+        ac += v
+        dia.append({"d": d, "v": v, "ac": ac, "real": d < hoje})
+    return {"obras": lin, "tot": tot, "dia": dia, "periodo": {"per": tot["per"], "prog": tot["prog"], "fim": tot["per"] + tot["prog"]}}

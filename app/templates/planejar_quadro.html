@@ -45,6 +45,30 @@
 </form></details>
 <p class="meta" style="margin:2px 0 8px">Editando <b>{{ r.nome }}</b>: vale na hora no Realizado do dia e no programado x realizado.</p>
 
+{% if ac and ac.obras %}{% set T = ac.tot %}
+<details class="pq-ac" open><summary><b>Somando até a metragem total</b>
+  <span class="pq-kpi">Produzido no período <b>{{ T.per|num(1) }} m³</b> <small>{{ T.per_pc }} pç até {{ [hoje, ate]|min|dm }}</small></span>
+  <span class="pq-kpi">+ Programado a fazer <b>{{ T.prog|num(1) }} m³</b> <small>{{ T.prog_pc }} pç</small></span>
+  <span class="pq-kpi forte">= Estimado no fim do período ({{ ate.strftime('%d/%m') }}) <b>{{ (T.per + T.prog)|num(1) }} m³</b> <small>{{ T.per_pc + T.prog_pc }} pç</small></span>
+  {% if T.tras %}<span class="pq-kpi ruim" title="Programado em dia que já passou e não foi feito: não entra na estimativa até ser reprogramado">Para trás <b>{{ T.tras|num(1) }} m³</b> <small>{{ T.tras_pc }} pç</small></span>{% endif %}
+</summary>
+<div class="pq-leg meta"><i class="c-antes"></i>fabricado antes de {{ de.strftime('%d/%m') }} <i class="c-per"></i>produzido no período <i class="c-prog"></i>programado a fazer <i class="c-falta"></i>falta programar</div>
+<table class="pq-act">
+  <thead><tr><th>Obra | etapa</th><th style="width:45%">Avanço até o fim do período</th><th>Total</th><th>Estimado em {{ ate.strftime('%d/%m') }}</th><th>Falta depois</th></tr></thead>
+  <tbody>{% for x in ac.obras %}<tr>
+    <td>{{ x.nome }}</td>
+    <td><div class="pq-acbar" title="Antes: {{ x.antes|num(1) }} m³ · Período: {{ x.per|num(1) }} m³ · Programado: {{ x.prog|num(1) }} m³ · Total: {{ x.vol|num(1) }} m³"><i class="c-antes" style="width:{{ x.pct.antes }}%"></i><i class="c-per" style="width:{{ x.pct.per }}%"></i><i class="c-prog" style="width:{{ x.pct.prog }}%"></i></div></td>
+    <td class="num">{{ x.vol|num(1) }} m³<small>{{ x.pc }} pç</small></td>
+    <td class="num"><b>{{ x.pct_est|num(0) }}%</b> · {{ x.est|num(1) }} m³<small>+{{ (x.per + x.prog)|num(1) }} m³ no período{{ (' · ' ~ x.tras|num(1) ~ ' m³ para trás') if x.tras else '' }}</small></td>
+    <td class="num">{{ x.falta|num(1) }} m³<small>{{ x.falta_pc }} pç</small></td>
+  </tr>{% endfor %}</tbody>
+  <tfoot><tr><th>Total das obras acima</th><td><div class="pq-acbar">{% set b = [T.vol, T.est]|max or 1 %}<i class="c-antes" style="width:{{ 100 * T.antes / b }}%"></i><i class="c-per" style="width:{{ 100 * T.per / b }}%"></i><i class="c-prog" style="width:{{ 100 * T.prog / b }}%"></i></div></td>
+    <td class="num">{{ T.vol|num(1) }} m³</td><td class="num"><b>{{ (100 * T.est / T.vol if T.vol else 0)|num(0) }}%</b> · {{ T.est|num(1) }} m³</td><td class="num">{{ T.falta|num(1) }} m³</td></tr></tfoot>
+</table>
+<p class="meta" style="margin:4px 0 0">Período: o que já saiu (Plannix) até hoje + o que está nesta revisão de hoje até {{ ate.strftime('%d/%m') }} e ainda não foi fabricado. Atualiza a cada peça arrastada.</p>
+</details>
+{% endif %}
+
 <div class="pq">
   <aside class="pq-lista" aria-label="Peças a programar">
     <div class="pq-lcab">
@@ -60,7 +84,9 @@
   <div class="pq-grade">
     <table class="pq-t">
       <thead><tr><th class="pq-f">Fôrma</th>
-        {% for d in dias %}<th class="{{ 'hoje' if d == hoje }}{{ ' sab' if d.weekday() == 5 }}"><span>{{ SEM[d.weekday()] }}</span>{{ d.strftime('%d/%m') }}<small>{{ q.tot.get(d, 0) }} pç · {{ q.vol.get(d, 0)|num(1) }} m³</small></th>{% endfor %}</tr></thead>
+        {% for d in dias %}<th class="{{ 'hoje' if d == hoje }}{{ ' sab' if d.weekday() == 5 }}"><span>{{ SEM[d.weekday()] }}</span>{{ d.strftime('%d/%m') }}<small>{{ q.tot.get(d, 0) }} pç · {{ q.vol.get(d, 0)|num(1) }} m³</small></th>{% endfor %}</tr>
+      {% if ac and ac.dia %}{% set mx = (ac.dia|last).ac or 1 %}<tr class="pq-acum"><th class="pq-f" title="Soma dia a dia: realizado nos dias que passaram, programado a fazer de hoje em diante">Σ acumulado m³</th>
+        {% for x in ac.dia %}<th class="{{ 'real' if x.real }}" title="{{ x.d.strftime('%d/%m') }}: {{ x.v|num(1) }} m³ no dia ({{ 'realizado' if x.real else 'programado a fazer' }}) · {{ x.ac|num(1) }} m³ somados"><div class="pq-acd"><i style="height:{{ 100 * x.ac / mx }}%"></i></div>{{ x.ac|num(0) }}</th>{% endfor %}</tr>{% endif %}</thead>
       {% for n in q.naves %}{% if n.linhas %}
       <tbody><tr class="pq-nave"><th colspan="{{ dias|length + 1 }}">{{ n.nome }}</th></tr>
       {% for l in n.linhas %}<tr>
@@ -208,6 +234,23 @@ const FALT = {{ falt|tojson }};
 </script>
 {% endif %}
 <style>
+.pq-ac{border:1px solid #d6dde8;border-radius:6px;padding:6px 10px;margin:4px 0 10px;background:#fbfcfe}
+.pq-ac>summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline}
+.pq-kpi{font-size:13px;color:#444}.pq-kpi b{font-size:15px;color:#1b2a41}.pq-kpi small{color:#777;margin-left:2px}
+.pq-kpi.forte b{font-size:17px;color:#0b5394}.pq-kpi.ruim b{color:#d84315}
+.pq-leg{display:flex;gap:6px;align-items:center;margin:6px 0 2px;flex-wrap:wrap}.pq-leg i{display:inline-block;width:12px;height:10px;border-radius:2px;margin-left:8px}
+.c-antes{background:#1b5e20}.c-per{background:#43a047}.c-prog{background:#1e88e5}.c-falta{background:#e3e7ee}
+.pq-act{width:100%;border-collapse:collapse;font-size:13px}.pq-act th,.pq-act td{padding:3px 6px;border-bottom:1px solid #eef1f5;text-align:left}
+.pq-act td.num{text-align:right;white-space:nowrap}.pq-act td.num small{display:block;color:#888;font-size:11px}
+.pq-act tfoot th,.pq-act tfoot td{border-top:2px solid #ccd4e0;font-weight:600}
+.pq-acbar{display:flex;height:14px;background:#e3e7ee;border-radius:4px;overflow:hidden}.pq-acbar i{display:block;height:100%}
+.pq-acbar i+i{border-left:2px solid #fff}
+.pq-t thead .pq-acum th{position:static;background:#f5f7fa;min-width:0;border-bottom:1px solid var(--linha)}
+.pq-t thead .pq-acum th.real{background:#f1f8f1}
+.pq-t thead .pq-acum th{font-size:11px;font-weight:600;color:#0b5394;vertical-align:bottom;padding-top:2px}.pq-t thead .pq-acum th.real{color:#2e7d32}
+.pq-acd{height:22px;width:14px;margin:0 auto 1px;background:#eef1f5;border-radius:2px;display:flex;align-items:flex-end}
+.pq-acd i{display:block;width:100%;background:#1e88e5;border-radius:2px}.pq-acum th.real .pq-acd i{background:#43a047}
+@media print{.pq-ac{break-inside:avoid}.pq-acbar i,.pq-leg i,.pq-acd i{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 .pq{display:flex;gap:10px;align-items:flex-start}
 .pq-lista{width:270px;flex:none;position:sticky;top:8px;max-height:calc(100vh - 24px);display:flex;flex-direction:column;background:#fff;border:1px solid var(--linha);border-radius:8px}
 .pq-lcab{padding:8px;border-bottom:1px solid var(--linha);display:flex;flex-direction:column;gap:5px}
@@ -239,7 +282,7 @@ const FALT = {{ falt|tojson }};
 .pq-sx{border:none;background:none;color:#3b2a00;cursor:pointer;padding:0 2px;font-size:13px}
 .pq-msg{position:fixed;bottom:16px;right:16px;background:#1f3864;color:#fff;padding:10px 14px;border-radius:8px;max-width:420px;z-index:50;font-size:13px}
 .pq-msg.ruim{background:#a4161a}
-@media print{.pq-lista,.filtros,.pq-x,.pq-setup-btn,.pq-sx,details{display:none!important}.pq-grade{max-height:none;overflow:visible}@page{size:A3 landscape;margin:6mm}.pq-t thead th,.pq-t .pq-f{position:static}}
+@media print{.pq-lista,.filtros,.pq-x,.pq-setup-btn,.pq-sx,details:not(.pq-ac){display:none!important}.pq-grade{max-height:none;overflow:visible}@page{size:A3 landscape;margin:6mm}.pq-t thead th,.pq-t .pq-f{position:static}}
 @media (max-width:900px){.pq{flex-direction:column}.pq-lista{width:100%;position:static;max-height:300px}}
 </style>
 {% endblock %}

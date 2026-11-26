@@ -1196,3 +1196,33 @@ def test_limpeza_de_arquivos(cliente):
     assert not (DATA_DIR / "autodoc" / "a.pdf").exists() and (DATA_DIR / "autodoc" / "b.pdf").exists()
     fila = cliente.get("/api/autodoc/pranchas", headers={"Authorization": "Bearer tk"}).json()
     assert all("PX1" not in p["codigo"] for p in fila["pranchas"])
+
+
+def test_acumulado_do_planejamento(cliente):
+    """Produzido no período + programado a fazer = estimado no fim; barra por obra até a metragem total."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import ItemProg, Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    hoje = date.today()
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": hoje.isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    o = db.scalar(select(Obra).where(Obra.ativa.is_(True)))
+    ps = [p for p in db.scalars(select(Peca).where(Peca.obra_id == o.id, Peca.fabricada.is_(False)))][:3]
+    for p in ps:
+        p.volume = 2.0
+    ps[0].fabricada, ps[0].data_fabricacao = True, hoje                          # produzido no período
+    db.add(ItemProg(revisao_id=rev.id, data=hoje + timedelta(days=1), obra=o.nome, peca=ps[1].peca, codigo=ps[1].codigo, qtd=1, volume=2.0))
+    db.add(ItemProg(revisao_id=rev.id, data=hoje + timedelta(days=1), obra=o.nome, peca=ps[0].peca, codigo=ps[0].codigo, qtd=1, volume=2.0))  # já feita: não soma de novo
+    db.commit()
+    dias = pl.dias_periodo(hoje, hoje + timedelta(days=6))
+    a = pl.acumulado(db, rev, dias, hoje)
+    x = next(x for x in a["obras"] if x["id"] == o.id)
+    assert x["per"] == 2.0 and x["prog"] == 2.0 and x["est"] == x["antes"] + 4.0
+    assert a["periodo"]["fim"] == 4.0 and a["dia"][-1]["ac"] == 4.0
+    h = cliente.get(f"/planejar?rev={rev.id}&de={hoje.isoformat()}&ate={(hoje + timedelta(days=6)).isoformat()}").text
+    assert "Estimado no fim do período" in h and "Σ acumulado m³" in h and "pq-acbar" in h

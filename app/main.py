@@ -1264,7 +1264,7 @@ def planejar_tela(request: Request, rev: int | None = None, dia: str | None = No
 def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str | None, db: Session) -> HTMLResponse:
     """Quadro do período: fôrmas nas linhas, dias nas colunas; arrasta peça da lista (ou de outra célula) para fôrma x dia."""
     r = _rev(db, rev)
-    hoje = date.today()
+    hoje = datetime.now(plannix.BAHIA).date()      # servidor em UTC: depois das 21h na Bahia já seria amanhã
     d0 = _data(de) or hoje
     d1 = _data(ate) or (d0 + timedelta(days=13))
     if d1 < d0:
@@ -1273,8 +1273,9 @@ def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str 
     dias = pl.dias_periodo(d0, d1)
     q = pl.quadro(db, r, dias) if r else {"naves": [], "tot": {}, "vol": {}}
     falt = pl.faltantes(db, r) if r else []
+    ac = pl.acumulado(db, r, dias, hoje) if r else None
     return tpl.TemplateResponse(request, "planejar_quadro.html", {
-        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje,
+        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje, "ac": ac,
         "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
         "DIAS": ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"], "base": ultima_base(db)})
 
