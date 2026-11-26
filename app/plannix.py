@@ -290,6 +290,16 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
                     p.data_baixa = baixa
                     p.atualizada_em = datetime.now()
                     saiu_lista += 1
+    # etapa oculta que voltou a produzir (fabricação nos últimos 7 dias) volta a aparecer: o realizado não pode sumir
+    reativadas = []
+    if tipo in ("geral", "completa"):
+        from datetime import timedelta
+        db.flush()
+        for o in db.scalars(select(Obra).where(Obra.ativa.is_(False))):
+            if db.scalar(select(Peca.id).where(Peca.obra_id == o.id, Peca.fabricada.is_(True),
+                                               Peca.data_fabricacao >= hoje - timedelta(days=7)).limit(1)):
+                o.ativa = True
+                reativadas.append(o.nome)
     # aço frouxo é do projeto da peça: unidades com o mesmo nome na obra herdam o peso das que já têm
     if any(str(c).startswith("Peso Aço Frouxo") for c in df.columns):
         from statistics import median
@@ -303,7 +313,7 @@ def importar_exportacao(db: Session, conteudo: bytes, arquivo: str) -> Importaca
                 if not p.peso_aco_frouxo and p.peca in pesos:
                     p.peso_aco_frouxo = round(median(pesos[p.peca]), 2)
     imp = Importacao(arquivo=arquivo, tipo=tipo, resumo=dict(
-        linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista, removidas=removidas,
+        linhas=len(df), novas=novas, atualizadas=atualizadas, saiu_lista=saiu_lista, removidas=removidas, reativadas=reativadas,
         obras=sorted(o.nome for o in obras_no_arquivo.values()), data=hoje.isoformat()))
     db.add(imp)
     db.commit()

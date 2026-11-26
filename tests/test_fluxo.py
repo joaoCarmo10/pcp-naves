@@ -1260,3 +1260,22 @@ def test_reorganizar_formas(cliente):
     assert "Desfazer reorganização" in cliente.get(f"/planejar?rev={rev.id}&de={d.isoformat()}").text
     assert cliente.post("/planejar/desfazer-reorganizar", json={"rev": rev.id}).json()["n"] == 1
     assert "AD" in SessionLocal().get(ItemProg, it.id).forma
+
+
+def test_etapa_oculta_com_fabricacao_recente_volta(cliente):
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Obra, Peca
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    db = SessionLocal()
+    o = db.scalar(select(Obra))
+    o.ativa = False
+    db.commit()
+    hoje = date.today().strftime("%d/%m/%Y")
+    cliente.post("/importar", files={"arquivo": ("obra.xls", tsv([
+        ["VR1", "1001", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "10/11/2026", "5,000", "-"],
+        ["VR1", "1002", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", hoje, "5,000", "-"],
+        ["P1", "1003", "9999-OBRA-TESTE", "9999", "1", "PILAR", "40x40", "1", "1,000", "-", "8,000", "-"],
+        ["P2", "1004", "9999-OBRA-TESTE", "9999", "1", "PILAR", "40x40", "1", "1,000", "-", "8,000", "-"]]))})
+    assert SessionLocal().get(Obra, o.id).ativa
