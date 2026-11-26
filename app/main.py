@@ -59,6 +59,22 @@ with SessionLocal() as _db:
     acesso.carga_inicial(_db)
 
 
+def conferencia_alerta() -> str:
+    """Aviso em todas as telas se a última conferência automática achou peça diferente do Plannix."""
+    from . import conferencia as cf
+    try:
+        with SessionLocal() as db:
+            c = cf.ultima_automatica(db)
+    except Exception:
+        return ""
+    if not c or not c.get("n"):
+        return ""
+    return f"{c['n']} peça(s) do app diferentes do Plannix na leitura de {c['quando']}: " + "; ".join(c.get("ex", []))
+
+
+tpl.env.globals["conferencia_alerta"] = conferencia_alerta
+
+
 def sync_parado() -> str:
     """Aviso em todas as telas quando o PC da fábrica deixou de mandar o Plannix no horário de trabalho (ele roda de hora
     em hora, 06:05 a 20:00, seg a sáb). Vazio = tudo certo."""
@@ -244,6 +260,11 @@ def _cfg_grava(db: Session, chave: str, valor: str) -> None:
     db.add(c)
 
 
+def _conf_auto(db: Session):
+    from . import conferencia as cf
+    return cf.ultima_automatica(db)
+
+
 def _sync_status(db: Session) -> dict:
     def dt(v):
         try:
@@ -262,7 +283,7 @@ def importar_form(request: Request, db: Session = Depends(get_db)):
     imps = db.scalars(select(Importacao).order_by(Importacao.criada_em.desc()).limit(15)).all()
     u = request.state.usuario
     return tpl.TemplateResponse(request, "importar.html", {"imps": imps, "msg": request.query_params.get("msg"), "erro": request.query_params.get("erro"),
-                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin, "ad": _autodoc_status(db),
+                                                           "sync": _sync_status(db), "admin": (u is None) or u.admin, "ad": _autodoc_status(db), "conf": _conf_auto(db),
                                                            "base": ultima_base(db)})
 
 
@@ -488,6 +509,7 @@ def importar_reprocessar(request: Request, db: Session = Depends(get_db)):
     if not arq.exists():
         return RedirectResponse(f"/importar?erro={quote('Ainda não chegou envio do PC da fábrica.')}", status_code=303)
     imp = plannix.importar_exportacao(db, arq.read_bytes(), "Plannix (automático, reprocessado)")
+    _conferir_auto(db, arq.read_bytes())
     r = imp.resumo
     msg = f"Reprocessado: {r['linhas']} linhas, {r.get('removidas', 0)} peças que saíram do Plannix removidas."
     return RedirectResponse(f"/importar?msg={quote(msg)}", status_code=303)
@@ -530,7 +552,32 @@ async def plannix_automatico(request: Request, db: Session = Depends(get_db)):
     _cfg_grava(db, "sync_duracao", f"{time.monotonic() - t0:.0f}")
     _cfg_grava(db, "sync_erro", "")
     db.commit()
+    _conferir_auto(db, conteudo)
     return {"ok": True, "tipo": imp.tipo, "resumo": imp.resumo}
+
+
+def _conferir_auto(db: Session, conteudo: bytes) -> None:
+    """Depois de cada leitura automática: o app tem que ficar igual ao arquivo que chegou, peça por peça."""
+    from . import conferencia as cf
+    try:
+        cf.gravar_automatica(db, cf.conferir(db, plannix.ler_exportacao(conteudo)))
+    except Exception as e:  # a conferência nunca derruba a importação, mas a falha aparece
+        db.rollback()
+        cf.gravar_automatica(db, {"quando": datetime.now(plannix.BAHIA).strftime("%d/%m %H:%M"), "por_motivo": {},
+                                  "divergencias": [{"obra": "conferência", "peca": "falhou", "codigo": str(e)[:80], "motivo": "falta"}]})
+
+
+@app.post("/importar/conferir", response_class=HTMLResponse)
+async def importar_conferir(request: Request, arquivo: UploadFile = File(...), db: Session = Depends(get_db)):
+    """O PCP sobe uma exportação do Plannix (ex.: realizado de ontem) e vê, peça por peça, se o app bate."""
+    from . import conferencia as cf
+    try:
+        df = plannix.ler_exportacao(await arquivo.read())
+    except ValueError as e:
+        return RedirectResponse(f"/importar?erro={quote(str(e))}", status_code=303)
+    r = cf.conferir(db, df)
+    return tpl.TemplateResponse(request, "conferencia.html", {"r": r, "arquivo": arquivo.filename, "MOTIVOS": cf.MOTIVOS,
+                                                              "sync": _sync_status(db), "base": ultima_base(db)})
 
 
 @app.post("/importar")

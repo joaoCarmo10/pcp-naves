@@ -49,6 +49,15 @@
   </form>
   {% endif %}
 </div>
+<h2 id="conferencia">Conferência com o Plannix</h2>
+<div class="sync{% if conf and conf.n %} sync-alerta{% endif %}">
+  <p>{% if conf %}Última conferência automática ({{ conf.quando }}): {% if conf.n %}<b>{{ conf.n }} peça(s) diferentes</b>: {{ conf.ex|join('; ') }}{% else %}<b>app igual ao Plannix</b>, peça por peça (status, data de fabricação e etapa visível).{% endif %}{% else %}A conferência automática roda a cada leitura do PC da fábrica.{% endif %}</p>
+  <form method="post" action="/importar/conferir" enctype="multipart/form-data" class="filtros" style="margin:6px 0 0">
+    <label>Conferir uma exportação do Plannix (ex.: realizado de ontem)<input type="file" name="arquivo" accept=".xls,.txt,.tsv,.csv" required></label>
+    <button type="submit" class="sec">Conferir com o app</button>
+  </form>
+  <p class="meta">Só compara; não grava nada. Mostra cada peça que está diferente e o total por dia (Plannix x app).</p>
+</div>
 <h2>Como cada arquivo é lido</h2>
 <table class="t" style="max-width:980px">
   <tr><th>Arquivo</th><th>O que o sistema faz</th></tr>

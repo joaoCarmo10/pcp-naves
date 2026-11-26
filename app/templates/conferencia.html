@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block titulo %}Conferência com o Plannix | PCP Naves{% endblock %}
+{% block corpo %}
+<p><a href="/importar">← Importar dados</a></p>
+<h1 style="margin-bottom:2px">Conferência com o Plannix</h1>
+<p class="sub">{{ arquivo }} · {{ r.linhas }} linhas, {{ r.codigos }} códigos · conferido {{ r.quando }} · base do app: {{ base }}{% if sync.contato %} (último envio do PC: {{ sync.contato.strftime('%d/%m %H:%M') }}){% endif %}</p>
+{% if not r.divergencias %}
+<p class="aviso" style="background:#e8f5e9;border-color:#2e7d32;color:#1b5e20"><b>App igual ao Plannix</b> em todas as {{ r.codigos }} peças do arquivo: mesmo status, mesma data de fabricação, etapa visível.</p>
+{% else %}
+<p class="aviso" style="background:#fdecea;border-color:#d84315;color:#8a1c0b"><b>{{ r.divergencias|length }} peça(s) diferentes.</b>
+  {% for m, n in r.por_motivo.items() %}{{ MOTIVOS[m] }}: {{ n }}{{ '; ' if not loop.last }}{% endfor %}.
+  {% if r.por_motivo.get('falta') or r.por_motivo.get('nao_fab') %}Se o arquivo é mais novo que o último envio do PC da fábrica, é só o envio que está atrasado.{% endif %}</p>
+<table class="tabela"><thead><tr><th>Obra | etapa</th><th>Peça</th><th>Código</th><th>Plannix</th><th>App</th><th>Diferença</th></tr></thead>
+<tbody>{% for x in r.divergencias %}<tr><td>{{ x.obra }}</td><td><b>{{ x.peca }}</b></td><td>{{ x.codigo }}</td><td>{{ x.plannix }}</td><td>{{ x.app }}</td><td>{{ MOTIVOS[x.motivo] }}</td></tr>{% endfor %}</tbody></table>
+{% endif %}
+{% if r.dias %}<h2>Fabricadas por dia</h2>
+<table class="tabela" style="max-width:420px"><thead><tr><th>Dia</th><th>Plannix</th><th>App</th></tr></thead>
+<tbody>{% for d in r.dias %}<tr><td>{{ d.d }}</td><td class="num">{{ d.plannix }}</td><td class="num"{% if d.app != d.plannix %} style="color:#d84315;font-weight:700"{% endif %}>{{ d.app }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+{% endblock %}

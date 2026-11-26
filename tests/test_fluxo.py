@@ -1279,3 +1279,22 @@ def test_etapa_oculta_com_fabricacao_recente_volta(cliente):
         ["P1", "1003", "9999-OBRA-TESTE", "9999", "1", "PILAR", "40x40", "1", "1,000", "-", "8,000", "-"],
         ["P2", "1004", "9999-OBRA-TESTE", "9999", "1", "PILAR", "40x40", "1", "1,000", "-", "8,000", "-"]]))})
     assert SessionLocal().get(Obra, o.id).ativa
+
+
+def test_conferencia_com_plannix(cliente):
+    """Conferência automática depois da leitura e conferência manual de um arquivo."""
+    import hashlib, gzip
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Config, Obra
+    db = SessionLocal()
+    db.add(Config(chave="sync_token", valor=hashlib.sha256(b"tk").hexdigest()))
+    db.commit()
+    r = cliente.post("/api/plannix", content=gzip.compress(COMPLETA), headers={"Authorization": "Bearer tk", "Content-Encoding": "gzip"})
+    assert r.status_code == 200, r.text
+    h = cliente.get("/importar").text
+    assert "app igual ao Plannix" in h
+    novo = tsv([["VR1", "1002", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "25/11/2026", "5,000", "-"],
+                ["VX9", "7777", "9999-OBRA-TESTE", "9999", "1", "VIGA", "20x60", "1", "0,500", "25/11/2026", "5,000", "-"]])
+    h = cliente.post("/importar/conferir", files={"arquivo": ("ontem.xls", novo)}).text
+    assert "2 peça(s) diferentes" in h and "Não está no app" in h and "a fazer no app" in h
