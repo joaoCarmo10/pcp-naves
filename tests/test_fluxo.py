@@ -1226,3 +1226,37 @@ def test_acumulado_do_planejamento(cliente):
     assert a["periodo"]["fim"] == 4.0 and a["dia"][-1]["ac"] == 4.0
     h = cliente.get(f"/planejar?rev={rev.id}&de={hoje.isoformat()}&ate={(hoje + timedelta(days=6)).isoformat()}").text
     assert "Estimado no fim do período" in h and "Σ acumulado m³" in h and "pq-acbar" in h
+
+
+def test_reorganizar_formas(cliente):
+    """Peça numa fôrma adaptada vai para a fôrma da própria seção no mesmo dia; desfazer volta."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    hoje = date.today()
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": hoje.isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    p = db.scalar(select(Peca).where(Peca.fabricada.is_(False), Peca.secao != ""))
+    adapt = Forma(codigo="N1-AD", nave="N1", nome="AD", tipo="unidade", capacidade=5, situacao="ativa", secao="99X99", secoes_aceitas=p.secao)
+    propria = Forma(codigo="N1-PR", nave="N1", nome="PR", tipo="unidade", capacidade=5, situacao="ativa", secao=p.secao)
+    db.add_all([adapt, propria])
+    db.commit()
+    d = hoje + timedelta(days=1)
+    while d.weekday() == 6:
+        d += timedelta(days=1)
+    it = ItemProg(revisao_id=rev.id, data=d, nave="N1", forma=adapt.nome_completo, obra=p.obra.nome, peca=p.peca, codigo=p.codigo,
+                  produto=p.produto, secao=p.secao, qtd=1)
+    db.add(it)
+    db.commit()
+    j = cliente.post("/planejar/reorganizar", json={"rev": rev.id, "de": d.isoformat(), "ate": (d + timedelta(days=3)).isoformat()}).json()
+    assert j["ok"] and j["outra_forma"] == 1
+    x = SessionLocal().get(ItemProg, it.id)
+    assert x.data == d and "AD" not in x.forma and p.secao.replace(" ", "").upper() in x.forma.replace(" ", "").upper()
+    assert "Desfazer reorganização" in cliente.get(f"/planejar?rev={rev.id}&de={d.isoformat()}").text
+    assert cliente.post("/planejar/desfazer-reorganizar", json={"rev": rev.id}).json()["n"] == 1
+    assert "AD" in SessionLocal().get(ItemProg, it.id).forma

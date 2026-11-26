@@ -20,6 +20,8 @@
     {% if r %}<button type="button" id="b-auto" title="Completa a capacidade livre das fôrmas no período com as peças que faltam, pela prioridade. Não tira nada do que já está.">Autopreencher período</button>
     <span style="display:flex;gap:4px;align-items:center"><select id="s-orig" aria-label="Revisão de onde trazer as faltantes" style="max-width:220px">{% for x in revs if x.id != r.id %}<option value="{{ x.id }}">{{ x.nome[:45] }}</option>{% endfor %}</select>
       <button type="button" class="sec" id="b-trazer" title="Traz as peças não fabricadas da revisão escolhida (até o fim do período): mesmo dia e fôrma quando cabe, senão pelo autopreenchimento">Trazer faltantes</button></span>
+    <button type="button" id="b-reorg" title="Recoloca as peças a fazer do período (de hoje em diante) na fôrma que faz mais sentido: fôrma da própria seção, junta a mesma seção, enche a fôrma. Mantém o dia quando dá. Tem desfazer.">Reorganizar fôrmas</button>
+    {% if reorg %}<button type="button" class="sec" id="b-desreorg" title="Volta as peças para o dia e a fôrma de antes da última reorganização">Desfazer reorganização</button>{% endif %}
     <button type="button" class="sec" id="b-desf" title="Tira os itens do último autopreenchimento; o que foi arrastado à mão fica">Desfazer autopreenchimento</button>
     <a class="botao-sec" href="/planejar/exportar?rev={{ r.id }}&de={{ de.isoformat() }}&ate={{ ate.isoformat() }}">Exportar planilha</a>
     <button type="button" class="sec" onclick="window.print()">Imprimir</button>
@@ -200,6 +202,18 @@ const FALT = {{ falt|tojson }};
     const r = await fetch("/planejar/desfazer-auto", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV})});
     const j = await r.json().catch(() => ({ok: false}));
     sessionStorage.setItem("pq-aviso", j.ok ? `${j.n} peça(s) do autopreenchimento tiradas.` : "Não deu para desfazer."); recarrega();
+  });
+  document.getElementById("b-reorg").addEventListener("click", async () => {
+    if (!confirm("Reorganizar as peças a fazer de hoje até {{ ate.strftime('%d/%m') }} na fôrma que faz mais sentido?\n\nMantém o dia quando dá; peça sem lugar fica onde está. Dá para desfazer.")) return;
+    const r = await fetch("/planejar/reorganizar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV, de: "{{ de.isoformat() }}", ate: "{{ ate.isoformat() }}"})});
+    const j = await r.json().catch(() => ({ok: false}));
+    sessionStorage.setItem("pq-aviso", j.ok ? `Reorganizadas ${j.n} peça(s): ${j.outra_forma} trocaram de fôrma no mesmo dia, ${j.outro_dia} mudaram de dia, ${j.mesmo_lugar} já estavam no melhor lugar${j.sem_lugar ? `, ${j.sem_lugar} sem lugar melhor (ficaram onde estavam)` : ""}.` : (j.erro || "Não deu para reorganizar.")); recarrega();
+  });
+  document.getElementById("b-desreorg")?.addEventListener("click", async () => {
+    if (!confirm("Voltar as peças para onde estavam antes da última reorganização?")) return;
+    const r = await fetch("/planejar/desfazer-reorganizar", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV})});
+    const j = await r.json().catch(() => ({ok: false}));
+    sessionStorage.setItem("pq-aviso", j.ok ? `${j.n} peça(s) voltaram para o lugar de antes.` : "Não deu para desfazer."); recarrega();
   });
   { const a = sessionStorage.getItem("pq-aviso"); if (a) { sessionStorage.removeItem("pq-aviso"); aviso(a); } }
   const dlg = document.getElementById("dlg-setup"), fs = document.getElementById("f-setup");

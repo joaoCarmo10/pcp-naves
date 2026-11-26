@@ -1275,7 +1275,7 @@ def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str 
     falt = pl.faltantes(db, r) if r else []
     ac = pl.acumulado(db, r, dias, hoje) if r else None
     return tpl.TemplateResponse(request, "planejar_quadro.html", {
-        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje, "ac": ac,
+        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje, "ac": ac, "reorg": pl.tem_reorg(r.id) if r else False,
         "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
         "DIAS": ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"], "base": ultima_base(db)})
 
@@ -1330,6 +1330,22 @@ def planejar_trazer(dados: dict = Body(...), db: Session = Depends(get_db)):
 def planejar_desfazer_auto(dados: dict = Body(...), db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, int(dados["rev"])) or _404()
     return {"ok": True, "n": pl.desfazer_auto(db, r)}
+
+
+@app.post("/planejar/reorganizar")
+def planejar_reorganizar(dados: dict = Body(...), db: Session = Depends(get_db)):
+    """Recoloca as peças a fazer do período na fôrma que faz mais sentido (com desfazer)."""
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    de, ate = _data(dados.get("de")), _data(dados.get("ate"))
+    if not de or not ate:
+        return {"ok": False, "erro": "Informe o período."}
+    return pl.reorganizar(db, r, pl.dias_periodo(de, ate), datetime.now(plannix.BAHIA).date())
+
+
+@app.post("/planejar/desfazer-reorganizar")
+def planejar_desfazer_reorganizar(dados: dict = Body(...), db: Session = Depends(get_db)):
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    return {"ok": True, "n": pl.desfazer_reorg(db, r)}
 
 
 @app.get("/planejar/exportar")

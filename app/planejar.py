@@ -489,3 +489,140 @@ def acumulado(db: Session, rev: RevisaoProg, dias: list[date], hoje: date) -> di
         ac += v
         dia.append({"d": d, "v": v, "ac": ac, "real": d < hoje})
     return {"obras": lin, "tot": tot, "dia": dia, "periodo": {"per": tot["per"], "prog": tot["prog"], "fim": tot["per"] + tot["prog"]}}
+
+
+def _arquivo_reorg(rev_id: int):
+    from .db import DATA_DIR
+    d = DATA_DIR / "reorganizar"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"rev_{rev_id}.json"
+
+
+def tem_reorg(rev_id: int) -> bool:
+    return _arquivo_reorg(rev_id).exists()
+
+
+def reorganizar(db: Session, rev: RevisaoProg, dias: list[date], hoje: date | None = None) -> dict:
+    """Recoloca as peças programadas (de hoje ao fim do período, não fabricadas) na fôrma que faz mais sentido.
+    Cada peça fica no mesmo dia quando há fôrma boa nele; senão vai para o próximo dia com lugar; sem lugar, fica onde
+    está. Ordem: peças com menos fôrmas possíveis primeiro, depois a prioridade do PCP. Preferência de fôrma:
+    1) fôrma da própria seção (não adaptada); 2) fôrma que já tem a mesma seção no dia (junta e abre menos fôrmas);
+    3) a fôrma onde a peça já estava; 4) a que fica mais cheia (menos sobra). Respeita encaixe, capacidade, uma seção
+    por fôrma por dia, protensão igual na pista, fôrma parada e premissas. Guarda a posição anterior para desfazer."""
+    import json
+    from . import cadastro as cad
+    from . import premissas as pm
+    hoje = hoje or date.today()
+    dias = [d for d in dias if d >= hoje]
+    if not dias:
+        return {"ok": False, "erro": "O período não tem dia de hoje em diante."}
+    prs = pm.ativas(db)
+    paradas = [pr for pr in prs if pr.tipo == "parar_forma"]
+    formas = list(db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)))
+    itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data >= dias[0], ItemProg.data <= dias[-1])))
+    pecas = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_([i.codigo for i in itens if i.codigo] or [""])))}
+    moveis = [i for i in itens if i.codigo in pecas and not pecas[i.codigo].fabricada and (i.qtd or 1) == 1 and i.data in dias]
+    ids_moveis = {i.id for i in moveis}
+    antes = {i.id: [i.data.isoformat(), i.forma, i.nave] for i in moveis}
+    cache: dict = {}
+
+    def forma_de(i):
+        if i.forma not in cache:
+            cache[i.forma] = next((f for f in formas if i.forma and fm.item_e_da_forma(i.forma, f)), None)
+        return cache[i.forma]
+    origem = {i.id: forma_de(i) for i in moveis}
+    cel: dict = defaultdict(list)                     # (forma.id, dia) -> itens que ficam (fixos) + já recolocados
+    for i in itens:
+        if i.id not in ids_moveis and (f := forma_de(i)):
+            cel[(f.id, i.data)].append(i)
+    idx = cad.indice(db)
+    arr: dict = {}
+
+    def arranjo(cod):
+        if cod not in arr:
+            p = pecas.get(cod) or db.scalar(select(Peca).where(Peca.codigo == cod))
+            c = cad.de_peca(idx, p) if p else None
+            arr[cod] = c.protensao if c else None
+        return arr[cod]
+    possiveis = {i.id: [f for f in formas if fm.aceita(f, pecas[i.codigo].produto, pecas[i.codigo].secao, pecas[i.codigo].comprimento)]
+                 for i in moveis}
+    armadas = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
+
+    def prio(i):
+        p = pecas[i.codigo]
+        return (len(possiveis[i.id]) or 999, 0 if pm.fura_fila(prs, p) else 1, p.obra.prioridade or 99,
+                0 if (p.hora_armacao or p.codigo in armadas) else 1, chave_natural(p.peca), p.codigo)
+    cont: dict = defaultdict(int)
+
+    def melhor(i, d):
+        p = pecas[i.codigo]
+        na = pm.nao_antes(prs, p)
+        if na and d < na:
+            return None
+        lim = pm.limites(prs, p)
+        ops = []
+        for f in possiveis[i.id]:
+            if not f.vigente(d) or parada(paradas, f, d):
+                continue
+            cap = capacidade(f, d)
+            if not cap or any(cont[(pid, f.id, d)] >= l for pid, l in lim):
+                continue
+            atual = cel[(f.id, d)]
+            ocupa = 1 if f.tipo == "unidade" else (p.comprimento or 0)
+            sobra = cap - uso(f, atual) - ocupa
+            if not ocupa or sobra < -1e-6:
+                continue
+            secs = {fm._norm(x.secao) for x in atual if x.secao}
+            if secs and secs != {fm._norm(p.secao)}:
+                continue
+            a = arranjo(p.codigo)
+            if a is not None and (f.tipo == "pista" or a):
+                outros = {arranjo(x.codigo) for x in atual if x.codigo} - {None}
+                if outros and outros != {a}:
+                    continue
+            propria = fm._norm(f.secao) == fm._norm(p.secao)
+            ops.append(((0 if propria else 1, 0 if secs else 1, 0 if origem[i.id] is f else 1, sobra / cap), f))
+        return min(ops, key=lambda x: x[0])[1] if ops else None
+    res = {"mesmo_lugar": 0, "outra_forma": 0, "outro_dia": 0, "sem_lugar": 0}
+    for i in sorted(moveis, key=lambda i: (i.data, prio(i))):
+        f, d = None, i.data
+        for dd in [x for x in dias if x >= i.data]:
+            f = melhor(i, dd)
+            if f:
+                d = dd
+                break
+        if not f:
+            res["sem_lugar"] += 1
+            if (fo := origem[i.id]):
+                cel[(fo.id, i.data)].append(i)
+            continue
+        if f is origem[i.id] and d == i.data:
+            res["mesmo_lugar"] += 1
+        elif d == i.data:
+            res["outra_forma"] += 1
+        else:
+            res["outro_dia"] += 1
+        i.data, i.nave, i.forma = d, f.nave, f.nome_completo
+        cel[(f.id, d)].append(i)
+        for pid, _ in pm.limites(prs, pecas[i.codigo]):
+            cont[(pid, f.id, d)] += 1
+    _arquivo_reorg(rev.id).write_text(json.dumps(antes))
+    db.commit()
+    return {"ok": True, "n": len(moveis), **res}
+
+
+def desfazer_reorg(db: Session, rev: RevisaoProg) -> int:
+    """Volta cada peça para o dia e a fôrma de antes da última reorganização."""
+    import json
+    arq = _arquivo_reorg(rev.id)
+    if not arq.exists():
+        return 0
+    antes = json.loads(arq.read_text())
+    n = 0
+    for i in db.scalars(select(ItemProg).where(ItemProg.id.in_([int(k) for k in antes] or [0]))):
+        d, forma, nave = antes[str(i.id)]
+        i.data, i.forma, i.nave = date.fromisoformat(d), forma, nave
+        n += 1
+    db.commit()
+    arq.unlink()
+    return n
