@@ -1408,7 +1408,15 @@ def planejar_autopreencher(dados: dict = Body(...), db: Session = Depends(get_db
     if not d0 or not d1:
         return {"ok": False, "erro": "Período inválido."}
     so = {int(x) for x in dados.get("formas", []) if str(x).isdigit()} or None
-    return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so)
+    lote, df = _lote_e_dias(dados)
+    return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so, lote=lote, dias_forma=df)
+
+
+def _lote_e_dias(dados: dict):
+    """lote: junta várias chamadas num desfazer só. dias_forma: {id_forma: [datas]} em que a fôrma produz."""
+    lote = dados.get("lote") if re.fullmatch(r"AUTO-[0-9a-f]{6}", str(dados.get("lote") or "")) else None
+    df = {int(k): {d for d in (_data(x) for x in v) if d} for k, v in (dados.get("dias_forma") or {}).items() if str(k).isdigit()} or None
+    return lote, df
 
 
 @app.post("/planejar/trazer")
@@ -1419,7 +1427,8 @@ def planejar_trazer(dados: dict = Body(...), db: Session = Depends(get_db)):
     if not d0 or not d1 or o.id == r.id:
         return {"ok": False, "erro": "Escolha outra revisão e um período válido."}
     so = {int(x) for x in dados.get("formas", []) if str(x).isdigit()} or None
-    return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)), so)
+    lote, df = _lote_e_dias(dados)
+    return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)), so, lote=lote, dias_forma=df)
 
 
 @app.post("/planejar/desfazer-auto")

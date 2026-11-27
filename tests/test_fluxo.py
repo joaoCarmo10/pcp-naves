@@ -1373,3 +1373,27 @@ def test_renomear_forma_leva_a_programacao(cliente):
     cliente.post(f"/formas/{f1.id}", data=campos)
     its = {i.peca: i.forma for i in SessionLocal().scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id))}
     assert its["V1"] == "N1 - F1 Pernambuco (Palmeiras) 30x60 (30m)" and its["V2"] == f10.nome_completo
+
+
+def test_autopreencher_dias_da_forma(cliente):
+    """dias_forma: a fôrma só recebe peça nos dias informados; lote compartilhado desfaz tudo junto."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import ItemProg, Obra, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": date.today().isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    d0 = pl.hoje_bahia() + timedelta(days=1)
+    dias = pl.dias_periodo(d0, d0 + timedelta(days=6))
+    from app.models import Forma
+    from app import formas as fm
+    fs = [f for f in db.scalars(select(Forma)) if fm.aceita(f, "PILAR", "40x40", 8.0)]
+    so = {fs[0].id}
+    r = pl.autopreencher(db, rev, dias, so, lote="AUTO-abc123", dias_forma={fs[0].id: {dias[-1]}})
+    its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id)))
+    assert r["n"] and all(i.data == dias[-1] for i in its)
+    assert pl.desfazer_auto(db, rev) == r["n"]

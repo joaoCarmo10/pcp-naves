@@ -297,7 +297,8 @@ def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forc
 # ---------------------------------------------------------------- autopreencher (completa sem tirar o que já está)
 
 def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: set[int] | None = None,
-                  so_codigos: set[str] | None = None, lote: str | None = None) -> dict:
+                  so_codigos: set[str] | None = None, lote: str | None = None,
+                  dias_forma: dict[int, set[date]] | None = None) -> dict:
     """Completa a capacidade livre das fôrmas no período com as peças que faltam, na ordem de prioridade do PCP
     (fura-fila, prioridade da obra, armadas primeiro, produto, nome). Não tira nem move nada do que já está.
     Respeita: encaixe (produto, seção, comprimento), capacidade, fôrma parada (setup), premissas (não programar,
@@ -331,8 +332,8 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
         vig = [f for f in formas if f.vigente(d)]
         por, _ = itens_por_forma(db, rev, d, vig)
         for f in vig:
-            if parada(paradas, f, d):
-                continue
+            if parada(paradas, f, d) or (dias_forma and f.id in dias_forma and d not in dias_forma[f.id]):
+                continue   # dias_forma: a fôrma só produz nesses dias (ex.: P1 seg/qua/sex, P2 ter/qui/sáb)
             cap = capacidade(f, d)
             if not cap:
                 continue
@@ -380,7 +381,8 @@ def desfazer_auto(db: Session, rev: RevisaoProg, lote: str | None = None) -> int
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.obs.like("Autopreenchido (AUTO-%"))))
     if not its:
         return 0
-    alvo = lote or max(its, key=lambda i: i.id).obs.split("(")[1].rstrip(")")
+    import re
+    alvo = lote or re.search(r"AUTO-[0-9a-f]+", max(its, key=lambda i: i.id).obs).group(0)
     n = 0
     for i in its:
         if alvo in i.obs:
@@ -391,7 +393,8 @@ def desfazer_auto(db: Session, rev: RevisaoProg, lote: str | None = None) -> int
 
 
 def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: list[date],
-                     so_formas: set[int] | None = None) -> dict:
+                     so_formas: set[int] | None = None, lote: str | None = None,
+                     dias_forma: dict[int, set[date]] | None = None) -> dict:
     """Peças de outra revisão (ex.: a última programação) programadas até o fim do período e ainda não fabricadas, que
     não estão nesta revisão: primeiro tenta o mesmo dia e fôrma de lá (se o dia está no período e cabe); o resto entra
     pelo autopreenchimento, na ordem de prioridade. Nada do que já está nesta revisão é tirado."""
@@ -399,7 +402,7 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     from . import premissas as pm
     hoje = hoje_bahia()
     dias = [d for d in dias if d >= hoje]
-    lote = "AUTO-" + secrets.token_hex(3)
+    lote = lote or "AUTO-" + secrets.token_hex(3)
     ja = programados(db, rev)
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == origem.id, ItemProg.data <= dias[-1]).order_by(ItemProg.data)))
     sem_codigo = sorted({f"{i.obra} {i.peca}" for i in its if not i.codigo})
@@ -433,7 +436,7 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
         mesmo += 1
     db.commit()
     resto = {i.codigo for i in pend} - programados(db, rev)
-    r = autopreencher(db, rev, dias, so_formas=so_formas, so_codigos=resto, lote=lote) if resto else {"n": 0, "sobram": 0}
+    r = autopreencher(db, rev, dias, so_formas=so_formas, so_codigos=resto, lote=lote, dias_forma=dias_forma) if resto else {"n": 0, "sobram": 0}
     return {"ok": True, "lote": lote, "faltantes": len({i.codigo for i in pend}), "mesmo_lugar": mesmo, "auto": r["n"],
             "sem_lugar": len(resto) - r["n"], "sem_codigo": sem_codigo, "ja_feitas": len(feitas)}
 
