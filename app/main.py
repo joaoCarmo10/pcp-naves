@@ -1430,7 +1430,11 @@ def planejar_versao(rev: int, db: Session = Depends(get_db)):
                           .where(ItemProg.revisao_id == rev).order_by(ItemProg.id)):
         h.update(repr(tuple(row)).encode())
     h.update(f"{_cfg(db, 'sync_mudanca')}|{pl.hoje_bahia()}".encode())
-    return {"v": h.hexdigest()[:16], "base": ultima_base(db)}
+    st = _sync_status(db)
+    lido = st.get("pc_hora") or st.get("contato")
+    mud = st.get("mudanca")
+    return {"v": h.hexdigest()[:16], "base": ultima_base(db),
+            "lido": lido.strftime("%d/%m %H:%M") if lido else "", "mudou": mud.strftime("%d/%m %H:%M") if mud else ""}
 
 
 @app.post("/planejar/reorganizar")

@@ -233,7 +233,7 @@ const FALT = {{ falt|tojson }};
         if (ag) ag.textContent = "Dados novos do Plannix: a lista atualiza quando você terminar a edição.";
         return;
       }
-      if (ag) ag.textContent = `Lista ao vivo · conferida às ${new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"})} · Plannix: ${j.base}`;
+      if (ag) ag.textContent = `Lista ao vivo · conferida às ${new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"})} · Plannix lido ${j.lido}${j.mudou && j.mudou !== j.lido ? `, sem dado novo desde ${j.mudou}` : ""}`;
     } catch (e) {}
   };
   confere(); setInterval(confere, 60000);
