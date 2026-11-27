@@ -284,12 +284,26 @@ def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
         fid = cache[i.forma]
         (cel[(fid, i.data)] if fid else sem[(i.nave or "-", i.data)]).append(i)
 
+    from . import autodoc
+    adx = autodoc.indice(db)
+    pecas_q = {p.codigo: p for p in db.scalars(select(Peca).where(Peca.codigo.in_([i.codigo for i in itens if i.codigo] or [""])))}
+    des: dict = {}
+
+    def desenho(i):
+        p = pecas_q.get(i.codigo) if i.codigo else None
+        if not p:
+            return ""
+        if p.codigo not in des:
+            x = autodoc.de(adx, p.obra_id, p.peca)
+            des[p.codigo] = "sem desenho no Autodoc" if not x else ("" if not x.bloqueado else f"desenho {(x.status or 'não aprovado').lower()}")
+        return des[p.codigo]
+
     def grupos(its):
         g: dict = {}
         for i in its:
             k = (i.obra, i.peca)
             x = g.setdefault(k, {"obra": i.obra, "peca": i.peca, "ids": [], "qtd": 0, "fab": 0, "comp": i.comprimento,
-                                 "secao": i.secao, "obs": i.obs})
+                                 "secao": i.secao, "obs": i.obs, "desenho": desenho(i)})
             x["ids"].append(i.id)
             x["qtd"] += i.qtd
             x["fab"] += i.qtd if i.codigo in fab else 0
