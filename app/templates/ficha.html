@@ -38,8 +38,8 @@
 </div>
 
 <div class="fi-sec fi-tri"><h2 class="fi-sec" style="margin:0">3. Triagem de materiais <span>só o que a peça leva{% if not tem_complemento %} · sem complementos do Plannix importados para esta unidade{% endif %}</span></h2>
-  <span><b>{{ n_itens }} itens</b> em {{ grupos|length }} família{{ 's' if grupos|length != 1 }} · separados ___ de {{ n_itens }}</span></div>
-<div class="fi-lin fi-lcab"><span></span><span>Item</span><span class="n">Plannix</span><span class="n">Usar</span><span>Local</span><span>Status</span></div>
+  <span><b>{{ n_itens }} ite{{ 'ns' if n_itens != 1 else 'm' }}</b> em {{ grupos|length }} família{{ 's' if grupos|length != 1 }} · separados ___ de {{ n_itens }}</span></div>
+<div class="fi-lin fi-lcab"><span></span><span>Item</span><span class="n">Plannix</span><span class="n">Usar</span><span style="padding-left:6px">Local</span><span>Status</span></div>
 {% for fam, its, un in grupos %}
 <section class="fi-fam">
   <div class="fi-fh"><b>{{ fam }}</b><span>{% if fam == 'Armação' %}aço frouxo{% else %}{{ its|length }} ite{{ 'ns' if its|length != 1 else 'm' }} · {{ un|qtd }} un{% endif %}</span></div>
