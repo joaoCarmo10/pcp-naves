@@ -1262,7 +1262,7 @@ def test_reorganizar_formas(cliente):
     db.add_all([adapt, propria])
     db.commit()
     d = hoje + timedelta(days=1)
-    while d.weekday() == 6:
+    while d.weekday() >= 5:
         d += timedelta(days=1)
     it = ItemProg(revisao_id=rev.id, data=d, nave="N1", forma=adapt.nome_completo, obra=p.obra.nome, peca=p.peca, codigo=p.codigo,
                   produto=p.produto, secao=p.secao, qtd=1)
@@ -1423,7 +1423,7 @@ def test_forcado_sai_quando_a_forma_passa_a_aceitar_e_auto_pula_manual(cliente):
     db = SessionLocal()
     rev = db.scalars(select(RevisaoProg)).all()[-1]
     d = pl.hoje_bahia() + timedelta(days=1)
-    while d.weekday() == 6:
+    while d.weekday() >= 5:
         d += timedelta(days=1)
     f = Forma(codigo="N1-T", nave="N1", nome="FT 40x40", tipo="linear", comprimento=30, capacidade=1, secao="40x40", situacao="ativa")
     db.add(f)
@@ -1460,3 +1460,14 @@ def test_fabricada_sai_do_quadro(cliente):
     q = pl.quadro(db, rev, [d])
     cel = next(l for n in q["naves"] for l in n["linhas"] if l["f"] and l["f"].id == f.id)["cels"][0]
     assert [g["peca"] for g in cel["g"]] == [afazer.peca]          # a fabricada sai; a atrasada (a fazer) fica
+
+
+def test_sabado_so_com_producao_quando_marcado(cliente):
+    from datetime import date
+    from app import planejar as pl
+    from app.db import SessionLocal
+    sab = date(2026, 12, 5)
+    assert sab not in pl.dias_uteis(SessionLocal(), [sab])
+    assert cliente.post("/planejar/sabado", json={"dia": sab.isoformat(), "trabalha": True}).json()["ok"]
+    assert sab in pl.dias_uteis(SessionLocal(), [sab])
+    assert not cliente.post("/planejar/sabado", json={"dia": "2026-12-07", "trabalha": True}).json()["ok"]

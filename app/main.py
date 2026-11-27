@@ -1372,7 +1372,7 @@ def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str 
     falt = pl.faltantes(db, r) if r else []
     ac = pl.acumulado(db, r, dias, hoje) if r else None
     return tpl.TemplateResponse(request, "planejar_quadro.html", {
-        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje, "ac": ac, "reorg": pl.tem_reorg(r.id) if r else False,
+        "r": r, "revs": _revisoes(db), "de": d0, "ate": d1, "dias": dias, "q": q, "falt": falt, "hoje": hoje, "ac": ac, "reorg": pl.tem_reorg(r.id) if r else False, "sab_ok": pl.sabados_trabalhados(db),
         "obras": sorted({g["obra"] for g in falt}), "produtos": sorted({g["produto"] for g in falt}),
         "DIAS": ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"], "base": ultima_base(db)})
 
@@ -1462,6 +1462,19 @@ def planejar_versao(rev: int, db: Session = Depends(get_db)):
     mud = st.get("mudanca")
     return {"v": h.hexdigest()[:16], "base": ultima_base(db),
             "lido": lido.strftime("%d/%m %H:%M") if lido else "", "mudou": mud.strftime("%d/%m %H:%M") if mud else ""}
+
+
+@app.post("/planejar/sabado")
+def planejar_sabado(dados: dict = Body(...), db: Session = Depends(get_db)):
+    """Marca ou desmarca um sábado como dia de produção. Sábado não marcado fica sem produção no autopreenchimento."""
+    d = _data(dados.get("dia"))
+    if not d or d.weekday() != 5:
+        return {"ok": False, "erro": "Escolha um sábado."}
+    sab = pl.sabados_trabalhados(db)
+    sab = (sab | {d}) if dados.get("trabalha") else (sab - {d})
+    _cfg_grava(db, "sabados_trabalhados", json.dumps(sorted(x.isoformat() for x in sab)))
+    db.commit()
+    return {"ok": True, "sabados": sorted(x.isoformat() for x in sab)}
 
 
 @app.post("/planejar/reorganizar")

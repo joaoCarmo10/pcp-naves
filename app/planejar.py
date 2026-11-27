@@ -256,6 +256,23 @@ def conflito_protensao(db: Session, f: Forma, novas: list[Peca], ja: list[ItemPr
 
 # ---------------------------------------------------------------- quadro do período (fôrmas x dias)
 
+def sabados_trabalhados(db: Session) -> set[date]:
+    """Sábado só tem produção quando o PCP marca (Config 'sabados_trabalhados', lista de datas ISO)."""
+    import json
+    from .models import Config
+    c = db.get(Config, "sabados_trabalhados")
+    try:
+        return {date.fromisoformat(x) for x in json.loads(c.valor)} if c and c.valor else set()
+    except ValueError:
+        return set()
+
+
+def dias_uteis(db: Session, dias: list[date]) -> list[date]:
+    """Dias com produção: sem domingo e sem sábado não marcado como trabalhado."""
+    sab = sabados_trabalhados(db)
+    return [d for d in dias if d.weekday() != 6 and (d.weekday() != 5 or d in sab)]
+
+
 def dias_periodo(de: date, ate: date) -> list[date]:
     from datetime import timedelta
     out, d = [], de
@@ -397,6 +414,7 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
     usados: set[str] = set()
     lote = lote or "AUTO-" + secrets.token_hex(3)
     novos, cont = 0, defaultdict(int)
+    dias = dias_uteis(db, dias)
     formas = [f for f in db.scalars(select(Forma).order_by(Forma.nave, Forma.y, Forma.x)) if not so_formas or f.id in so_formas]
     for d in dias:
         vig = [f for f in formas if f.vigente(d)]
@@ -473,7 +491,7 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     import secrets
     from . import premissas as pm
     hoje = hoje_bahia()
-    dias = [d for d in dias if d >= hoje]
+    dias = [d for d in dias_uteis(db, dias) if d >= hoje]
     lote = lote or "AUTO-" + secrets.token_hex(3)
     ja = programados(db, rev)
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == origem.id, ItemProg.data <= dias[-1]).order_by(ItemProg.data)))
@@ -615,7 +633,7 @@ def reorganizar(db: Session, rev: RevisaoProg, dias: list[date], hoje: date | No
     from . import cadastro as cad
     from . import premissas as pm
     hoje = hoje or date.today()
-    dias = [d for d in dias if d >= hoje]
+    dias = [d for d in dias_uteis(db, dias) if d >= hoje]
     if not dias:
         return {"ok": False, "erro": "O período não tem dia de hoje em diante."}
     prs = pm.ativas(db)
