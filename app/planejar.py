@@ -40,6 +40,9 @@ def uso(f: Forma, itens: list[ItemProg]) -> float:
 def itens_por_forma(db: Session, rev: RevisaoProg, d: date, formas: list[Forma]) -> tuple[dict[int, list[ItemProg]], list[ItemProg]]:
     """Itens do dia separados por fôrma do cadastro; os que não casam com nenhuma fôrma vão para 'sem fôrma'."""
     itens = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data == d)))
+    fab = {c for (c,) in db.execute(select(Peca.codigo).where(Peca.fabricada.is_(True),
+                                                              Peca.codigo.in_([i.codigo for i in itens if i.codigo] or [""])))}
+    itens = [i for i in itens if not (i.codigo and i.codigo in fab)]   # peça já fabricada não ocupa mais a fôrma
     por = defaultdict(list)
     sobra = []
     for i in itens:
@@ -271,6 +274,7 @@ def quadro(db: Session, rev: RevisaoProg, dias: list[date]) -> dict:
                                                    ItemProg.data <= dias[-1]))) if dias else []
     fab = {c for (c,) in db.execute(select(Peca.codigo).where(Peca.fabricada.is_(True),
                                                               Peca.codigo.in_([i.codigo for i in itens if i.codigo] or [""])))}
+    itens = [i for i in itens if not (i.codigo and i.codigo in fab)]   # fabricada sai do quadro; a fazer e atrasada ficam
     cel: dict = defaultdict(list)
     sem: dict = defaultdict(list)
     cache: dict = {}

@@ -1437,3 +1437,26 @@ def test_forcado_sai_quando_a_forma_passa_a_aceitar_e_auto_pula_manual(cliente):
     r = pl.autopreencher(db, rev, [d], {f.id}, pular_manuais=True)
     assert r["n"] == 0                                         # a célula tem peça do PCP: não mexe
     assert pl.autopreencher(db, rev, [d], {f.id})["n"] >= 1      # sem a regra, completaria
+
+
+def test_fabricada_sai_do_quadro(cliente):
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": pl.hoje_bahia().isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    f = db.scalar(select(Forma).where(Forma.nave == "N1"))
+    d = pl.hoje_bahia() - timedelta(days=1)
+    feita = db.scalar(select(Peca).where(Peca.fabricada.is_(True)))
+    afazer = db.scalar(select(Peca).where(Peca.fabricada.is_(False)))
+    for p in (feita, afazer):
+        db.add(ItemProg(revisao_id=rev.id, data=d, nave=f.nave, forma=f.nome_completo, obra=p.obra.nome, peca=p.peca, codigo=p.codigo, qtd=1))
+    db.commit()
+    q = pl.quadro(db, rev, [d])
+    cel = next(l for n in q["naves"] for l in n["linhas"] if l["f"] and l["f"].id == f.id)["cels"][0]
+    assert [g["peca"] for g in cel["g"]] == [afazer.peca]          # a fabricada sai; a atrasada (a fazer) fica
