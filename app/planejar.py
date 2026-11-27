@@ -48,12 +48,30 @@ def itens_por_forma(db: Session, rev: RevisaoProg, d: date, formas: list[Forma])
     return por, sobra
 
 
+def hoje_bahia() -> date:
+    from datetime import datetime
+    from .plannix import BAHIA
+    return datetime.now(BAHIA).date()
+
+
+def programados(db: Session, rev: RevisaoProg, hoje: date | None = None) -> set[str]:
+    """Códigos com lugar nesta revisão de hoje em diante. Peça programada num dia que já passou e não foi feita
+    volta a ser 'a programar' (fica no dia antigo só como histórico do PPC)."""
+    hoje = hoje or hoje_bahia()
+    return {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None),
+                                                                   ItemProg.data >= hoje))}
+
+
 def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
-    """Peças não fabricadas das obras ativas que ainda não estão nesta revisão, agrupadas por peça igual e ordenadas
-    pelos critérios do PCP: prioridade da obra, armadas primeiro, produto e nome da peça."""
-    ja = set()
+    """Peças não fabricadas das obras ativas sem lugar nesta revisão de hoje em diante (as que ficaram para trás em dia
+    passado voltam, marcadas como atrasadas), agrupadas por peça igual e ordenadas pelos critérios do PCP:
+    prioridade da obra, armadas primeiro, produto e nome da peça. Lido do banco a cada abertura: fabricada no
+    Plannix sai da lista na próxima leitura do notebook."""
+    ja, atras = set(), set()
     if rev:
-        ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+        ja = programados(db, rev)
+        atras = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None),
+                                                                        ItemProg.data < hoje_bahia()))} - ja
     armadas_app = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
     from . import autodoc
     from . import cadastro as cad
@@ -69,11 +87,13 @@ def faltantes(db: Session, rev: RevisaoProg | None) -> list[dict]:
         if not g:
             c = cad.de_peca(idx, p)
             g = grupos[k] = {"obra": o.nome, "prio": o.prioridade or 99, "peca": p.peca, "secao": p.secao, "comp": p.comprimento,
-                             "produto": p.produto, "codigos": [], "armadas": 0,
+                             "produto": p.produto, "codigos": [], "armadas": 0, "atrasadas": 0,
                              "prot": c.protensao if c else None, "aco": round(c.aco_passivo) if c and c.aco_passivo else None,
                              "e2": (c.etapa2_obs or "sim") if c and c.segunda_etapa else None,
                              "ad": autodoc.resumo(autodoc.de(ad, o.id, p.peca))}
         g["codigos"].append(p.codigo)
+        if p.codigo in atras:
+            g["atrasadas"] += 1
         if p.hora_armacao or p.codigo in armadas_app:
             g["armadas"] += 1
     out = list(grupos.values())
@@ -112,7 +132,7 @@ def validar(f: Forma, d: date, pecas: list[Peca], ocupado: float) -> list[str]:
 
 def alocar(db: Session, rev: RevisaoProg, f: Forma, d: date, codigos: list[str], forcar: bool = False) -> dict:
     pecas = [p for p in db.scalars(select(Peca).where(Peca.codigo.in_(codigos)))]
-    ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.in_(codigos)))}
+    ja = programados(db, rev) & set(codigos)
     pecas = [p for p in pecas if p.codigo not in ja]
     if not pecas:
         return {"ok": False, "problemas": ["Essas peças já estão nesta revisão."], "pode_forcar": False}
@@ -290,7 +310,7 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
     paradas = [pr for pr in prs if pr.tipo == "parar_forma"]
     hoje = date.today()
     dias = [d for d in dias if d >= hoje]
-    ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    ja = programados(db, rev)
     armadas = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
     adx = autodoc.indice(db)
     cands = []
@@ -379,7 +399,7 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     hoje = date.today()
     dias = [d for d in dias if d >= hoje]
     lote = "AUTO-" + secrets.token_hex(3)
-    ja = {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id, ItemProg.codigo.is_not(None)))}
+    ja = programados(db, rev)
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == origem.id, ItemProg.data <= dias[-1]).order_by(ItemProg.data)))
     sem_codigo = sorted({f"{i.obra} {i.peca}" for i in its if not i.codigo})
     cods = [i.codigo for i in its if i.codigo and i.codigo not in ja]

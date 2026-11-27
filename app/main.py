@@ -1421,6 +1421,18 @@ def planejar_desfazer_auto(dados: dict = Body(...), db: Session = Depends(get_db
     return {"ok": True, "n": pl.desfazer_auto(db, r)}
 
 
+@app.get("/planejar/versao")
+def planejar_versao(rev: int, db: Session = Depends(get_db)):
+    """Assinatura do que a tela do planejamento mostra: muda quando o Plannix traz dado novo ou a revisão é alterada
+    (em outra aba ou por outra pessoa) ou o dia vira. A tela compara a cada minuto e recarrega sozinha."""
+    h = hashlib.sha1()
+    for row in db.execute(select(ItemProg.id, ItemProg.data, ItemProg.forma, ItemProg.qtd)
+                          .where(ItemProg.revisao_id == rev).order_by(ItemProg.id)):
+        h.update(repr(tuple(row)).encode())
+    h.update(f"{_cfg(db, 'sync_mudanca')}|{pl.hoje_bahia()}".encode())
+    return {"v": h.hexdigest()[:16], "base": ultima_base(db)}
+
+
 @app.post("/planejar/reorganizar")
 def planejar_reorganizar(dados: dict = Body(...), db: Session = Depends(get_db)):
     """Recoloca as peças a fazer do período na fôrma que faz mais sentido (com desfazer)."""

@@ -75,6 +75,7 @@
   <aside class="pq-lista" aria-label="Peças a programar">
     <div class="pq-lcab">
       <b>Peças a programar</b> <span class="meta" id="lf-n"></span>
+      <span class="meta" id="pq-viva" style="font-size:11px" aria-live="polite"></span>
       <select id="f-obra" aria-label="Obra"><option value="">Todas as obras</option>{% for o in obras %}<option>{{ o }}</option>{% endfor %}</select>
       <div style="display:flex;gap:4px;min-width:0"><select id="f-prod" aria-label="Tipo de peça" style="flex:1;min-width:0"><option value="">Todos os tipos</option>{% for p in produtos %}<option>{{ p }}</option>{% endfor %}</select>
         <input id="f-busca" type="search" placeholder="Peça ou seção" aria-label="Buscar peça ou seção" style="flex:1;min-width:0;width:100%"></div>
@@ -135,7 +136,7 @@ const FALT = {{ falt|tojson }};
     lista.innerHTML = gs.slice(0, 400).map(([g, i]) => `
       <div class="pq-item${g.ad && g.ad.bloqueado ? " bloq" : ""}" draggable="true" data-i="${i}">
         <div><b>${esc(g.peca)}</b> <span class="meta">${esc(g.produto)} · ${esc(g.secao)}${g.comp ? " · " + num(g.comp, 2) + " m" : ""}</span></div>
-        <div class="meta">${esc(g.obra)}${g.armadas ? ` · <span class="tag-ok">${g.armadas} armada(s)</span>` : ""}${g.ad && g.ad.bloqueado ? ' · <b style="color:#a4161a">desenho bloqueado</b>' : ""}${g.e2 ? " · 2ª etapa" : ""}</div>
+        <div class="meta">${esc(g.obra)}${g.armadas ? ` · <span class="tag-ok">${g.armadas} armada(s)</span>` : ""}${g.atrasadas ? ` · <b style="color:#d84315" title="Programadas em dia que já passou e não feitas: voltaram para a lista">${g.atrasadas} atrasada(s)</b>` : ""}${g.ad && g.ad.bloqueado ? ' · <b style="color:#a4161a">desenho bloqueado</b>' : ""}${g.e2 ? " · 2ª etapa" : ""}</div>
         <label class="pq-qtd">qtd <input type="number" min="1" max="${g.codigos.length}" value="1" aria-label="Quantas unidades de ${esc(g.peca)}"> de ${g.codigos.length}</label>
       </div>`).join("") + (gs.length > 400 ? `<p class="meta">Mostrando 400 de ${gs.length}. Use os filtros.</p>` : "");
   }
@@ -215,6 +216,28 @@ const FALT = {{ falt|tojson }};
     const j = await r.json().catch(() => ({ok: false}));
     sessionStorage.setItem("pq-aviso", j.ok ? `${j.n} peça(s) voltaram para o lugar de antes.` : "Não deu para desfazer."); recarrega();
   });
+  // lista viva: a cada minuto pergunta se o Plannix ou a revisão mudaram; se mudaram e você não está arrastando nem digitando, recarrega mantendo filtros e rolagem
+  let versao = null, arrastando = false;
+  document.addEventListener("dragstart", () => { arrastando = true; });
+  document.addEventListener("dragend", () => { arrastando = false; });
+  document.addEventListener("drop", () => { arrastando = false; });
+  const confere = async () => {
+    try {
+      const j = await (await fetch(`/planejar/versao?rev=${REV}`, {cache: "no-store"})).json();
+      const ag = document.getElementById("pq-viva");
+      if (versao === null) versao = j.v;
+      else if (j.v !== versao) {
+        const el = document.activeElement, filtro = el && ["f-obra", "f-prod", "f-busca"].includes(el.id);
+        const ocupado = arrastando || document.querySelector("dialog[open]") || (!filtro && ["INPUT", "SELECT", "TEXTAREA"].includes(el?.tagName));
+        if (!ocupado) { sessionStorage.setItem("pq-aviso", "Lista atualizada com o Plannix e a revisão."); recarrega(); return; }
+        if (ag) ag.textContent = "Dados novos do Plannix: a lista atualiza quando você terminar a edição.";
+        return;
+      }
+      if (ag) ag.textContent = `Lista ao vivo · conferida às ${new Date().toLocaleTimeString("pt-BR", {hour: "2-digit", minute: "2-digit"})} · Plannix: ${j.base}`;
+    } catch (e) {}
+  };
+  confere(); setInterval(confere, 60000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) confere(); });
   { const a = sessionStorage.getItem("pq-aviso"); if (a) { sessionStorage.removeItem("pq-aviso"); aviso(a); } }
   const dlg = document.getElementById("dlg-setup"), fs = document.getElementById("f-setup");
   document.addEventListener("click", e => {

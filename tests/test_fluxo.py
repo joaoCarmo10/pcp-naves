@@ -183,7 +183,10 @@ def test_formas(cliente):
     assert "Programado nesta fôrma" in h and "Peças a fazer que cabem" in h
 
 
-def test_planejar(cliente):
+def test_planejar(cliente, monkeypatch):
+    from datetime import date as _d
+    from app import planejar as _pl
+    monkeypatch.setattr(_pl, "hoje_bahia", lambda: _d(2026, 11, 18))   # o teste programa em 18/11: "hoje" é 18/11
     from sqlalchemy import select
     from app.db import SessionLocal
     from app.models import Forma, ItemProg, RevisaoProg
@@ -1324,3 +1327,27 @@ def test_contato_do_notebook(cliente):
     assert r.status_code == 200, r.text
     h = cliente.get("/importar").text
     assert "Última atualização do notebook: <b>26/11/2026 13:05" in h and "perdeu o horário" not in h
+
+
+def test_lista_viva_do_planejamento(cliente):
+    """Peça programada em dia passado e não feita volta para a lista (atrasada); a versão muda quando a revisão muda."""
+    from datetime import date, timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import ItemProg, Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": date.today().isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    p = db.scalar(select(Peca).where(Peca.fabricada.is_(False)))
+    v0 = cliente.get(f"/planejar/versao?rev={rev.id}").json()["v"]
+    db.add(ItemProg(revisao_id=rev.id, data=pl.hoje_bahia() - timedelta(days=2), obra=p.obra.nome, peca=p.peca, codigo=p.codigo, qtd=1))
+    db.commit()
+    g = next(g for g in pl.faltantes(db, rev) if p.codigo in g["codigos"])
+    assert g["atrasadas"] == 1
+    assert cliente.get(f"/planejar/versao?rev={rev.id}").json()["v"] != v0
+    db.add(ItemProg(revisao_id=rev.id, data=pl.hoje_bahia() + timedelta(days=1), obra=p.obra.nome, peca=p.peca, codigo=p.codigo, qtd=1))
+    db.commit()
+    assert not any(p.codigo in g["codigos"] for g in pl.faltantes(db, rev))
