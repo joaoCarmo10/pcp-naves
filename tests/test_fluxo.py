@@ -1113,8 +1113,20 @@ def test_ficha_de_fabricacao(cliente):
     assert [(a["campo"], a["de"], a["para"]) for a in f.alteracoes] == [("LUVA 20mm", 4.0, 3.0)]   # NP3 igual ao Plannix: sem registro
     assert f.dados["fb"]["arm"] == {"esp": 4.0, "real": 5.0, "dif": 4, "obs": ""}
     h = cliente.get(f"/ficha/{p.codigo}").text
-    assert "25%" in h and "Ajustes do PCP" in h
+    assert "25%" in h and "Alterado pelo PCP" in h and "Triagem de materiais" in h
     assert cliente.get(f"/pecas/ficha?obra={p.obra_id}&peca={p.peca}", follow_redirects=False).status_code == 303
+    # inserir item: só nesta unidade e em todas as unidades da peça; remover
+    outra = SessionLocal().scalar(select(Peca).where(Peca.peca == p.peca, Peca.codigo != p.codigo, Peca.obra_id == p.obra_id))
+    cliente.post(f"/ficha/{p.codigo}", data={"novo_familia": "Inserto", "novo_item": "Inserto içamento 2,5 t", "novo_qtd": "4", "novo_escopo": "unidade"})
+    cliente.post(f"/ficha/{p.codigo}", data={"novo_familia": "Chumbador", "novo_item": "Chumbador CH9", "novo_qtd": "2", "novo_escopo": "todas"})
+    h = cliente.get(f"/ficha/{p.codigo}").text
+    assert "Inserto içamento 2,5 t" in h and 'name="usar::Inserto içamento 2,5 t" value="4"' in h and "incluído · todas" in h
+    if outra:
+        h2 = cliente.get(f"/ficha/{outra.codigo}").text
+        assert "Chumbador CH9" in h2 and "Inserto içamento" not in h2
+    cliente.post(f"/ficha/{p.codigo}", data={"remover": "unidade::Inserto içamento 2,5 t"})
+    h = cliente.get(f"/ficha/{p.codigo}").text
+    assert "Inserto içamento" not in h and "Chumbador CH9" in h
 
 
 def test_quadro_de_planejamento(cliente):

@@ -16,49 +16,64 @@
 
 <form method="post" id="ficha" class="ficha">
 <header class="fi-cab">
-  <div><div class="fi-tit">Ficha de fabricação</div><div class="meta">{{ p.obra.nome }} · código {{ p.codigo }}</div></div>
-  <div class="fi-peca">{{ p.peca }}<span>{{ p.produto }}</span></div>
-  <div class="meta" style="text-align:right">Emitida {{ agora }}{% if f %}<br>Atualizada {{ f.atualizado_em.strftime('%d/%m %H:%M') }} · {{ f.atualizado_por }}{% endif %}</div>
+  <div><div class="meta">Ficha de fabricação · {{ p.obra.nome }}</div>
+    <div class="fi-peca">{{ p.peca }} <span>{{ (p.produto or '')|lower }}{{ ' ' ~ p.secao if p.secao }} · código {{ p.codigo }}</span></div></div>
+  <div class="meta" style="text-align:right">Emitida {{ agora }}<br>Unidade {{ pos }} de {{ unidades|length }}{% if f %}<br>Atualizada {{ f.atualizado_em.strftime('%d/%m %H:%M') }} · {{ f.atualizado_por }}{% endif %}</div>
 </header>
 
 <h2 class="fi-sec">1. Peça <span>Plannix e Autodoc</span></h2>
-<div class="fi-grade">
-  <div><span>Revisão do projeto</span><b>{% if ad %}R{{ ad.revisao }} · {{ ad.status }}{% else %}sem desenho{% endif %}</b></div>
-  <div><span>Seção</span><b>{{ p.secao or '-' }}</b></div>
+<div class="fi-grade quatro">
+  <div><span>Revisão</span><b>{% if ad %}R{{ ad.revisao }} · {{ (ad.status or '')|lower }}{% else %}sem desenho{% endif %}</b></div>
   <div><span>Comprimento</span><b>{{ p.comprimento|num(2) ~ ' m' if p.comprimento else '-' }}</b></div>
-  <div><span>Volume</span><b>{{ (p.volume or p.vol_projeto)|num(3) ~ ' m³' if (p.volume or p.vol_projeto) else '-' }}</b></div>
+  <div><span>Volume · fck</span><b>{{ (p.volume or p.vol_projeto)|num(2) ~ ' m³' if (p.volume or p.vol_projeto) else '-' }} · {{ (c.fck|num(0) ~ ' MPa') if c and c.fck else (p.traco or '-') }}</b></div>
   <div><span>Protensão</span><b>{{ prot }}</b></div>
-  <div><span>fck</span><b>{{ (c.fck|num(0) ~ ' MPa') if c and c.fck else (p.traco or '-') }}</b></div>
-  <div class="largo"><span>Inf. adicional</span><b>{{ info or '-' }}</b></div>
+  {% if info %}<div class="largo"><span>Inf. adicional</span><b>{{ info }}</b></div>{% endif %}
 </div>
 
 <h2 class="fi-sec">2. Programação <span>vem do app; em branco se não programada</span></h2>
-<div class="fi-grade tres">
+<div class="fi-grade">
   <label><span>Nave</span><input name="nave" value="{{ nave }}"></label>
   <label><span>Fôrma</span><input name="forma" value="{{ forma }}"></label>
   <label><span>Data programada</span><input name="data" value="{{ data }}" placeholder="dd/mm/aaaa"></label>
 </div>
 
-<h2 class="fi-sec">3. Itens e embutidos <span>quantidade do Plannix; o PCP ajusta a coluna "Usar"{% if not tem_complemento %} · sem complementos importados para esta unidade{% endif %}</span></h2>
-<table class="fi-itens">
-  <thead><tr><th>Item</th><th class="n">Plannix</th><th class="n">Usar</th><th>Local de armazenamento</th><th>Status</th><th class="ok">OK</th></tr></thead>
-  <tbody>
-  {% for fam, its in grupos %}
-    <tr class="fi-fam"><td colspan="6">{{ fam }}</td></tr>
-    {% for x in its %}{% set usar = x.usar if x.usar is not none else x.plannix %}
-    <tr>
-      <td>{{ x.chave }}<input type="hidden" name="item" value="{{ x.chave }}"></td>
-      <td class="n meta">{{ x.plannix|qtd if x.plannix is not none else '-' }}</td>
-      <td class="n"><input name="usar::{{ x.chave }}" value="{{ usar|qtd }}" class="fi-qtd{{ ' mudou' if x.usar is not none and x.usar != x.plannix }}" {{ '' if pode_qtd else 'readonly' }} inputmode="decimal" aria-label="Quantidade a usar de {{ x.chave }}"></td>
-      <td><input name="local::{{ x.chave }}" value="{{ x.local or '' }}" aria-label="Local de {{ x.chave }}"></td>
-      <td><select name="status::{{ x.chave }}" aria-label="Status de {{ x.chave }}">{% for s in STATUS_ITEM %}<option {{ 'selected' if s == (x.status or '') }}>{{ s }}</option>{% endfor %}</select></td>
-      <td class="ok"><span class="caixa"></span></td>
-    </tr>{% endfor %}
-  {% endfor %}
-  {% if pode_qtd %}<tr class="nao-imprime"><td><input name="novo_item" placeholder="Incluir item (ex.: Içamento)"></td><td></td><td class="n"><input name="novo_qtd" class="fi-qtd" inputmode="decimal" aria-label="Quantidade do item novo"></td><td colspan="3" class="meta">aparece em "Outros" depois de salvar</td></tr>{% endif %}
-  </tbody>
-</table>
-{% if f and f.alteracoes %}<p class="meta fi-alt">Ajustes do PCP: {% for a in f.alteracoes[-4:] %}{{ a.campo }} {{ a.de|qtd or '-' }} → {{ a.para|qtd or '-' }} ({{ a.quem }}, {{ a.quando }}){{ '; ' if not loop.last }}{% endfor %}</p>{% endif %}
+<div class="fi-sec fi-tri"><h2 class="fi-sec" style="margin:0">3. Triagem de materiais <span>só o que a peça leva{% if not tem_complemento %} · sem complementos do Plannix importados para esta unidade{% endif %}</span></h2>
+  <span><b>{{ n_itens }} itens</b> em {{ grupos|length }} família{{ 's' if grupos|length != 1 }} · separados ___ de {{ n_itens }}</span></div>
+<div class="fi-lin fi-lcab"><span></span><span>Item</span><span class="n">Plannix</span><span class="n">Usar</span><span>Local</span><span>Status</span></div>
+{% for fam, its, un in grupos %}
+<section class="fi-fam">
+  <div class="fi-fh"><b>{{ fam }}</b><span>{% if fam == 'Armação' %}aço frouxo{% else %}{{ its|length }} ite{{ 'ns' if its|length != 1 else 'm' }} · {{ un|qtd }} un{% endif %}</span></div>
+  {% for x in its %}
+  <div class="fi-lin">
+    <span class="caixa" aria-hidden="true"></span>
+    <span>{{ x.nome }}{% if x.incluido %} <em class="fi-tag" title="{{ 'Vale para todas as unidades' if x.incluido.escopo == 'todas' else 'Só esta unidade' }}{{ ' · ' ~ x.incluido.quem ~ ' ' ~ x.incluido.quando if x.incluido.quem }}">incluído{{ ' · todas' if x.incluido.escopo == 'todas' }}</em>
+      {% if pode_qtd %}<button type="submit" name="remover" value="{{ x.incluido.escopo }}::{{ x.chave }}" class="fi-x nao-imprime" aria-label="Remover {{ x.nome }}" onclick="return confirm('Remover {{ x.nome }} da ficha{{ ' de todas as unidades' if x.incluido.escopo == 'todas' }}?')">×</button>{% endif %}{% endif %}
+      <input type="hidden" name="item" value="{{ x.chave }}"></span>
+    <span class="n meta">{{ (x.plannix|qtd ~ (' ' ~ x.un if x.un else '')) if x.plannix is not none else '-' }}</span>
+    <span class="n"><input name="usar::{{ x.chave }}" value="{{ x.efetivo|qtd }}" class="fi-qtd{{ ' mudou' if x.usar is not none and x.plannix is not none and x.usar != x.plannix }}" {{ '' if pode_qtd else 'readonly' }} inputmode="decimal" aria-label="Quantidade a usar de {{ x.nome }}"></span>
+    <span><input name="local::{{ x.chave }}" value="{{ x.local or '' }}" aria-label="Local de {{ x.nome }}" class="fi-local"></span>
+    <span class="fi-st" role="radiogroup" aria-label="Status de {{ x.nome }}">{% for st in STATUS_ITEM %}<label><input type="radio" name="status::{{ x.chave }}" value="{{ st }}" {{ 'checked' if x.status == st }}><span>{{ st }}</span></label>{% endfor %}</span>
+  </div>{% endfor %}
+</section>
+{% endfor %}
+{% set mud = [] %}{% for fam, its, un in grupos %}{% for x in its %}{% if x.usar is not none and x.plannix is not none and x.usar != x.plannix %}{% set _ = mud.append(x) %}{% endif %}{% endfor %}{% endfor %}
+{% if mud and f and f.alteracoes %}<p class="fi-nota">Alterado pelo PCP: {% for a in f.alteracoes|reverse %}{% if a.campo in mud|map(attribute='chave')|list %}{{ a.campo }} {{ a.de|qtd or '-' }} → {{ a.para|qtd or '-' }} ({{ a.quem }}, {{ a.quando }}); {% endif %}{% endfor %}</p>{% endif %}
+{% if nao_leva %}<p class="meta" style="margin:2px 0 0">Não leva: {{ nao_leva|map('lower')|join(', ') }}.</p>{% endif %}
+<div class="so-imprime fi-branco"><div class="fi-lin"><span class="caixa"></span><span class="ln"></span><span></span><span class="ln"></span><span class="ln"></span><span></span></div><div class="fi-lin"><span class="caixa"></span><span class="ln"></span><span></span><span class="ln"></span><span class="ln"></span><span></span></div></div>
+{% if pode_qtd %}
+<div class="fi-novo nao-imprime">
+  <div class="fi-novo-t">+ Inserir item <span class="meta">só na tela, não sai na impressão</span></div>
+  <div class="fi-novo-g">
+    <select name="novo_familia" aria-label="Família do item">{% for fm in FAMILIAS_TODAS %}<option>{{ fm }}</option>{% endfor %}</select>
+    <input name="novo_item" placeholder="Inserto de içamento 2,5 t" aria-label="Item">
+    <input name="novo_qtd" class="fi-qtd" inputmode="decimal" placeholder="Qtd" aria-label="Quantidade do item">
+  </div>
+  <div class="fi-novo-p"><span class="meta">Vale para:</span>
+    <label><input type="radio" name="novo_escopo" value="unidade" checked> esta unidade</label>
+    <label><input type="radio" name="novo_escopo" value="todas"> todas as unidades da {{ p.peca }}</label>
+    <button type="submit" class="sec" style="margin-left:auto">Adicionar</button></div>
+</div>
+{% endif %}
 
 <div class="fi-dois">
   <div>
@@ -94,31 +109,51 @@
 <label class="fi-obs"><span class="meta">Observações gerais</span><textarea name="obs" rows="2">{{ d.get('obs', '') }}</textarea></label>
 
 <div class="fi-ass">
-  <div>PCP</div><div>Encarregado da nave</div><div>Armador</div><div>Qualidade</div>
+  <div>PCP</div><div>Almoxarifado</div><div>Encarregado</div><div>Qualidade</div>
 </div>
 {% if pode %}<p class="nao-imprime" style="margin-top:12px"><button type="submit">Salvar ficha</button></p>{% endif %}
 </form>
 
 <style>
 .ficha{background:#fff;border:1px solid var(--linha);border-radius:10px;padding:18px 22px;max-width:1000px}
-.fi-cab{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;border-bottom:2px solid var(--azul);padding-bottom:8px}
-.fi-tit{font-size:18px;font-weight:700;color:var(--azul)}
-.fi-peca{font-size:26px;font-weight:800;text-align:center;line-height:1}.fi-peca span{display:block;font-size:11px;font-weight:600;color:#667;letter-spacing:.05em}
-.fi-sec{font-size:13px;color:var(--azul);margin:14px 0 6px;text-transform:none}.fi-sec span{font-weight:400;color:#778;font-size:11px;margin-left:6px}
-.fi-grade{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.fi-grade.tres{grid-template-columns:repeat(3,1fr)}
+.fi-cab{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-bottom:2px solid var(--azul);padding-bottom:8px}
+.fi-peca{font-size:28px;font-weight:800;line-height:1.15;color:#1b2a41}.fi-peca span{font-size:13px;font-weight:400;color:#667}
+.fi-sec{font-size:13px;color:var(--azul);margin:14px 0 6px;font-weight:700}.fi-sec span{font-weight:400;color:#778;font-size:11px;margin-left:6px}
+.fi-tri{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}.fi-tri>span{font-size:12px;color:#1b2a41;font-weight:400}
+.fi-grade{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.fi-grade.quatro{grid-template-columns:repeat(4,1fr)}
 .fi-grade>div,.fi-grade>label{border:1px solid var(--linha);border-radius:6px;padding:5px 8px;display:flex;flex-direction:column;margin:0}
 .fi-grade span{font-size:11px;color:#778}.fi-grade b{font-size:14px}.fi-grade .largo{grid-column:1/-1}
 .fi-grade input{border:none;padding:2px 0;font-size:14px;font-weight:700;background:transparent}
-.fi-itens,.fi-fb{width:100%;border-collapse:collapse;font-size:13px}
-.fi-itens th,.fi-fb th{background:var(--azul);color:#fff;text-align:left;padding:4px 6px;font-size:11px}
-.fi-itens td,.fi-fb td{border-bottom:1px solid #e3e7ee;padding:2px 6px}
-.fi-itens td input,.fi-itens td select,.fi-fb td input{border:1px solid transparent;background:#f6f8fb;padding:3px 6px;width:100%}
-.fi-qtd{text-align:right;max-width:80px}.fi-qtd.mudou{background:#fff4d6!important;font-weight:700}
-.fi-fam td{background:#eef2f8;font-weight:700;font-size:11px;color:var(--azul);padding-top:5px}
-.ok{width:34px;text-align:center}.caixa{display:inline-block;width:14px;height:14px;border:1.5px solid #556;border-radius:2px}
+.fi-lin{display:grid;grid-template-columns:16px minmax(0,1fr) 70px 64px 150px 230px;gap:8px;align-items:center;padding:3px 10px;font-size:13px}
+.fi-lcab{font-size:11px;color:#778;padding-bottom:2px}.fi-lin .n{text-align:right}
+.fi-fam{border:1px solid var(--linha);border-radius:8px;margin-bottom:6px;overflow:hidden}
+.fi-fam .fi-lin{border-top:1px solid #edf0f4}
+.fi-fh{display:flex;justify-content:space-between;align-items:center;padding:4px 10px;background:#f1f4f8;font-size:11px;color:#556}.fi-fh b{font-size:13px;color:#1b2a41}
+.caixa{display:inline-block;width:13px;height:13px;border:1.5px solid #556;border-radius:2px}
+.fi-qtd{text-align:center;max-width:64px;width:100%;border:1px solid #c9d1dc;border-radius:4px;padding:2px 4px}
+.fi-qtd.mudou{background:#fff4d6!important;border-color:#d39e00;font-weight:700}
+.fi-local{width:100%;border:none;border-bottom:1px solid #c9d1dc;border-radius:0;padding:2px 0;background:transparent}
+.fi-st{display:flex;gap:4px}.fi-st label{margin:0;display:inline-block!important}.fi-st input{position:absolute;opacity:0;width:1px}
+.fi-st span{display:inline-block;border:1px solid #b6bfcc;border-radius:4px;padding:1px 6px;font-size:11px;color:#445;cursor:pointer}
+.fi-st input:checked+span{background:var(--azul);border-color:var(--azul);color:#fff}
+.fi-st input[value="Falta"]:checked+span{background:#c62828;border-color:#c62828}
+.fi-st input:focus-visible+span{outline:2px solid var(--azul2)}
+.fi-tag{font-style:normal;font-size:11px;background:#e3eefb;color:#0b4f8a;border-radius:4px;padding:0 5px;margin-left:4px}
+.fi-x{border:none;background:none;color:#c62828;font-size:16px;line-height:1;padding:0 4px;cursor:pointer;min-height:0}
+.fi-nota{font-size:11px;color:#8a5a00;margin:2px 0 0}
+.fi-novo{border:1px dashed #9aa4b2;border-radius:8px;padding:8px 10px;margin-top:8px}
+.fi-novo-t{font-weight:700;font-size:13px;margin-bottom:6px}.fi-novo-t .meta{font-weight:400;font-size:11px}
+.fi-novo-g{display:grid;grid-template-columns:200px minmax(0,1fr) 80px;gap:6px}.fi-novo-g .fi-qtd{max-width:none}
+.fi-novo-p{display:flex;gap:14px;align-items:center;margin-top:6px;font-size:12px}
+.fi-novo-p label{display:inline-flex!important;flex-direction:row!important;gap:4px;align-items:center;margin:0;font-size:12px;color:inherit}.fi-novo-p input{width:auto}
+.so-imprime{display:none}
+.fi-branco .fi-lin{border:1px solid var(--linha);border-radius:0;margin-top:4px}.ln{border-bottom:1px solid #889;height:14px}
 .fi-dois{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .fi-opcoes{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px}.fi-opcoes label{display:inline-flex!important;flex-direction:row!important;gap:4px;align-items:center;margin:0;font-size:13px;color:inherit}
 .fi-opcoes input{width:auto}
+.fi-fb{width:100%;border-collapse:collapse;font-size:13px}
+.fi-fb th{background:#f1f4f8;color:#556;text-align:left;padding:4px 6px;font-size:11px}
+.fi-fb td{border-bottom:1px solid #e3e7ee;padding:2px 6px}.fi-fb td input{border:1px solid transparent;background:#f6f8fb;padding:3px 6px;width:100%}
 .fi-dif{display:flex;gap:3px}.fi-dif label{margin:0;display:inline-block!important}.fi-dif input{position:absolute;opacity:0;width:1px}
 .fi-dif span{display:inline-block;width:24px;height:24px;line-height:22px;text-align:center;border:1px solid #9aa4b2;border-radius:50%;font-weight:700;cursor:pointer;font-size:12px}
 .fi-dif input:checked+span{background:var(--azul);color:#fff;border-color:var(--azul)}
@@ -127,15 +162,18 @@
 .fi-obs{display:block;margin-top:10px}.fi-obs textarea{width:100%}
 .fi-ass{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:28px;font-size:11px;color:#556}
 .fi-ass div{border-top:1px solid #556;padding-top:3px}
-.fi-alt{margin:4px 0 0}
-@media (max-width:760px){.fi-grade,.fi-grade.tres,.fi-dois{grid-template-columns:1fr 1fr}.fi-cab{grid-template-columns:1fr}}
+@media (max-width:860px){.fi-grade,.fi-grade.quatro,.fi-dois{grid-template-columns:1fr 1fr}.fi-lin{grid-template-columns:16px minmax(0,1fr) 54px 56px;}.fi-lin>span:nth-child(5),.fi-lin>span:nth-child(6){grid-column:2/-1}}
 @media print{
   @page{size:A4 portrait;margin:9mm}
   .ficha{border:none;padding:0;max-width:none}
-  .fi-itens td input,.fi-itens td select,.fi-fb td input{background:transparent;border:none;border-bottom:1px dotted #99a;-webkit-appearance:none;appearance:none}
-  .fi-itens,.fi-fb{font-size:10.5px}.fi-sec{margin:9px 0 4px}
-  .fi-dif span{width:18px;height:18px;line-height:16px;font-size:10px}
-  tr{break-inside:avoid}.fi-ass{margin-top:18px}
+  .so-imprime{display:block}
+  .fi-lin{grid-template-columns:13px minmax(0,1fr) 52px 44px 110px 170px;font-size:10.5px;padding:2px 8px}
+  .fi-qtd,.fi-fb td input{border:none;background:transparent;border-bottom:1px dotted #99a;border-radius:0}
+  .fi-qtd.mudou{background:transparent!important;text-decoration:underline}
+  .fi-st span{font-size:9.5px;padding:0 4px}.fi-st input:checked+span{background:none;color:#000;border:1.5px solid #000;font-weight:700}
+  .fi-fb{font-size:10.5px}.fi-sec{margin:9px 0 4px}
+  .fi-dif span{width:18px;height:18px;line-height:16px;font-size:10px}.fi-dif input:checked+span{background:none;color:#000;border:2px solid #000}
+  .fi-fam,.fi-lin{break-inside:avoid}.fi-ass{margin-top:18px}
   textarea{border:1px solid #bbb}
 }
 </style>
