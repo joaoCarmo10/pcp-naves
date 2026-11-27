@@ -1268,7 +1268,13 @@ async def forma_editar(request: Request, fid: int, db: Session = Depends(get_db)
         db.add(nova)
         db.commit()
         return RedirectResponse(f"/formas?dia={em}&sel={nova.id}", status_code=303)
+    antes = Forma(nave=f.nave, nome=f.nome, comprimento=f.comprimento)
     _preencher(f, c)
+    if (antes.nave, antes.nome, antes.comprimento) != (f.nave, f.nome, f.comprimento):
+        # a programação guarda a fôrma pelo nome: as peças programadas nela (todas as revisões) acompanham a fôrma
+        for i in db.scalars(select(ItemProg).where(ItemProg.forma.is_not(None), ItemProg.forma != "")):
+            if fm.item_e_da_forma(i.forma, antes):
+                i.forma, i.nave = f.nome_completo, f.nave
     db.commit()
     return RedirectResponse(f"/formas?dia={c['dia']}&sel={f.id}", status_code=303)
 

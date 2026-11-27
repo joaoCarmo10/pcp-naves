@@ -1351,3 +1351,25 @@ def test_lista_viva_do_planejamento(cliente):
     db.add(ItemProg(revisao_id=rev.id, data=pl.hoje_bahia() + timedelta(days=1), obra=p.obra.nome, peca=p.peca, codigo=p.codigo, qtd=1))
     db.commit()
     assert not any(p.codigo in g["codigos"] for g in pl.faltantes(db, rev))
+
+
+def test_renomear_forma_leva_a_programacao(cliente):
+    """Renomear a fôrma (nome, comprimento) leva junto as peças programadas nela; as outras fôrmas não mudam."""
+    from datetime import date
+    from sqlalchemy import select
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, RevisaoProg
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": date.today().isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    f1 = db.scalar(select(Forma).where(Forma.nave == "N1", Forma.nome.like("F1 %")))
+    f10 = db.scalar(select(Forma).where(Forma.nave == "N3", Forma.nome.like("F10%")))
+    db.add_all([ItemProg(revisao_id=rev.id, data=date.today(), nave="N1", forma=f1.nome_completo, obra="X", peca="V1", qtd=1),
+                ItemProg(revisao_id=rev.id, data=date.today(), nave="N3", forma=f10.nome_completo, obra="X", peca="V2", qtd=1)])
+    db.commit()
+    campos = {"nave": "N1", "nome": "F1 Pernambuco (Palmeiras) 30x60", "tipo": "linear", "secao": "30x60", "secoes_aceitas": "",
+              "produtos": "VIGA", "comprimento": "30", "capacidade": "1", "ritmo_dias": "1", "inicio": "", "fim": "",
+              "situacao": "ativa", "obs": "Apelido: Palmeiras", "dia": "", "versao_em": ""}
+    cliente.post(f"/formas/{f1.id}", data=campos)
+    its = {i.peca: i.forma for i in SessionLocal().scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id))}
+    assert its["V1"] == "N1 - F1 Pernambuco (Palmeiras) 30x60 (30m)" and its["V2"] == f10.nome_completo
