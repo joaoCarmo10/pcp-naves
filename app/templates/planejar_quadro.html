@@ -17,7 +17,7 @@
   </form>
   {% endif %}
   <span style="display:flex;gap:6px;flex-wrap:wrap">
-    {% if r %}<button type="button" id="b-auto" title="Completa a capacidade livre das fôrmas no período com as peças que faltam, pela prioridade. Não tira nada do que já está.">Autopreencher período</button>
+    {% if r %}<button type="button" id="b-auto" title="Completa as fôrmas/dias livres do período com as peças que faltam, pela prioridade. Não mexe onde você colocou peça. Peças do autopreenchimento ficam roxas.">Autopreencher período</button>
     <span style="display:flex;gap:4px;align-items:center"><select id="s-orig" aria-label="Revisão de onde trazer as faltantes" style="max-width:220px">{% for x in revs if x.id != r.id %}<option value="{{ x.id }}">{{ x.nome[:45] }}</option>{% endfor %}</select>
       <button type="button" class="sec" id="b-trazer" title="Traz as peças não fabricadas da revisão escolhida (até o fim do período): mesmo dia e fôrma quando cabe, senão pelo autopreenchimento">Trazer faltantes</button></span>
     <button type="button" id="b-reorg" title="Recoloca as peças a fazer do período (de hoje em diante) na fôrma que faz mais sentido: fôrma da própria seção, junta a mesma seção, enche a fôrma. Mantém o dia quando dá. Tem desfazer.">Reorganizar fôrmas</button>
@@ -182,9 +182,9 @@ const FALT = {{ falt|tojson }};
     });
   });
   document.getElementById("b-auto").addEventListener("click", async e => {
-    if (!confirm("Autopreencher de {{ de.strftime('%d/%m') }} a {{ ate.strftime('%d/%m') }}?\n\nCompleta a capacidade livre das fôrmas com as peças que faltam, pela prioridade (fura-fila, obra, armadas, produto, peça), respeitando encaixe, setup, premissas e desenho bloqueado. Nada do que já está é tirado; dá para desfazer.")) return;
+    if (!confirm("Autopreencher de {{ de.strftime('%d/%m') }} a {{ ate.strftime('%d/%m') }}?\n\nCompleta a capacidade livre das fôrmas com as peças que faltam, pela prioridade (fura-fila, obra, armadas, produto, peça), respeitando encaixe, setup, premissas e desenho bloqueado. Nada do que já está é tirado, e fôrma/dia onde você colocou peça fica como está. As peças entram roxas; dá para desfazer.")) return;
     e.target.disabled = true; e.target.textContent = "Preenchendo...";
-    const r = await fetch("/planejar/autopreencher", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV, de: "{{ de.isoformat() }}", ate: "{{ ate.isoformat() }}"})});
+    const r = await fetch("/planejar/autopreencher", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({rev: REV, de: "{{ de.isoformat() }}", ate: "{{ ate.isoformat() }}", pular_manuais: true})});
     const j = await r.json().catch(() => ({ok: false}));
     if (j.ok) { sessionStorage.setItem("pq-aviso", `Autopreenchido: ${j.n} peça(s) programada(s); ${j.sobram} ficaram sem lugar no período.`); recarrega(); }
     else { aviso(j.erro || "Não deu para autopreencher.", true); e.target.disabled = false; e.target.textContent = "Autopreencher período"; }
@@ -310,7 +310,7 @@ const FALT = {{ falt|tojson }};
 .pq-bar{height:3px;background:#e7ebf0;border-radius:2px;margin-bottom:3px;overflow:hidden}.pq-bar i{display:block;height:100%;background:var(--prog)}
 .pq-c.cheio .pq-bar i{background:var(--falta)}
 .pq-chip{display:flex;align-items:center;gap:3px;background:#eef3fb;border:1px solid #c9d6ea;border-radius:4px;padding:1px 3px;margin-bottom:2px;cursor:grab;white-space:nowrap}
-.pq-chip.auto{border-style:dashed}.pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
+.pq-chip.auto{background:#efe6fb;border:1px dashed #7e57c2;color:#4a2a8a}.pq-chip.auto b{color:#4a2a8a}.pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
 .pq-o{color:#667;font-size:9.5px;max-width:42px;overflow:hidden;text-overflow:ellipsis}.pq-q{color:var(--azul);font-weight:700}
 .pq-x{margin-left:auto;border:none;background:none;color:#889;cursor:pointer;padding:0 2px;font-size:13px;line-height:1}.pq-x:hover{color:#a4161a}
 .pq-setup-btn{border:none;background:none;color:#778;cursor:pointer;padding:0 4px 0 0;font-size:13px;float:right}.pq-setup-btn:hover{color:var(--azul)}

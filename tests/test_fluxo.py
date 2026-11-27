@@ -1397,3 +1397,30 @@ def test_autopreencher_dias_da_forma(cliente):
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id)))
     assert r["n"] and all(i.data == dias[-1] for i in its)
     assert pl.desfazer_auto(db, rev) == r["n"]
+
+
+def test_forcado_sai_quando_a_forma_passa_a_aceitar_e_auto_pula_manual(cliente):
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app import planejar as pl
+    from app.db import SessionLocal
+    from app.models import Forma, ItemProg, Obra, Peca, RevisaoProg
+    cliente.post("/importar", files={"arquivo": ("obra.xls", COMPLETA)})
+    cliente.post("/obras/escolher", data={"obra": [str(o.id) for o in SessionLocal().query(Obra)]})
+    cliente.post("/planejar/revisao", data={"modo": "vazia", "dia": pl.hoje_bahia().isoformat()})
+    db = SessionLocal()
+    rev = db.scalars(select(RevisaoProg)).all()[-1]
+    d = pl.hoje_bahia() + timedelta(days=1)
+    while d.weekday() == 6:
+        d += timedelta(days=1)
+    f = Forma(codigo="N1-T", nave="N1", nome="FT 40x40", tipo="linear", comprimento=30, capacidade=1, secao="40x40", situacao="ativa")
+    db.add(f)
+    db.commit()
+    p = db.scalar(select(Peca).where(Peca.codigo == "1003"))   # P1 40x40 8 m
+    db.add(ItemProg(revisao_id=rev.id, data=d, nave="N1", forma=f.nome_completo, obra=p.obra.nome, peca=p.peca, codigo=p.codigo,
+                    qtd=1, obs="Forçado: Passa da capacidade da F6 50x50: 2.0 de 1 pç."))
+    db.commit()
+    assert pl.revalidar_forcados(db, rev) == 1
+    r = pl.autopreencher(db, rev, [d], {f.id}, pular_manuais=True)
+    assert r["n"] == 0                                         # a célula tem peça do PCP: não mexe
+    assert pl.autopreencher(db, rev, [d], {f.id})["n"] >= 1      # sem a regra, completaria

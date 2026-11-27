@@ -130,6 +130,35 @@ def validar(f: Forma, d: date, pecas: list[Peca], ocupado: float) -> list[str]:
     return probs
 
 
+def revalidar_forcados(db: Session, rev: RevisaoProg, desde: date | None = None) -> int:
+    """Peça 'forçada' guarda o motivo na observação. Se a fôrma mudou (ex.: deixou de ser 1 peça por dia) e a célula
+    agora passa na validação, a marca sai. Devolve quantas peças ficaram regulares."""
+    desde = desde or hoje_bahia()
+    forc = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data >= desde,
+                                                  ItemProg.obs.like("Forçado%"))))
+    if not forc:
+        return 0
+    formas = list(db.scalars(select(Forma)))
+    n = 0
+    for d in sorted({i.data for i in forc}):
+        vig = [f for f in formas if f.vigente(d)]
+        por, _ = itens_por_forma(db, rev, d, vig)
+        for fid, its in por.items():
+            alvo = [i for i in its if (i.obs or "").startswith("Forçado")]
+            if not alvo:
+                continue
+            f = next(f for f in vig if f.id == fid)
+            pecas = list(db.scalars(select(Peca).where(Peca.codigo.in_([i.codigo for i in its if i.codigo] or [""]))))
+            if len(pecas) < len([i for i in its if i.codigo]):
+                continue
+            if not (aviso_parada(db, f, d) + validar(f, d, pecas, 0) + conflito_protensao(db, f, pecas, [])):
+                for i in alvo:
+                    i.obs = ""
+                    n += 1
+    db.commit()
+    return n
+
+
 def alocar(db: Session, rev: RevisaoProg, f: Forma, d: date, codigos: list[str], forcar: bool = False) -> dict:
     pecas = [p for p in db.scalars(select(Peca).where(Peca.codigo.in_(codigos)))]
     ja = programados(db, rev) & set(codigos)
@@ -298,7 +327,7 @@ def mover(db: Session, rev: RevisaoProg, ids: list[int], f: Forma, d: date, forc
 
 def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: set[int] | None = None,
                   so_codigos: set[str] | None = None, lote: str | None = None,
-                  dias_forma: dict[int, set[date]] | None = None) -> dict:
+                  dias_forma: dict[int, set[date]] | None = None, pular_manuais: bool = False) -> dict:
     """Completa a capacidade livre das fôrmas no período com as peças que faltam, na ordem de prioridade do PCP
     (fura-fila, prioridade da obra, armadas primeiro, produto, nome). Não tira nem move nada do que já está.
     Respeita: encaixe (produto, seção, comprimento), capacidade, fôrma parada (setup), premissas (não programar,
@@ -338,6 +367,8 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
             if not cap:
                 continue
             atual = por.get(f.id, [])
+            if pular_manuais and any(not (i.obs or "").startswith("Autopreenchido") for i in atual):
+                continue   # célula onde o PCP colocou peça: o autopreenchimento não mexe
             livre = cap - uso(f, atual)
             secao = next((i.secao for i in atual if i.secao), None)   # uma seção por fôrma por dia
             for p in cands:

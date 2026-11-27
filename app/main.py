@@ -1367,6 +1367,8 @@ def planejar_quadro(request: Request, rev: int | None, de: str | None, ate: str 
     d1 = min(d1, d0 + timedelta(days=44))
     dias = pl.dias_periodo(d0, d1)
     q = pl.quadro(db, r, dias) if r else {"naves": [], "tot": {}, "vol": {}}
+    if r:
+        pl.revalidar_forcados(db, r, hoje)
     falt = pl.faltantes(db, r) if r else []
     ac = pl.acumulado(db, r, dias, hoje) if r else None
     return tpl.TemplateResponse(request, "planejar_quadro.html", {
@@ -1409,7 +1411,8 @@ def planejar_autopreencher(dados: dict = Body(...), db: Session = Depends(get_db
         return {"ok": False, "erro": "Período inválido."}
     so = {int(x) for x in dados.get("formas", []) if str(x).isdigit()} or None
     lote, df = _lote_e_dias(dados)
-    return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so, lote=lote, dias_forma=df)
+    return pl.autopreencher(db, r, pl.dias_periodo(min(d0, d1), max(d0, d1)), so, lote=lote, dias_forma=df,
+                            pular_manuais=bool(dados.get("pular_manuais")))
 
 
 def _lote_e_dias(dados: dict):
