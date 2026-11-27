@@ -1434,6 +1434,14 @@ def planejar_trazer(dados: dict = Body(...), db: Session = Depends(get_db)):
     return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)), so, lote=lote, dias_forma=df)
 
 
+@app.post("/planejar/tirar-sem-desenho")
+def planejar_tirar_sem_desenho(dados: dict = Body(...), db: Session = Depends(get_db)):
+    """Tira do autopreenchimento as peças sem desenho ou com desenho bloqueado no Autodoc."""
+    r = db.get(RevisaoProg, int(dados["rev"])) or _404()
+    fora = pl.tirar_auto_sem_desenho(db, r)
+    return {"ok": True, "n": len(fora), "pecas": fora}
+
+
 @app.post("/planejar/desfazer-auto")
 def planejar_desfazer_auto(dados: dict = Body(...), db: Session = Depends(get_db)):
     r = db.get(RevisaoProg, int(dados["rev"])) or _404()

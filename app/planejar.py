@@ -130,6 +130,29 @@ def validar(f: Forma, d: date, pecas: list[Peca], ocupado: float) -> list[str]:
     return probs
 
 
+def desenho_ok(adx, p: Peca) -> bool:
+    """A peça tem desenho no Autodoc e ele está aprovado."""
+    from . import autodoc
+    x = autodoc.de(adx, p.obra_id, p.peca)
+    return bool(x) and not x.bloqueado
+
+
+def tirar_auto_sem_desenho(db: Session, rev: RevisaoProg, desde: date | None = None) -> list[str]:
+    """Tira do que o autopreenchimento colocou (de hoje em diante) as peças sem desenho ou com desenho bloqueado."""
+    from . import autodoc
+    adx = autodoc.indice(db)
+    desde = desde or hoje_bahia()
+    fora = []
+    for i in db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id, ItemProg.data >= desde,
+                                               ItemProg.obs.like("Autopreenchido%"), ItemProg.codigo.is_not(None))):
+        p = db.scalar(select(Peca).where(Peca.codigo == i.codigo))
+        if p and not desenho_ok(adx, p):
+            fora.append(f"{i.obra} {i.peca}")
+            db.delete(i)
+    db.commit()
+    return fora
+
+
 def revalidar_forcados(db: Session, rev: RevisaoProg, desde: date | None = None) -> int:
     """Peça 'forçada' guarda o motivo na observação. Se a fôrma mudou (ex.: deixou de ser 1 peça por dia) e a célula
     agora passa na validação, a marca sai. Devolve quantas peças ficaram regulares."""
@@ -348,8 +371,8 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
         if p.codigo in ja or pm.motivo_fora(prs, p) or (so_codigos is not None and p.codigo not in so_codigos):
             continue
         x = autodoc.de(adx, p.obra_id, p.peca)
-        if x and x.bloqueado:
-            continue
+        if not x or x.bloqueado:
+            continue   # sem desenho no Autodoc ou desenho não aprovado: não entra no autopreenchimento
         cands.append(p)
     cands.sort(key=lambda p: (0 if pm.fura_fila(prs, p) else 1, p.obra.prioridade or 99,
                               0 if (p.hora_armacao or p.codigo in armadas) else 1, p.produto, chave_natural(p.peca), p.codigo))
@@ -441,6 +464,8 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     feitas = {c for (c,) in db.execute(select(Peca.codigo).where(Peca.codigo.in_(cods or [""]), Peca.fabricada.is_(True)))}
     pend = [i for i in its if i.codigo and i.codigo not in ja and i.codigo not in feitas]
     paradas = [pr for pr in pm.ativas(db) if pr.tipo == "parar_forma"]
+    from . import autodoc
+    adx = autodoc.indice(db)
     formas = list(db.scalars(select(Forma)))
     if so_formas:   # só o que estava nessas fôrmas na outra revisão (ex.: lajes da Nave 2)
         alvo = [f for f in formas if f.id in so_formas]
@@ -454,7 +479,7 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
         if not f or parada(paradas, f, i.data):
             continue
         p = db.scalar(select(Peca).where(Peca.codigo == i.codigo))
-        if not p:
+        if not p or not desenho_ok(adx, p):
             continue
         por, _ = itens_por_forma(db, rev, i.data, [f])
         atual = por.get(f.id, [])

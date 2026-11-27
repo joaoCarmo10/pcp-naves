@@ -1375,6 +1375,16 @@ def test_renomear_forma_leva_a_programacao(cliente):
     assert its["V1"] == "N1 - F1 Pernambuco (Palmeiras) 30x60 (30m)" and its["V2"] == f10.nome_completo
 
 
+def _desenhos_aprovados(db):
+    """Desenho aprovado no Autodoc para cada peça (o autopreenchimento exige)."""
+    from sqlalchemy import select
+    from app.models import DesenhoAutodoc, Peca
+    for oid, nome in set(db.execute(select(Peca.obra_id, Peca.peca))):
+        db.add(DesenhoAutodoc(projeto="P", obra_id=oid, codigo=f"X-{nome}-R00.pdf", extensao="pdf", revisao="00", pecas=[nome],
+                              status="Aprovado", hash="h"))
+    db.commit()
+
+
 def test_autopreencher_dias_da_forma(cliente):
     """dias_forma: a fôrma só recebe peça nos dias informados; lote compartilhado desfaz tudo junto."""
     from datetime import date, timedelta
@@ -1393,6 +1403,8 @@ def test_autopreencher_dias_da_forma(cliente):
     from app import formas as fm
     fs = [f for f in db.scalars(select(Forma)) if fm.aceita(f, "PILAR", "40x40", 8.0)]
     so = {fs[0].id}
+    assert pl.autopreencher(db, rev, dias, so)["n"] == 0          # sem desenho no Autodoc: não entra
+    _desenhos_aprovados(db)
     r = pl.autopreencher(db, rev, dias, so, lote="AUTO-abc123", dias_forma={fs[0].id: {dias[-1]}})
     its = list(db.scalars(select(ItemProg).where(ItemProg.revisao_id == rev.id)))
     assert r["n"] and all(i.data == dias[-1] for i in its)
@@ -1421,6 +1433,7 @@ def test_forcado_sai_quando_a_forma_passa_a_aceitar_e_auto_pula_manual(cliente):
                     qtd=1, obs="Forçado: Passa da capacidade da F6 50x50: 2.0 de 1 pç."))
     db.commit()
     assert pl.revalidar_forcados(db, rev) == 1
+    _desenhos_aprovados(db)
     r = pl.autopreencher(db, rev, [d], {f.id}, pular_manuais=True)
     assert r["n"] == 0                                         # a célula tem peça do PCP: não mexe
     assert pl.autopreencher(db, rev, [d], {f.id})["n"] >= 1      # sem a regra, completaria
