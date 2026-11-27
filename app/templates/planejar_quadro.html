@@ -99,7 +99,7 @@
           {% if c.parada %}<div class="pq-setup" title="{{ c.parada.obs }} · {{ c.parada.de.strftime('%d/%m') if c.parada.de else '' }} a {{ c.parada.ate.strftime('%d/%m') if c.parada.ate else '' }}">{{ (c.parada.obs or 'Parada').split(' da fôrma')[0].split(':')[0] }}<button type="button" class="pq-sx" data-pr="{{ c.parada.id }}" aria-label="Remover período de {{ c.parada.obs }}">×</button></div>{% endif %}
           {% if l.f and c.cap %}<div class="pq-bar" title="{{ c.uso|num(1) }} de {{ c.cap|num(0) }} {{ l.un }}"><i style="width:{{ [pct * 100, 100]|min }}%"></i></div>{% endif %}
           {% for g in c.g %}<div class="pq-chip{{ ' feito' if g.fab >= g.qtd }}{{ ' forcado' if g.obs.startswith('Forçado') }}{{ ' auto' if g.obs.startswith('Autopreenchido') }}{{ ' semdes' if g.desenho }}" draggable="true" data-ids="{{ g.ids|join(',') }}" title="{{ g.obra }} · {{ g.peca }} · {{ g.secao }}{{ (' · ' ~ g.comp|num(2) ~ ' m') if g.comp }}{{ ' · ⚠ ' ~ g.desenho if g.desenho }}{{ ' · ' ~ g.fab ~ ' feita(s)' if g.fab }}{{ ' · ' ~ g.obs if g.obs }}">
-            <span class="pq-o">{{ g.obra.split(' | ')[0][:10] }}</span><b>{{ g.peca }}</b>{% if g.qtd > 1 %}<span class="pq-q">×{{ g.qtd }}</span>{% endif %}
+            {% set _ob = g.obra.split(' | ') %}<span class="pq-o">{{ _ob[0][:10] }}{% if _ob|length > 1 and _ob[1] not in ('Única', 'Unica') %} <i>{{ _ob[1][:14] }}</i>{% endif %}</span><b>{{ g.peca }}</b>{% if g.qtd > 1 %}<span class="pq-q">×{{ g.qtd }}</span>{% endif %}
             <button type="button" class="pq-x" aria-label="Tirar {{ g.peca }} deste dia">×</button></div>{% endfor %}
         </td>{% endfor %}
       </tr>{% endfor %}</tbody>{% endif %}{% endfor %}
@@ -322,7 +322,7 @@ const FALT = {{ falt|tojson }};
 .pq-sab{display:block;margin:2px auto 0;font-size:10px;padding:0 4px;min-height:0;line-height:14px;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.5);border-radius:3px;cursor:pointer}
 .pq-chip.semdes{border:2px solid #c62828!important;background:#fdecea}.pq-chip.semdes::before{content:"!";color:#c62828;font-weight:800;margin-right:2px}
 .pq-chip.feito{background:#e8f5e9;border-color:#a5d6a7}.pq-chip.forcado{border-color:#e0a100}
-.pq-o{color:#667;font-size:9.5px;max-width:42px;overflow:hidden;text-overflow:ellipsis}.pq-q{color:var(--azul);font-weight:700}
+.pq-o{color:#667;font-size:9.5px;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pq-o i{font-style:normal;color:#0b5394;font-weight:700}.pq-q{color:var(--azul);font-weight:700}
 .pq-x{margin-left:auto;border:none;background:none;color:#889;cursor:pointer;padding:0 2px;font-size:13px;line-height:1}.pq-x:hover{color:#a4161a}
 .pq-setup-btn{border:none;background:none;color:#778;cursor:pointer;padding:0 4px 0 0;font-size:13px;float:right}.pq-setup-btn:hover{color:var(--azul)}
 .pq-c.parada{background:repeating-linear-gradient(45deg,#fff7e0,#fff7e0 6px,#ffeeba 6px,#ffeeba 12px)}
