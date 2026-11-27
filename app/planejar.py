@@ -308,7 +308,7 @@ def autopreencher(db: Session, rev: RevisaoProg, dias: list[date], so_formas: se
     from . import premissas as pm
     prs = pm.ativas(db)
     paradas = [pr for pr in prs if pr.tipo == "parar_forma"]
-    hoje = date.today()
+    hoje = hoje_bahia()
     dias = [d for d in dias if d >= hoje]
     ja = programados(db, rev)
     armadas = {c for (c,) in db.execute(select(Armacao.codigo).where(Armacao.codigo.is_not(None)))}
@@ -390,13 +390,14 @@ def desfazer_auto(db: Session, rev: RevisaoProg, lote: str | None = None) -> int
     return n
 
 
-def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: list[date]) -> dict:
+def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: list[date],
+                     so_formas: set[int] | None = None) -> dict:
     """Peças de outra revisão (ex.: a última programação) programadas até o fim do período e ainda não fabricadas, que
     não estão nesta revisão: primeiro tenta o mesmo dia e fôrma de lá (se o dia está no período e cabe); o resto entra
     pelo autopreenchimento, na ordem de prioridade. Nada do que já está nesta revisão é tirado."""
     import secrets
     from . import premissas as pm
-    hoje = date.today()
+    hoje = hoje_bahia()
     dias = [d for d in dias if d >= hoje]
     lote = "AUTO-" + secrets.token_hex(3)
     ja = programados(db, rev)
@@ -407,6 +408,10 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
     pend = [i for i in its if i.codigo and i.codigo not in ja and i.codigo not in feitas]
     paradas = [pr for pr in pm.ativas(db) if pr.tipo == "parar_forma"]
     formas = list(db.scalars(select(Forma)))
+    if so_formas:   # só o que estava nessas fôrmas na outra revisão (ex.: lajes da Nave 2)
+        alvo = [f for f in formas if f.id in so_formas]
+        pend = [i for i in pend if i.forma and any(fm.item_e_da_forma(i.forma, f) for f in alvo)]
+        formas = alvo
     mesmo = 0
     for i in pend:
         if i.data not in dias:
@@ -427,8 +432,8 @@ def trazer_faltantes(db: Session, rev: RevisaoProg, origem: RevisaoProg, dias: l
         db.flush()
         mesmo += 1
     db.commit()
-    resto = {i.codigo for i in pend} - {c for (c,) in db.execute(select(ItemProg.codigo).where(ItemProg.revisao_id == rev.id))}
-    r = autopreencher(db, rev, dias, so_codigos=resto, lote=lote) if resto else {"n": 0, "sobram": 0}
+    resto = {i.codigo for i in pend} - programados(db, rev)
+    r = autopreencher(db, rev, dias, so_formas=so_formas, so_codigos=resto, lote=lote) if resto else {"n": 0, "sobram": 0}
     return {"ok": True, "lote": lote, "faltantes": len({i.codigo for i in pend}), "mesmo_lugar": mesmo, "auto": r["n"],
             "sem_lugar": len(resto) - r["n"], "sem_codigo": sem_codigo, "ja_feitas": len(feitas)}
 

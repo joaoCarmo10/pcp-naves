@@ -1418,7 +1418,8 @@ def planejar_trazer(dados: dict = Body(...), db: Session = Depends(get_db)):
     d0, d1 = _data(dados.get("de")), _data(dados.get("ate"))
     if not d0 or not d1 or o.id == r.id:
         return {"ok": False, "erro": "Escolha outra revisão e um período válido."}
-    return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)))
+    so = {int(x) for x in dados.get("formas", []) if str(x).isdigit()} or None
+    return pl.trazer_faltantes(db, r, o, pl.dias_periodo(min(d0, d1), max(d0, d1)), so)
 
 
 @app.post("/planejar/desfazer-auto")
